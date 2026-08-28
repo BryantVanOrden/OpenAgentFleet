@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -152,6 +153,7 @@ func TestConcurrentSendAndListLosesNoMessage(t *testing.T) {
 				default:
 					_ = b.ListMessages(ctx(), "inst-b", 50)
 					_ = b.ListMessages(ctx(), "", 10)
+					runtime.Gosched()
 				}
 			}
 		}()
@@ -293,6 +295,7 @@ func TestConcurrentUpdatesToOneKeyLandOnAWholeValue(t *testing.T) {
 						return
 					}
 					_ = b.ListSecrets(ctx())
+					runtime.Gosched()
 				}
 			}
 		}()
