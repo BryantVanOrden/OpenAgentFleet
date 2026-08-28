@@ -276,6 +276,7 @@ make test             # Run Go test suites and React production build
 
 * 🛡️ [**Security Review**](docs/SECURITY-REVIEW.md) — An adversarial audit of the agent capabilities, with severities and fixes.
 * ♿ [**Accessibility & Contrast**](docs/ACCESSIBILITY.md) — WCAG 2.1 AA contrast ratios measured across all ten themes.
+* 📱 [**Flutter Companion Guide**](docs/FLUTTER_CROSS_PLATFORM_GUIDE.md) — Step-by-step instructions for Linux, Windows, Apple macOS/iOS, and Android runners.
 * 💻 [**Platform Guide**](docs/PLATFORMS.md) — Running on Linux, macOS and Windows, and what is genuinely not portable.
 * 🖼️ [**Interface Gallery**](docs/UI.md) — Every screen, all ten themes, and how the theming is built.
 * 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) — Detailed component design, data flow, schema, and networking model.
