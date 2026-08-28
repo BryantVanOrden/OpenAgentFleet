@@ -11,6 +11,7 @@ import 'core/theme/theme_controller.dart';
 import 'features/alerts/alerts_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
+import 'features/pipelines/pipelines_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/swarms/swarms_screen.dart';
 import 'features/vault/vault_screen.dart';
@@ -109,6 +110,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         children: const [
           FleetScreen(),
           SwarmsScreen(),
+          PipelinesScreen(),
           VaultScreen(),
           VoiceScreen(),
           AlertsScreen(),
@@ -128,6 +130,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             icon: Icon(Icons.hub_outlined),
             selectedIcon: Icon(Icons.hub_rounded),
             label: 'Swarms',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.account_tree_outlined),
+            selectedIcon: Icon(Icons.account_tree_rounded),
+            label: 'Pipelines',
           ),
           const NavigationDestination(
             icon: Icon(Icons.lock_outline),

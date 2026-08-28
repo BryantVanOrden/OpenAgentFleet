@@ -36,7 +36,7 @@ func (t *Tracker) RecordTurn(ctx context.Context, rec protocol.TokenTelemetryRec
 
 	// Calculate approximate USD cost ($0.003/1k prompt, $0.015/1k completion)
 	if rec.CostUSD == 0 {
-		rec.CostUSD = (float64(rec.PromptTokens)*0.000003) + (float64(rec.CompletionTokens)*0.000015)
+		rec.CostUSD = (float64(rec.PromptTokens) * 0.000003) + (float64(rec.CompletionTokens) * 0.000015)
 	}
 
 	t.records = append(t.records, rec)

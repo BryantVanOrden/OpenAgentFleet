@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from agentfleet.client import FleetClient
 from agentfleet.exceptions import FleetError
 
@@ -313,6 +315,182 @@ def cmd_webhooks_trigger(args: argparse.Namespace) -> None:
         print(f"❌ Trigger failed: {e}")
 
 
+# ------------------------------------------------------------- Vault & Comms ---
+
+
+def cmd_vault_list(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        secs = client._get("/api/vault/secrets") or []
+        print(f"\n🔑 SHARED SECRETS & VARIABLES ({len(secs)}):")
+        print(f"{'KEY':<24} {'SCOPE':<12} {'NOTE':<30}")
+        print("-" * 68)
+        for s in secs:
+            print(f"{s.get('key',''):<24} {s.get('scope',''):<12} {s.get('note',''):<30}")
+
+        sess = client._get("/api/vault/sessions") or []
+        print(f"\n🍪 SHARED BROWSER SESSIONS ({len(sess)}):")
+        for se in sess:
+            print(f"- {se.get('domain','')} ({se.get('title','')})")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def cmd_vault_put(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        res = client._post("/api/vault/secrets", {
+            "key": args.key,
+            "value": args.value,
+            "scope": args.scope,
+            "note": args.note or "",
+        })
+        print(f"✅ Saved shared secret: {args.key} to vault.")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def cmd_vault_comms(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        if args.broadcast:
+            msg = client._post("/api/vault/comms", {
+                "content": args.broadcast,
+                "from_instance_name": "CLI Operator",
+                "to_instance_id": "broadcast",
+            })
+            print(f"📢 Broadcast sent across fleet: {args.broadcast}")
+        else:
+            msgs = client._get("/api/vault/comms") or []
+            print(f"💬 RECENT INTER-AGENT COMMS ({len(msgs)}):")
+            print("-" * 68)
+            for m in msgs[:15]:
+                print(f"[{m.get('from_instance_name','')} ➔ {m.get('to_instance_id','')}] ({m.get('kind','')}): {m.get('content','')}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+# ----------------------------------------------------------------------- MCP ---
+
+
+def cmd_mcp_list(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        srvs = client.list_mcp_servers()
+        tools = client._get("/api/mcp/tools") or []
+        print(f"🔌 CONNECTED MCP SERVERS ({len(srvs)}):")
+        for s in srvs:
+            print(f"- {s.get('name')} [{s.get('transport')}] ➔ {s.get('command')}")
+        print(f"\n🛠️  DISCOVERED MCP TOOLS ({len(tools)}):")
+        for t in tools:
+            print(f"  • {t.get('name')}: {t.get('description')}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def cmd_mcp_add(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        res = client.register_mcp_server(name=args.name, command=args.command, transport=args.transport)
+        print(f"✅ Connected MCP server: {args.name}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+# ----------------------------------------------------------------- Pipelines ---
+
+
+def cmd_pipeline_list(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        pipes = client.list_pipelines()
+        print(f"⛓️ WORKFLOW DAG PIPELINES ({len(pipes)}):")
+        print(f"{'ID':<24} {'NAME':<32} {'STAGES':<8}")
+        print("-" * 68)
+        for p in pipes:
+            print(f"{p.get('id',''):<24} {p.get('name',''):<32} {len(p.get('nodes',[]))}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def cmd_pipeline_run(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        res = client.run_pipeline(args.id)
+        print(f"🚀 Triggered pipeline run: {res.get('id')} (Status: {res.get('status')})")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+# ---------------------------------------------------------------- Financials ---
+
+
+def cmd_financials(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        fin = client.get_financial_summary()
+        print("================================================================================")
+        print("                     📊 FLEET FINANCIAL TELEMETRY COCKPIT                       ")
+        print("================================================================================")
+        print(f"Total Fleet Spend:     ${fin.get('total_cost_usd', 0.0):.4f} USD")
+        print(f"Prompt Tokens:         {fin.get('total_prompt_tokens', 0):,}")
+        print(f"Completion Tokens:     {fin.get('total_completion_tokens', 0):,}")
+        print(f"Cached Tokens:         {fin.get('total_cached_tokens', 0):,}")
+        print(f"Average Turn Latency:  {fin.get('avg_latency_ms', 0)} ms")
+        print(f"Total Model Turns:     {fin.get('turns_count', 0)}")
+        print("================================================================================")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+# ----------------------------------------------------------------------- Hub ---
+
+
+def cmd_hub_export(args: argparse.Namespace) -> None:
+    from agentfleet.hub import ArchetypeManifest
+
+    client = _get_client(args)
+    try:
+        tmpl = client._get(f"/api/templates/{args.archetype}")
+        if not tmpl:
+            tmpl = {"id": args.archetype, "name": args.archetype, "recommended_tier": "standard"}
+        
+        manifest = ArchetypeManifest(
+            version="1.0.0",
+            id=tmpl.get("id", args.archetype),
+            name=tmpl.get("name", args.archetype),
+            tagline=tmpl.get("tagline", ""),
+            category=tmpl.get("category", "General"),
+            recommended_tier=tmpl.get("recommended_tier", "standard"),
+            vcpu=float(tmpl.get("vcpu", 4)),
+            memory_mb=int(tmpl.get("memory_mb", 8192)),
+            disk_gb=int(tmpl.get("disk_gb", 30)),
+            gpu=bool(tmpl.get("gpu", False)),
+            preinstalled_tools=tmpl.get("preinstalled_tools", []),
+            system_prompt=tmpl.get("specialized_prompt", ""),
+            default_environment=tmpl.get("default_environment", {}),
+            mcp_servers=[],
+            recorded_skills=[],
+        )
+        out_path = Path(args.output or f"{args.archetype}.agentfleet.json")
+        manifest.save(out_path)
+        print(f"📦 Archetype '{args.archetype}' exported to {out_path}")
+    except Exception as e:
+        print(f"❌ Export failed: {e}")
+
+
+def cmd_hub_import(args: argparse.Namespace) -> None:
+    from agentfleet.hub import ArchetypeManifest
+
+    try:
+        manifest = ArchetypeManifest.load(args.file)
+        print(f"✅ Loaded archetype package: {manifest.name} ({manifest.id})")
+        print(f"   Category: {manifest.category} · Hardware: {manifest.recommended_tier}")
+        print(f"   Tools: {', '.join(manifest.preinstalled_tools)}")
+    except Exception as e:
+        print(f"❌ Import failed: {e}")
+
+
 # ---------------------------------------------------------------------- Main ---
 
 
@@ -383,25 +561,71 @@ def main() -> None:
     p_sw_watch.add_argument("id", help="Swarm ID")
     p_sw_watch.set_defaults(func=cmd_swarm_watch)
 
+    # vault
+    p_vault = subparsers.add_parser("vault", help="Manage shared secrets, sessions, and comms")
+    v_subs = p_vault.add_subparsers(dest="vault_action", required=True)
+    p_v_list = v_subs.add_parser("list", help="List shared secrets and sessions")
+    p_v_list.set_defaults(func=cmd_vault_list)
+    p_v_put = v_subs.add_parser("put", help="Publish a shared secret")
+    p_v_put.add_argument("key", help="Secret key")
+    p_v_put.add_argument("value", help="Secret value")
+    p_v_put.add_argument("--scope", default="fleet", help="Scope (fleet, swarm)")
+    p_v_put.add_argument("--note", help="Note/description")
+    p_v_put.set_defaults(func=cmd_vault_put)
+    p_v_comms = v_subs.add_parser("comms", help="Inspect or broadcast inter-agent comms")
+    p_v_comms.add_argument("--broadcast", "-b", help="Broadcast message content")
+    p_v_comms.set_defaults(func=cmd_vault_comms)
+
+    # mcp
+    p_mcp = subparsers.add_parser("mcp", help="Manage Model Context Protocol (MCP) servers")
+    mcp_subs = p_mcp.add_subparsers(dest="mcp_action", required=True)
+    p_mcp_list = mcp_subs.add_parser("list", help="List connected MCP servers and tools")
+    p_mcp_list.set_defaults(func=cmd_mcp_list)
+    p_mcp_add = mcp_subs.add_parser("add", help="Connect a new MCP server")
+    p_mcp_add.add_argument("name", help="Server name")
+    p_mcp_add.add_argument("command", help="Command or URL")
+    p_mcp_add.add_argument("--transport", "-t", default="stdio", choices=["stdio", "sse"])
+    p_mcp_add.set_defaults(func=cmd_mcp_add)
+
+    # pipeline
+    p_pipe = subparsers.add_parser("pipeline", help="Manage multi-bot workflow DAG pipelines")
+    pipe_subs = p_pipe.add_subparsers(dest="pipeline_action", required=True)
+    p_pipe_list = pipe_subs.add_parser("list", help="List workflow pipelines")
+    p_pipe_list.set_defaults(func=cmd_pipeline_list)
+    p_pipe_run = pipe_subs.add_parser("run", help="Run a workflow pipeline")
+    p_pipe_run.add_argument("id", help="Pipeline ID")
+    p_pipe_run.set_defaults(func=cmd_pipeline_run)
+
+    # financials
+    p_fin = subparsers.add_parser("financials", help="View fleet-wide token and cost financial telemetry")
+    p_fin.set_defaults(func=cmd_financials)
+
+    # hub
+    p_hub = subparsers.add_parser("hub", help="Export and import portable bot archetypes")
+    hub_subs = p_hub.add_subparsers(dest="hub_action", required=True)
+    p_hub_exp = hub_subs.add_parser("export", help="Export archetype to .agentfleet.json")
+    p_hub_exp.add_argument("archetype", help="Archetype ID")
+    p_hub_exp.add_argument("-o", "--output", help="Output file path")
+    p_hub_exp.set_defaults(func=cmd_hub_export)
+    p_hub_imp = hub_subs.add_parser("import", help="Import archetype from package file")
+    p_hub_imp.add_argument("file", help="File path to .agentfleet.json")
+    p_hub_imp.set_defaults(func=cmd_hub_import)
+
     # voice
     p_voice = subparsers.add_parser("voice", help="Interact with Pocket TTS speech engine")
     v_subs = p_voice.add_subparsers(dest="voice_action", required=True)
-    
     p_v_list = v_subs.add_parser("list", help="List curated voice models")
     p_v_list.set_defaults(func=cmd_voice_list)
-
     p_v_speak = v_subs.add_parser("speak", help="Speak text verbally")
     p_v_speak.add_argument("text", help="Text to speak")
-    p_v_speak.add_argument("--voice", "-v", default="shadow", help="Voice model (shadow, atlas, vortex, echo, aura, lyra)")
+    p_v_speak.add_argument("--voice", "-v", default="shadow", help="Voice model")
     p_v_speak.set_defaults(func=cmd_voice_speak)
 
     # webhooks
     p_wh = subparsers.add_parser("webhooks", help="Manage event-driven webhooks")
     wh_subs = p_wh.add_subparsers(dest="webhook_action", required=True)
-    
     p_wh_list = wh_subs.add_parser("list", help="List webhooks")
     p_wh_list.set_defaults(func=cmd_webhooks_list)
-
     p_wh_trig = wh_subs.add_parser("trigger", help="Trigger an inbound webhook")
     p_wh_trig.add_argument("token", help="Webhook token")
     p_wh_trig.add_argument("--data", "-d", help="JSON payload")
