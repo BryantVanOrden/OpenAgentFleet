@@ -18,14 +18,14 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|mount_tool|unmount_tool|call_tool|deep_search|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|mount_tool|unmount_tool|call_tool|deep_search|remember|recall|speak|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "mark": 1,
   "coordinates": [x, y],
   "to": [x, y],
-  "text": "text to type or command to run",
+  "text": "text to type, command to run, memory content, or spoken utterance",
   "code": "python code snippet to execute in persistent REPL",
-  "query": "search query (for deep_search)",
+  "query": "search query (for deep_search or recall)",
   "sub_goal": "goal for child sub-agent, when action is spawn_agent",
   "wait_child": true,
   "tool_name": "name of custom tool (for mount_tool, unmount_tool, call_tool)",
@@ -49,6 +49,10 @@ Rules:
   use "wait_for" with the text you expect, not a bare "wait".
 - Use "deep_search" with "query" to perform rapid live internet research and extract
   clean web summaries with citations without manual browser clicking.
+- Use "recall" with "query" to semantically search fleet episodic memory for past
+  solutions, verified scripts, and AT-SPI selectors.
+- Use "remember" with "text" to store a valuable discovery into fleet episodic memory.
+- Use "speak" with "text" to verbally communicate updates to the operator via Pocket TTS.
 - Use "python" to execute code in the persistent REPL when you need programmatic
   data processing, querying the accessibility tree via a11y, or complex logic.
 - Use "mount_tool" when you want to synthesize a reusable helper tool (defining a
