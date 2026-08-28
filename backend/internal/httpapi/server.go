@@ -96,6 +96,21 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/tasks/{id}/cancel", auth(roleOperator, s.handleCancelTask))
 	mux.Handle("POST /api/tasks/{id}/synthesize-skill", auth(roleOperator, s.handleSynthesizeSkill))
 
+	// Autonomous Multi-Agent Swarms & Mission Control
+	mux.Handle("GET /api/swarms", auth(roleAny, s.handleListSwarms))
+	mux.Handle("POST /api/swarms", auth(roleOperator, s.handleCreateSwarm))
+	mux.Handle("GET /api/swarms/{id}", auth(roleAny, s.handleGetSwarm))
+	mux.Handle("POST /api/swarms/{id}/messages", auth(roleOperator, s.handlePostSwarmMessage))
+
+	// Event-Driven Webhooks & 24/7 Cron Triggers
+	mux.Handle("GET /api/webhooks", auth(roleAdmin, s.handleListWebhooks))
+	mux.Handle("POST /api/webhooks", auth(roleAdmin, s.handleCreateWebhook))
+	mux.Handle("DELETE /api/webhooks/{id}", auth(roleAdmin, s.handleDeleteWebhook))
+	mux.HandleFunc("POST /api/webhooks/{token}", s.handleIncomingWebhook)
+	mux.Handle("GET /api/triggers/cron", auth(roleAdmin, s.handleListCronTriggers))
+	mux.Handle("POST /api/triggers/cron", auth(roleAdmin, s.handleCreateCronTrigger))
+	mux.Handle("DELETE /api/triggers/cron/{id}", auth(roleAdmin, s.handleDeleteCronTrigger))
+
 	mux.Handle("GET /api/alerts", auth(roleAny, s.handleListAlerts))
 	mux.Handle("POST /api/alerts/{id}/reply", auth(roleOperator, s.handleReplyAlert))
 

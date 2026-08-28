@@ -29,6 +29,10 @@
 ## Key Superpowers
 
 * 🛡️ **Hard-Sandboxed Desktops**: Containerized Ubuntu XFCE sessions governed by strict cgroup envelopes (CPU, RAM, disk quotas), optional GPU passthrough, and kernel-level `nftables` network egress policies.
+* 🎙️ **Pocket TTS Real-Time Voice Co-Pilot**: Ultra-low-latency CPU text-to-speech powered by Kyutai Labs' Pocket TTS with 6 curated voice models (4 Male: **Shadow** [default], Atlas, Vortex, Echo; 2 Female: Aura, Lyra) for spoken duplex dialogue.
+* 🐝 **Autonomous Multi-Agent Swarms & Mission Control**: Collaborative multi-bot team swarms operating on a shared blackboard with peer review and real-time deliverable handoffs.
+* 🧠 **Persistent Long-Term Episodic Vector Memory**: Cross-fleet semantic memory index for storing and retrieving successful workflows, API workarounds, and AT-SPI coordinates across all sandboxes.
+* ⚡ **Event-Driven Webhook Sinks & 24/7 Autopilot**: Public ingress endpoints (`/api/webhooks/{token}`) for GitHub PRs, Comp AI CRM leads, Stripe events, plus autonomous background cron schedules.
 * 👁️ **Hybrid Visual & Accessibility Perception**: Blends high-resolution WebP visual frames with AT-SPI semantic accessibility trees. Automatic image-to-display coordinate mapping ensures pixel-perfect interaction across arbitrary resolutions.
 * 🧠 **Continual Harness & AI Self-Refinement**: Inspired by recursive agent research, AgentFleet's post-task refinement engine inspects execution trajectories to self-heal fragile coordinate clicks into robust accessible selectors, automatically evolving `SKILL.md` workflows from `v1` to `v2`.
 * 🔀 **Recursive Sub-Agent Orchestration**: Agents can dynamically spawn and coordinate child sub-agents (`spawn_agent`) to handle parallel research, compilation, or verification tasks with full parent-child hierarchy tracking.

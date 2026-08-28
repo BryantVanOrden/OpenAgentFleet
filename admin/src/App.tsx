@@ -5,6 +5,7 @@ import { useEvents } from "./lib/events";
 import { cx } from "./components/ui";
 import ToastHost, { toast } from "./components/Toasts";
 import ThemePicker from "./components/ThemePicker";
+import VoiceCoPilot from "./components/VoiceCoPilot";
 import Login from "./pages/Login";
 import Fleet from "./pages/Fleet";
 import InstanceDetail from "./pages/InstanceDetail";
@@ -12,9 +13,13 @@ import Skills from "./pages/Skills";
 import Alerts from "./pages/Alerts";
 import Models from "./pages/Models";
 import Settings from "./pages/Settings";
+import MissionControl from "./pages/MissionControl";
+import Triggers from "./pages/Triggers";
 
 const NAV = [
   { to: "/fleet", label: "Fleet", icon: "▦" },
+  { to: "/swarms", label: "Mission Control", icon: "🐝" },
+  { to: "/triggers", label: "Autopilot Sinks", icon: "⚡" },
   { to: "/skills", label: "Skills", icon: "⌥" },
   { to: "/alerts", label: "Alerts", icon: "!" },
   { to: "/models", label: "AI engines", icon: "◈" },
@@ -24,6 +29,7 @@ const NAV = [
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [openAlerts, setOpenAlerts] = useState<Alert[]>([]);
   const location = useLocation();
 
@@ -143,6 +149,12 @@ export default function App() {
         </nav>
 
         <div className="space-y-2 border-t border-ink-800 px-4 py-3 text-xs">
+          <button
+            onClick={() => setVoiceOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-live-500/15 py-1.5 font-mono text-xs font-semibold text-live-400 border border-live-500/30 hover:bg-live-500/25 transition-colors"
+          >
+            🎙️ Voice Co-Pilot
+          </button>
           <ThemePicker />
           <div className="flex items-center gap-2 text-ink-400">
             <span
@@ -175,6 +187,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/fleet" replace />} />
           <Route path="/fleet" element={<Fleet />} />
+          <Route path="/swarms" element={<MissionControl />} />
+          <Route path="/triggers" element={<Triggers />} />
           <Route path="/instances/:id" element={<InstanceDetail role={user.role} />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/alerts" element={<Alerts onChange={refreshAlerts} />} />
@@ -184,6 +198,7 @@ export default function App() {
         </Routes>
       </main>
 
+      <VoiceCoPilot open={voiceOpen} onClose={() => setVoiceOpen(false)} />
       <ToastHost />
     </div>
   );

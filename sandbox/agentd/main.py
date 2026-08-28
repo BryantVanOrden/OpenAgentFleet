@@ -289,7 +289,40 @@ def act(req: ActRequest) -> dict:
         ok, out = search_web(q)
         return {"ok": ok, "detail": "search completed", "stdout": out}
 
+    if kind == "speak":
+        from voice import VOICE, DEFAULT_VOICE
+        import base64
+        txt = req.text or req.sub_goal or ""
+        v = req.target or DEFAULT_VOICE
+        wav_bytes = VOICE.synthesize_wav(txt, v)
+        b64 = base64.b64encode(wav_bytes).decode("ascii")
+        return {"ok": True, "detail": f"spoken with voice '{v}'", "audio_b64": b64, "format": "audio/wav"}
+
     return {"ok": False, "detail": f"unsupported action {kind!r}"}
+
+
+# ---------------------------------------------------------------------- voice ---
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    voice: str = "shadow"
+
+
+@app.get("/voice/voices")
+def list_voices() -> dict:
+    from voice import VOICE, DEFAULT_VOICE
+    return {"voices": VOICE.list_voices(), "default": DEFAULT_VOICE}
+
+
+@app.post("/voice/speak")
+def voice_speak(req: SpeakRequest) -> dict:
+    from voice import VOICE, DEFAULT_VOICE
+    import base64
+    v = req.voice or DEFAULT_VOICE
+    wav_bytes = VOICE.synthesize_wav(req.text, v)
+    b64 = base64.b64encode(wav_bytes).decode("ascii")
+    return {"voice": v, "audio_b64": b64, "format": "audio/wav"}
 
 
 # ------------------------------------------------------------------- recorder ---

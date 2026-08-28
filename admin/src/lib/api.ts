@@ -240,7 +240,72 @@ const put = <T,>(path: string, body?: unknown) =>
   request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) });
 const del = <T,>(path: string) => request<T>(path, { method: "DELETE" });
 
+export interface SwarmMember {
+  instance_id: string;
+  instance_name: string;
+  role: string;
+  archetype_id: string;
+  status: string;
+}
+
+export interface SwarmMessage {
+  id: string;
+  swarm_id: string;
+  from_bot: string;
+  to_bot: string;
+  phase: string;
+  content: string;
+  artifacts?: string[];
+  created_at: string;
+}
+
+export interface SwarmArtifact {
+  id: string;
+  swarm_id: string;
+  title: string;
+  author: string;
+  category: string;
+  content: string;
+  approved_by?: string[];
+  created_at: string;
+}
+
+export interface SwarmTeam {
+  id: string;
+  name: string;
+  mission: string;
+  status: "initializing" | "running" | "reviewing" | "completed" | "failed";
+  members: SwarmMember[];
+  messages: SwarmMessage[];
+  artifacts: SwarmArtifact[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookRecord {
+  id: string;
+  token: string;
+  name: string;
+  target_archetype: string;
+  goal_template: string;
+  active: boolean;
+  last_triggered_at?: string;
+  created_at: string;
+}
+
+export interface CronTriggerRecord {
+  id: string;
+  name: string;
+  schedule_cron: string;
+  target_archetype: string;
+  goal_template: string;
+  active: boolean;
+  last_run_at?: string;
+  created_at: string;
+}
+
 export const api = {
+  // Authentication
   login: (email: string, password: string) =>
     post<{ token: string; user: User }>("/api/auth/login", { email, password }),
   bootstrap: (email: string, password: string) =>
@@ -299,6 +364,25 @@ export const api = {
   }) => post<Task>("/api/tasks", body),
   cancelTask: (id: string) => post<void>(`/api/tasks/${id}/cancel`),
   synthesizeSkill: (taskId: string) => post<Skill>(`/api/tasks/${taskId}/synthesize-skill`),
+
+  // Multi-Agent Swarms & Mission Control
+  swarms: () => get<SwarmTeam[]>("/api/swarms"),
+  swarm: (id: string) => get<SwarmTeam>(`/api/swarms/${id}`),
+  createSwarm: (body: { name: string; mission: string; members?: SwarmMember[] }) =>
+    post<SwarmTeam>("/api/swarms", body),
+  postSwarmMessage: (
+    id: string,
+    body: { from_bot: string; to_bot: string; phase: string; content: string; artifacts?: string[] },
+  ) => post<SwarmMessage>(`/api/swarms/${id}/messages`, body),
+
+  // Webhooks & Triggers
+  webhooks: () => get<WebhookRecord[]>("/api/webhooks"),
+  createWebhook: (body: Partial<WebhookRecord>) => post<WebhookRecord>("/api/webhooks", body),
+  deleteWebhook: (id: string) => del<void>(`/api/webhooks/${id}`),
+  cronTriggers: () => get<CronTriggerRecord[]>("/api/triggers/cron"),
+  createCronTrigger: (body: Partial<CronTriggerRecord>) =>
+    post<CronTriggerRecord>("/api/triggers/cron", body),
+  deleteCronTrigger: (id: string) => del<void>(`/api/triggers/cron/${id}`),
 
   alerts: (openOnly = false) => get<Alert[]>(`/api/alerts?open=${openOnly}`),
   replyAlert: (id: string, reply: string) => post<void>(`/api/alerts/${id}/reply`, { reply }),

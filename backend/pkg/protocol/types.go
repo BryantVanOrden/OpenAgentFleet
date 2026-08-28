@@ -249,11 +249,27 @@ const (
 	ActUnmountTool ActionKind = "unmount_tool" // dispose of a mounted custom tool
 	ActCallTool    ActionKind = "call_tool"    // execute a dynamically mounted custom tool
 	ActDeepSearch  ActionKind = "deep_search"  // live web search and intelligence synthesis
+	ActRemember    ActionKind = "remember"     // store long-term episodic memory across the fleet
+	ActRecall      ActionKind = "recall"       // semantically search fleet episodic memory
+	ActSpeak       ActionKind = "speak"        // spoken voice output via Pocket TTS
 	ActAssert      ActionKind = "assert"       // file exists / size / exit code
 	ActAskHuman    ActionKind = "ask_human"    // hand control back to the operator
 	ActDone        ActionKind = "done"
 	ActFail        ActionKind = "fail"
 )
+
+// MemoryRecord represents a long-term cross-fleet semantic memory item.
+type MemoryRecord struct {
+	ID               string    `json:"id"`
+	Namespace        string    `json:"namespace"`
+	Title            string    `json:"title"`
+	Content          string    `json:"content"`
+	Tags             []string  `json:"tags,omitempty"`
+	Embedding        []float32 `json:"embedding,omitempty"`
+	SourceTaskID     string    `json:"source_task_id,omitempty"`
+	SourceInstanceID string    `json:"source_instance_id,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
 
 // MountedTool describes an ephemeral custom tool synthesized by the agent.
 type MountedTool struct {

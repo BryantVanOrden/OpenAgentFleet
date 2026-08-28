@@ -1,11 +1,13 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/network/api_client.dart';
 import 'core/notifications/push.dart';
 import 'core/state.dart';
 import 'core/theme/theme.dart';
+import 'core/theme/theme_controller.dart';
 import 'features/alerts/alerts_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
@@ -15,6 +17,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final api = await ApiClient.create();
+  final prefs = await SharedPreferences.getInstance();
 
   // Registered before runApp so a notification arriving during a cold start is
   // not dropped.
@@ -22,7 +25,10 @@ Future<void> main() async {
 
   runApp(
     ProviderScope(
-      overrides: [apiProvider.overrideWithValue(api)],
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
       child: AgentFleetApp(api: api),
     ),
   );
@@ -57,11 +63,15 @@ class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
 
   @override
   Widget build(BuildContext context) {
+    final choice = ref.watch(themeControllerProvider);
+
     return MaterialApp(
       title: 'AgentFleet',
       navigatorKey: _navigator,
       debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
+      themeMode: choice.mode,
+      theme: buildTheme(Brightness.light, choice.accent),
+      darkTheme: buildTheme(Brightness.dark, choice.accent),
       home: widget.api.isAuthenticated
           ? const HomeShell()
           : LoginScreen(onSignedIn: () => _push.init()),
