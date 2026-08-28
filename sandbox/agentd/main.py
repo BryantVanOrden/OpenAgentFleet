@@ -68,6 +68,7 @@ class ObserveRequest(BaseModel):
     a11y: bool = True
     max_width: int = Field(default=1280, ge=320, le=3840)
     quality: int = Field(default=70, ge=20, le=100)
+    som: bool = True
     # [x0, y0, x1, y1] in desktop pixels. When set, the returned image is a
     # full-resolution crop of that region instead of a downscaled full desktop.
     region: list[int] | None = None
@@ -85,6 +86,23 @@ def observe(req: ObserveRequest) -> dict:
     frame = full
     if req.region and len(req.region) == 4:
         frame = capture.crop(full, tuple(req.region))  # type: ignore[arg-type]
+
+    marks = []
+    if req.som and req.screenshot:
+        try:
+            from som import annotate_frame
+            nodes = a11y.snapshot() if req.a11y else []
+            if nodes:
+                annotated_img, marks = annotate_frame(frame.image, nodes)
+                frame = capture.Frame(
+                    image=annotated_img,
+                    width=frame.width,
+                    height=frame.height,
+                    scale=frame.scale,
+                    origin=frame.origin,
+                )
+        except Exception:
+            pass
 
     shot, scale = ("", 1.0)
     if req.screenshot:
@@ -105,6 +123,7 @@ def observe(req: ObserveRequest) -> dict:
         "desktop_height": full.height,
         "active_window": capture.active_window(),
         "a11y_tree": tree,
+        "marks": marks,
         "hash": screen_hash,
         "captured_at": _now(),
     }
@@ -117,10 +136,12 @@ class ActRequest(BaseModel):
     action: str
     target: str | None = None
     role: str | None = None
+    mark: int | None = None
     coordinates: list[int] | None = None
     to: list[int] | None = None
     text: str | None = None
     code: str | None = None
+    query: str | None = None
     tool_name: str | None = None
     tool_description: str | None = None
     tool_parameters: dict[str, Any] | None = None
@@ -259,6 +280,14 @@ def act(req: ActRequest) -> dict:
             return {"ok": False, "detail": "call_tool requires tool_name"}
         ok, out = REPL.call_tool(name, req.tool_parameters)
         return {"ok": ok, "detail": f"tool {name} executed", "stdout": out}
+
+    if kind == "deep_search":
+        from search import search_web
+        q = req.query or req.text or req.sub_goal or ""
+        if not q:
+            return {"ok": False, "detail": "deep_search requires a query"}
+        ok, out = search_web(q)
+        return {"ok": ok, "detail": "search completed", "stdout": out}
 
     return {"ok": False, "detail": f"unsupported action {kind!r}"}
 

@@ -328,11 +328,21 @@ function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] 
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
+              <div className="flex flex-wrap items-baseline gap-2">
                 <span className="font-mono text-xs text-ink-500">#{step.step}</span>
                 <span className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-xs text-live-500">
                   {step.action.action}
                 </span>
+                {step.action.mark ? (
+                  <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-xs text-emerald-400 ring-1 ring-emerald-500/30">
+                    Mark [{step.action.mark}]
+                  </span>
+                ) : null}
+                {step.action.query ? (
+                  <span className="rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-xs text-sky-400 ring-1 ring-sky-500/30">
+                    🔍 {step.action.query}
+                  </span>
+                ) : null}
                 <span className="truncate font-mono text-xs text-ink-300">
                   {step.action.target ??
                     step.action.text ??
@@ -542,45 +552,66 @@ function TaskList({
   onCancel: (t: Task) => void;
   disabled: boolean;
 }) {
+  // Build parent-child tree mapping
+  const rootTasks = tasks.filter((t) => !t.parent_task_id);
+  const childMap = new Map<string, Task[]>();
+  for (const t of tasks) {
+    if (t.parent_task_id) {
+      const list = childMap.get(t.parent_task_id) ?? [];
+      list.push(t);
+      childMap.set(t.parent_task_id, list);
+    }
+  }
+
+  const renderTaskItem = (t: Task, isChild = false) => (
+    <li key={t.id} className={cx(isChild && "ml-4 border-l-2 border-live-500/30 pl-2 mt-1")}>
+      <button
+        onClick={() => onSelect(t)}
+        className={cx(
+          "w-full rounded-lg px-2.5 py-2 text-left transition-colors",
+          activeId === t.id ? "bg-ink-800" : "hover:bg-ink-850",
+          isChild && "bg-ink-900/60",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-xs text-ink-200">
+            {isChild && <span className="font-mono text-live-400 mr-1">↳ [Sub-Agent]</span>}
+            {t.goal}
+          </span>
+          <StateBadge state={t.state} live={t.state === "running"} />
+        </div>
+        <div className="mt-1 flex items-center justify-between font-mono text-[11px] text-ink-500">
+          <span>
+            step {t.step}/{t.max_steps}
+          </span>
+          <Ago at={t.created_at} />
+        </div>
+      </button>
+      {(t.state === "running" || t.state === "awaiting_human" || t.state === "queued") &&
+        !disabled && (
+          <Button
+            size="sm"
+            variant="danger"
+            className="mt-1 w-full"
+            onClick={() => onCancel(t)}
+          >
+            Stop this run
+          </Button>
+        )}
+      {/* Recursively render child sub-agents */}
+      {childMap.get(t.id)?.map((child) => renderTaskItem(child, true))}
+    </li>
+  );
+
   return (
-    <Card title="Runs">
+    <Card title="Runs & Sub-Agent Graph">
       {tasks.length === 0 ? (
         <p className="text-xs text-ink-400">Nothing has run on this instance yet.</p>
       ) : (
-        <ul className="space-y-1.5">
-          {tasks.map((t) => (
-            <li key={t.id}>
-              <button
-                onClick={() => onSelect(t)}
-                className={cx(
-                  "w-full rounded-lg px-2.5 py-2 text-left transition-colors",
-                  activeId === t.id ? "bg-ink-800" : "hover:bg-ink-850",
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-ink-200">{t.goal}</span>
-                  <StateBadge state={t.state} live={t.state === "running"} />
-                </div>
-                <div className="mt-1 flex items-center justify-between font-mono text-[11px] text-ink-500">
-                  <span>
-                    step {t.step}/{t.max_steps}
-                  </span>
-                  <Ago at={t.created_at} />
-                </div>
-              </button>
-              {(t.state === "running" || t.state === "awaiting_human" || t.state === "queued") &&
-                !disabled && (
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    className="mt-1 w-full"
-                    onClick={() => onCancel(t)}
-                  >
-                    Stop this run
-                  </Button>
-                )}
-            </li>
-          ))}
+        <ul className="space-y-2">
+          {rootTasks.length > 0
+            ? rootTasks.map((t) => renderTaskItem(t))
+            : tasks.map((t) => renderTaskItem(t))}
         </ul>
       )}
     </Card>

@@ -431,6 +431,11 @@ func (r *Runner) execute(
 			return fmt.Sprintf("tool %q error: %s", a.ToolName, clip(res.Stdout, 500)), terminalNone
 		}
 		return fmt.Sprintf("tool %q output: %s", a.ToolName, clip(res.Stdout, 800)), terminalNone
+	case a.Action == protocol.ActDeepSearch:
+		if !res.OK {
+			return fmt.Sprintf("deep_search error: %s", clip(res.Stdout, 500)), terminalNone
+		}
+		return fmt.Sprintf("deep_search output:\n%s", clip(res.Stdout, 1200)), terminalNone
 	default:
 		return firstNonEmpty(res.Detail, "ok"), terminalNone
 	}
@@ -611,6 +616,17 @@ func mapToDesktop(a protocol.Action, obs *protocol.Observation) protocol.Action 
 		return a
 	}
 	out := a
+	if a.Mark > 0 {
+		for _, m := range obs.Marks {
+			if m.ID == a.Mark {
+				out.Coordinates = []int{m.CX, m.CY}
+				if out.Target == "" && m.Label != "" {
+					out.Target = m.Label
+				}
+				return out
+			}
+		}
+	}
 	if len(a.Coordinates) == 2 {
 		x, y := obs.ToDesktop(a.Coordinates[0], a.Coordinates[1])
 		out.Coordinates = []int{x, y}

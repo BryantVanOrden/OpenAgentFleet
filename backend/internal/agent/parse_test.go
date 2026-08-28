@@ -100,6 +100,16 @@ func TestParseActionExtraction(t *testing.T) {
 			raw:  `{"action":"call_tool","tool_name":"parse_logs"}`,
 			want: protocol.Action{Action: protocol.ActCallTool, ToolName: "parse_logs"},
 		},
+		{
+			name: "click action with Set-of-Marks mark ID",
+			raw:  `{"action":"click","mark":5}`,
+			want: protocol.Action{Action: protocol.ActClick, Mark: 5},
+		},
+		{
+			name: "deep_search action with query",
+			raw:  `{"action":"deep_search","query":"latest golang release notes"}`,
+			want: protocol.Action{Action: protocol.ActDeepSearch, Query: "latest golang release notes"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -161,6 +171,7 @@ func TestParseActionRejects(t *testing.T) {
 		{"mount_tool missing tool_handler", `{"action":"mount_tool","tool_name":"foo"}`, "mount_tool needs tool_handler code"},
 		{"unmount_tool missing tool_name", `{"action":"unmount_tool"}`, "unmount_tool needs tool_name"},
 		{"call_tool missing tool_name", `{"action":"call_tool"}`, "call_tool needs tool_name"},
+		{"deep_search missing query", `{"action":"deep_search"}`, "deep_search needs query"},
 	}
 
 	for _, tc := range cases {

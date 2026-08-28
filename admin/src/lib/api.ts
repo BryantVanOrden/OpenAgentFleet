@@ -72,9 +72,11 @@ export interface AgentAction {
   thought?: string;
   action: string;
   target?: string;
+  mark?: number;
   coordinates?: number[];
   text?: string;
   code?: string;
+  query?: string;
   sub_goal?: string;
   sub_skill_id?: string;
   wait_child?: boolean;

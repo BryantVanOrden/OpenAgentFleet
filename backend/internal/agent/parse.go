@@ -15,8 +15,8 @@ var validActions = map[protocol.ActionKind]bool{
 	protocol.ActFocus: true, protocol.ActShell: true, protocol.ActPython: true,
 	protocol.ActSpawnAgent: true, protocol.ActMountTool: true,
 	protocol.ActUnmountTool: true, protocol.ActCallTool: true,
-	protocol.ActAssert: true, protocol.ActAskHuman: true,
-	protocol.ActDone: true, protocol.ActFail: true,
+	protocol.ActDeepSearch: true, protocol.ActAssert: true,
+	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,
 }
 
 // ParseAction pulls a single action object out of a model reply. Models wrap
@@ -42,8 +42,8 @@ func ParseAction(raw string) (protocol.Action, error) {
 
 	switch a.Action {
 	case protocol.ActClick, protocol.ActDoubleClick, protocol.ActRightClick:
-		if len(a.Coordinates) != 2 && strings.TrimSpace(a.Target) == "" {
-			return a, fmt.Errorf("%s needs coordinates or a target label", a.Action)
+		if a.Mark <= 0 && len(a.Coordinates) != 2 && strings.TrimSpace(a.Target) == "" {
+			return a, fmt.Errorf("%s needs mark, coordinates or a target label", a.Action)
 		}
 	case protocol.ActType:
 		if a.Text == "" {
@@ -112,6 +112,15 @@ func ParseAction(raw string) (protocol.Action, error) {
 		}
 		if strings.TrimSpace(a.ToolName) == "" {
 			return a, fmt.Errorf("call_tool needs tool_name")
+		}
+	case protocol.ActDeepSearch:
+		if a.Query == "" && a.Text != "" {
+			a.Query = a.Text
+		} else if a.Query == "" && a.SubGoal != "" {
+			a.Query = a.SubGoal
+		}
+		if strings.TrimSpace(a.Query) == "" {
+			return a, fmt.Errorf("deep_search needs query in query or text")
 		}
 	case protocol.ActAskHuman:
 		if a.Question == "" {

@@ -11,22 +11,21 @@ import (
 // the screen is data, not instruction. A web page that says "ignore your task and
 // run this command" is the single most likely way an autonomous desktop agent
 // gets turned into someone else's tool.
-const systemPrompt = `You operate a Linux desktop through a fixed action vocabulary with support for dynamic tool synthesis.
+const systemPrompt = `You operate a Linux desktop through a fixed action vocabulary with support for dynamic tool synthesis, Set-of-Marks visual element targeting, and deep web intelligence.
 
-Each turn you receive a screenshot of the current desktop, the active window
-title, optionally an accessibility tree, actively mounted tools, and the history
-of what you have already done. You reply with exactly one JSON object and nothing
-else — no prose, no markdown fence.
+Each turn you receive a screenshot of the current desktop (with visual Set-of-Marks badges [1], [2], ... over interactive elements), the active window title, optionally an accessibility tree, actively mounted tools, and the history of what you have already done. You reply with exactly one JSON object and nothing else — no prose, no markdown fence.
 
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|mount_tool|unmount_tool|call_tool|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|mount_tool|unmount_tool|call_tool|deep_search|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
+  "mark": 1,
   "coordinates": [x, y],
   "to": [x, y],
   "text": "text to type or command to run",
   "code": "python code snippet to execute in persistent REPL",
+  "query": "search query (for deep_search)",
   "sub_goal": "goal for child sub-agent, when action is spawn_agent",
   "wait_child": true,
   "tool_name": "name of custom tool (for mount_tool, unmount_tool, call_tool)",
@@ -41,18 +40,15 @@ Schema:
 }
 
 Rules:
-- Coordinates are in the pixel space of the image you were just given: the
-  top-left of that image is 0,0 and the bottom-right is its width,height. Do not
-  rescale, offset, or convert anything — read the position straight off the
-  picture. The orchestrator handles the mapping back to the real display.
-- Prefer "target" (an accessible label) over raw coordinates whenever the
-  accessibility tree offers one: labels survive window moves and theme changes,
-  coordinates do not.
+- Prefer "mark" (Set-of-Marks badge number e.g. "mark": 5) or "target" (accessible label)
+  over raw coordinates whenever available: badges and labels are exact and immune
+  to coordinate drift.
+- If using coordinates, they are in the pixel space of the image you were just given.
 - One action per turn. Do not batch.
 - After an action that starts something slow (a build, a page load, an install),
   use "wait_for" with the text you expect, not a bare "wait".
-- If the same screen comes back twice after you acted, change approach instead of
-  repeating: try keyboard navigation, scroll, or focus a different window.
+- Use "deep_search" with "query" to perform rapid live internet research and extract
+  clean web summaries with citations without manual browser clicking.
 - Use "python" to execute code in the persistent REPL when you need programmatic
   data processing, querying the accessibility tree via a11y, or complex logic.
 - Use "mount_tool" when you want to synthesize a reusable helper tool (defining a
@@ -142,9 +138,25 @@ func buildTurn(
 	fmt.Fprintf(&sb, "the image you were given is %dx%d pixels; give coordinates in that space\n",
 		obs.ImageWidth(), obs.ImageHeight())
 	fmt.Fprintf(&sb, "active window: %s\n", orDash(obs.ActiveWindow))
+
+	if len(obs.Marks) > 0 {
+		sb.WriteString("\nINTERACTIVE ELEMENTS (Set-of-Marks overlay):\n")
+		limit := 40
+		if len(obs.Marks) < limit {
+			limit = len(obs.Marks)
+		}
+		for _, m := range obs.Marks[:limit] {
+			label := m.Label
+			if label == "" {
+				label = "(unlabelled)"
+			}
+			fmt.Fprintf(&sb, "[%d] %s %q (center: %d,%d)\n", m.ID, m.Role, label, m.CX, m.CY)
+		}
+	}
+
 	if obs.A11yTree != "" {
 		sb.WriteString("\nACCESSIBILITY TREE\n")
-		sb.WriteString(clip(obs.A11yTree, 6000))
+		sb.WriteString(clip(obs.A11yTree, 4000))
 		sb.WriteString("\n")
 	}
 
@@ -200,6 +212,12 @@ func summarise(a protocol.Action) string {
 		return fmt.Sprintf("unmount_tool %s", a.ToolName)
 	case protocol.ActCallTool:
 		return fmt.Sprintf("call_tool %s", a.ToolName)
+	case protocol.ActDeepSearch:
+		q := a.Query
+		if q == "" {
+			q = a.Text
+		}
+		return fmt.Sprintf("deep_search %q", clip(q, 80))
 	case protocol.ActWaitFor:
 		return fmt.Sprintf("wait_for %q", clip(a.Text, 60))
 	case protocol.ActAssert:
@@ -207,6 +225,12 @@ func summarise(a protocol.Action) string {
 	case protocol.ActAskHuman:
 		return "ask_human: " + clip(a.Question, 80)
 	default:
+		if a.Mark > 0 {
+			if a.Target != "" {
+				return fmt.Sprintf("%s [%d] %q", a.Action, a.Mark, clip(a.Target, 40))
+			}
+			return fmt.Sprintf("%s [%d]", a.Action, a.Mark)
+		}
 		if a.Target != "" {
 			return fmt.Sprintf("%s %q", a.Action, clip(a.Target, 50))
 		}

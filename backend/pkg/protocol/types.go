@@ -149,17 +149,30 @@ type Task struct {
 //   - OriginX/OriginY locate the frame on the desktop; non-zero only for crops.
 //
 // So: desktop = origin + (model coordinate / scale). ToDesktop does this.
+type MarkItem struct {
+	ID     int    `json:"id"`
+	Role   string `json:"role,omitempty"`
+	Label  string `json:"label,omitempty"`
+	X      int    `json:"x"`
+	Y      int    `json:"y"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	CX     int    `json:"cx"`
+	CY     int    `json:"cy"`
+}
+
 type Observation struct {
-	ScreenshotB64 string  `json:"screenshot_b64,omitempty"` // WebP, base64
-	Width         int     `json:"width"`
-	Height        int     `json:"height"`
-	Scale         float64 `json:"scale"`
-	OriginX       int     `json:"origin_x"`
-	OriginY       int     `json:"origin_y"`
-	DesktopWidth  int     `json:"desktop_width"`
-	DesktopHeight int     `json:"desktop_height"`
-	ActiveWindow  string  `json:"active_window"`
-	A11yTree      string  `json:"a11y_tree,omitempty"` // flattened, indented
+	ScreenshotB64 string     `json:"screenshot_b64,omitempty"` // WebP, base64
+	Width         int        `json:"width"`
+	Height        int        `json:"height"`
+	Scale         float64    `json:"scale"`
+	OriginX       int        `json:"origin_x"`
+	OriginY       int        `json:"origin_y"`
+	DesktopWidth  int        `json:"desktop_width"`
+	DesktopHeight int        `json:"desktop_height"`
+	ActiveWindow  string     `json:"active_window"`
+	A11yTree      string     `json:"a11y_tree,omitempty"` // flattened, indented
+	Marks         []MarkItem `json:"marks,omitempty"`     // Set-of-Marks visual overlay elements
 	// Hash is always taken over the full desktop, never a crop, so zooming does
 	// not blind stall detection to activity elsewhere on screen.
 	Hash       string    `json:"hash"`
@@ -232,6 +245,7 @@ const (
 	ActMountTool   ActionKind = "mount_tool"  // dynamically synthesize and register a custom tool
 	ActUnmountTool ActionKind = "unmount_tool"// dispose of a mounted custom tool
 	ActCallTool    ActionKind = "call_tool"   // execute a dynamically mounted custom tool
+	ActDeepSearch  ActionKind = "deep_search" // live web search and intelligence synthesis
 	ActAssert      ActionKind = "assert"      // file exists / size / exit code
 	ActAskHuman    ActionKind = "ask_human"   // hand control back to the operator
 	ActDone        ActionKind = "done"
@@ -251,11 +265,13 @@ type Action struct {
 	Thought         string            `json:"thought"`
 	Action          ActionKind        `json:"action"`
 	Target          string            `json:"target,omitempty"`           // accessible label / window title
+	Mark            int               `json:"mark,omitempty"`             // Set-of-Marks ID (e.g. 1, 2, 3)
 	Coordinates     []int             `json:"coordinates,omitempty"`      // [x,y] in desktop pixels
 	To              []int             `json:"to,omitempty"`               // drag destination
 	Text            string            `json:"text,omitempty"`
 	Key             string            `json:"key,omitempty"`              // e.g. "ctrl+shift+p"
 	Code            string            `json:"code,omitempty"`             // for python action
+	Query           string            `json:"query,omitempty"`            // for deep_search action
 	SubGoal         string            `json:"sub_goal,omitempty"`         // for spawn_agent action
 	SubSkillID      string            `json:"sub_skill_id,omitempty"`     // for spawn_agent action
 	SubParams       map[string]string `json:"sub_params,omitempty"`       // for spawn_agent action
