@@ -68,7 +68,10 @@ func (s *Server) handlePutSharedSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sec := vault.GlobalBus.PutSecret(r.Context(), req.Key, req.Value, req.Scope, req.Note, "operator")
-	writeJSON(w, http.StatusOK, sec)
+	// Echo the metadata only — the response body is the kind of thing that ends
+	// up in proxy logs and browser history, so the plaintext does not go back
+	// out even to the caller that just supplied it.
+	writeJSON(w, http.StatusOK, redactSharedSecret(sec))
 }
 
 func (s *Server) handleDeleteSharedSecret(w http.ResponseWriter, r *http.Request) {
