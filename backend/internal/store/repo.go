@@ -191,11 +191,12 @@ func (s *Store) CreateInstance(ctx context.Context, in *protocol.Instance) error
 	override, _ := json.Marshal(in.Override)
 	egress, _ := json.Marshal(in.Egress)
 	labels, _ := json.Marshal(orEmptyMap(in.Labels))
+	tools, _ := json.Marshal(in.PreinstalledTools)
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO instances(id,name,owner_id,tier,driver,state,runtime_id,profile,override,
+		`INSERT INTO instances(id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
              vnc_url,stream_url,agentd_url,egress,shell_access,labels,last_error,created_at,updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-		in.ID, in.Name, in.OwnerID, string(in.Tier), string(in.Driver), string(in.State), in.Runtime,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		in.ID, in.Name, in.OwnerID, in.ArchetypeID, in.SystemPrompt, string(tools), string(in.Tier), string(in.Driver), string(in.State), in.Runtime,
 		profile, override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, labels,
 		in.LastError, in.CreatedAt, in.UpdatedAt)
 	return norm(err)
@@ -206,14 +207,15 @@ func (s *Store) UpdateInstance(ctx context.Context, in *protocol.Instance) error
 	override, _ := json.Marshal(in.Override)
 	egress, _ := json.Marshal(in.Egress)
 	labels, _ := json.Marshal(orEmptyMap(in.Labels))
+	tools, _ := json.Marshal(in.PreinstalledTools)
 	in.UpdatedAt = time.Now().UTC()
 	_, err := s.pool.Exec(ctx,
 		`UPDATE instances SET name=$2,tier=$3,driver=$4,state=$5,runtime_id=$6,profile=$7,override=$8,
              vnc_url=$9,stream_url=$10,agentd_url=$11,egress=$12,shell_access=$13,labels=$14,
-             last_error=$15,updated_at=$16 WHERE id=$1`,
+             last_error=$15,archetype_id=$16,system_prompt=$17,preinstalled_tools=$18,updated_at=$19 WHERE id=$1`,
 		in.ID, in.Name, string(in.Tier), string(in.Driver), string(in.State), in.Runtime, profile,
 		override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, labels,
-		in.LastError, in.UpdatedAt)
+		in.LastError, in.ArchetypeID, in.SystemPrompt, string(tools), in.UpdatedAt)
 	return norm(err)
 }
 
@@ -261,7 +263,7 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 	return norm(err)
 }
 
-const instanceSelect = `SELECT id,name,owner_id,tier,driver,state,runtime_id,profile,override,
+const instanceSelect = `SELECT id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
     vnc_url,stream_url,agentd_url,egress,shell_access,labels,last_error,created_at,updated_at FROM instances`
 
 func scanInstances(rows interface {
@@ -272,12 +274,22 @@ func scanInstances(rows interface {
 	out := []protocol.Instance{}
 	for rows.Next() {
 		var in protocol.Instance
+		var archID, sysPrompt, toolsStr *string
 		var tier, driver, state string
 		var profile, override, egress, labels []byte
-		if err := rows.Scan(&in.ID, &in.Name, &in.OwnerID, &tier, &driver, &state, &in.Runtime,
+		if err := rows.Scan(&in.ID, &in.Name, &in.OwnerID, &archID, &sysPrompt, &toolsStr, &tier, &driver, &state, &in.Runtime,
 			&profile, &override, &in.VNCURL, &in.StreamURL, &in.AgentdURL, &egress,
 			&in.ShellAccess, &labels, &in.LastError, &in.CreatedAt, &in.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if archID != nil {
+			in.ArchetypeID = *archID
+		}
+		if sysPrompt != nil {
+			in.SystemPrompt = *sysPrompt
+		}
+		if toolsStr != nil && *toolsStr != "" {
+			_ = json.Unmarshal([]byte(*toolsStr), &in.PreinstalledTools)
 		}
 		in.Tier, in.Driver, in.State = protocol.Tier(tier), protocol.Driver(driver), protocol.InstanceState(state)
 		_ = json.Unmarshal(profile, &in.Profile)

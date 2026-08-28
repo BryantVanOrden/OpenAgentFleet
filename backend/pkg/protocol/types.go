@@ -62,24 +62,27 @@ const (
 
 // Instance is one sandboxed operating system.
 type Instance struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	OwnerID     string            `json:"owner_id"`
-	Tier        Tier              `json:"tier"`
-	Driver      Driver            `json:"driver"`
-	State       InstanceState     `json:"state"`
-	Runtime     string            `json:"runtime_id,omitempty"` // container or domain id
-	Profile     TierProfile       `json:"profile"`
-	Override    *ResourceOverride `json:"override,omitempty"`
-	VNCURL      string            `json:"vnc_url,omitempty"`
-	StreamURL   string            `json:"stream_url,omitempty"` // WebRTC signalling
-	AgentdURL   string            `json:"agentd_url,omitempty"` // internal only
-	Egress      EgressPolicy      `json:"egress"`
-	ShellAccess bool              `json:"shell_access"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	LastError   string            `json:"last_error,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	OwnerID           string            `json:"owner_id"`
+	ArchetypeID       string            `json:"archetype_id,omitempty"` // bot archetype template id
+	SystemPrompt      string            `json:"system_prompt,omitempty"`// specialized persona instructions
+	PreinstalledTools []string          `json:"preinstalled_tools,omitempty"`
+	Tier              Tier              `json:"tier"`
+	Driver            Driver            `json:"driver"`
+	State             InstanceState     `json:"state"`
+	Runtime           string            `json:"runtime_id,omitempty"` // container or domain id
+	Profile           TierProfile       `json:"profile"`
+	Override          *ResourceOverride `json:"override,omitempty"`
+	VNCURL            string            `json:"vnc_url,omitempty"`
+	StreamURL         string            `json:"stream_url,omitempty"` // WebRTC signalling
+	AgentdURL         string            `json:"agentd_url,omitempty"` // internal only
+	Egress            EgressPolicy      `json:"egress"`
+	ShellAccess       bool              `json:"shell_access"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	LastError         string            `json:"last_error,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
 // EgressPolicy constrains what the sandbox may talk to. An empty Allow list

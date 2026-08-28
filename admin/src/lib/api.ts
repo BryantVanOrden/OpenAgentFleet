@@ -23,6 +23,23 @@ export interface TierProfile {
   shm_mb: number;
 }
 
+export interface BotTemplate {
+  id: string;
+  name: string;
+  tagline: string;
+  category: string;
+  icon: string;
+  recommended_tier: Tier;
+  vcpu: number;
+  memory_mb: number;
+  disk_gb: number;
+  gpu: boolean;
+  preinstalled_tools: string[];
+  preinstalled_repos?: string[];
+  specialized_prompt: string;
+  default_environment?: Record<string, string>;
+}
+
 export interface EgressPolicy {
   allow?: string[];
   deny?: string[];
@@ -32,6 +49,9 @@ export interface EgressPolicy {
 export interface Instance {
   id: string;
   name: string;
+  archetype_id?: string;
+  system_prompt?: string;
+  preinstalled_tools?: string[];
   tier: Tier;
   driver: string;
   state: InstanceState;
@@ -228,10 +248,15 @@ export const api = {
   me: () => get<User>("/api/me"),
 
   tiers: () => get<TierProfile[]>("/api/tiers"),
+  templates: () => get<BotTemplate[]>("/api/templates"),
+  template: (id: string) => get<BotTemplate>(`/api/templates/${id}`),
   instances: () => get<Instance[]>("/api/instances"),
   instance: (id: string) => get<Instance>(`/api/instances/${id}`),
   createInstance: (body: {
     name: string;
+    archetype_id?: string;
+    system_prompt?: string;
+    preinstalled_tools?: string[];
     tier: Tier;
     override?: Record<string, unknown>;
     egress: EgressPolicy;

@@ -64,6 +64,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/me", auth(roleAny, s.handleMe))
 
 	mux.Handle("GET /api/tiers", auth(roleAny, s.handleTiers))
+	mux.Handle("GET /api/templates", auth(roleAny, s.handleListTemplates))
+	mux.Handle("GET /api/templates/{id}", auth(roleAny, s.handleGetTemplate))
 	mux.Handle("GET /api/instances", auth(roleAny, s.handleListInstances))
 	mux.Handle("POST /api/instances", auth(roleOperator, s.handleCreateInstance))
 	mux.Handle("GET /api/instances/{id}", auth(roleAny, s.handleGetInstance))

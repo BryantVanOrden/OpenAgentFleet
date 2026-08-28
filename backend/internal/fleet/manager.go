@@ -55,13 +55,16 @@ func (m *Manager) Tiers() []protocol.TierProfile { return m.tiers }
 
 // CreateRequest is what the API hands to the manager.
 type CreateRequest struct {
-	Name        string                     `json:"name"`
-	Tier        protocol.Tier              `json:"tier"`
-	Override    *protocol.ResourceOverride `json:"override,omitempty"`
-	Egress      protocol.EgressPolicy      `json:"egress"`
-	ShellAccess bool                       `json:"shell_access"`
-	Labels      map[string]string          `json:"labels,omitempty"`
-	OwnerID     string                     `json:"-"`
+	Name              string                     `json:"name"`
+	ArchetypeID       string                     `json:"archetype_id,omitempty"`
+	SystemPrompt      string                     `json:"system_prompt,omitempty"`
+	PreinstalledTools []string                   `json:"preinstalled_tools,omitempty"`
+	Tier              protocol.Tier              `json:"tier"`
+	Override          *protocol.ResourceOverride `json:"override,omitempty"`
+	Egress            protocol.EgressPolicy      `json:"egress"`
+	ShellAccess       bool                       `json:"shell_access"`
+	Labels            map[string]string          `json:"labels,omitempty"`
+	OwnerID           string                     `json:"-"`
 }
 
 // Create provisions a sandbox and blocks until its agent daemon answers, so the
@@ -86,19 +89,22 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		name = "agent-" + id[:8]
 	}
 	inst := &protocol.Instance{
-		ID:          id,
-		Name:        name,
-		OwnerID:     req.OwnerID,
-		Tier:        profile.Name,
-		Driver:      profile.Driver,
-		State:       protocol.InstanceProvisioning,
-		Profile:     profile,
-		Override:    req.Override,
-		Egress:      req.Egress,
-		ShellAccess: req.ShellAccess && m.cfg.AllowShell,
-		Labels:      req.Labels,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		ID:                id,
+		Name:              name,
+		OwnerID:           req.OwnerID,
+		ArchetypeID:       req.ArchetypeID,
+		SystemPrompt:      req.SystemPrompt,
+		PreinstalledTools: req.PreinstalledTools,
+		Tier:              profile.Name,
+		Driver:            profile.Driver,
+		State:             protocol.InstanceProvisioning,
+		Profile:           profile,
+		Override:          req.Override,
+		Egress:            req.Egress,
+		ShellAccess:       req.ShellAccess && m.cfg.AllowShell,
+		Labels:            req.Labels,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
 	}
 	if err := m.db.CreateInstance(ctx, inst); err != nil {
 		return nil, err

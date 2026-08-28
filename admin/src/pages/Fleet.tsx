@@ -30,6 +30,7 @@ import {
   inputClass,
 } from "../components/ui";
 import QuickLaunch from "../components/QuickLaunch";
+import BotCatalogModal from "../components/BotCatalogModal";
 
 export default function Fleet() {
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -37,6 +38,7 @@ export default function Fleet() {
   const [tiers, setTiers] = useState<TierProfile[]>([]);
   const [creating, setCreating] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [liveTasks, setLiveTasks] = useState<Record<string, Task>>({});
@@ -139,7 +141,10 @@ export default function Fleet() {
             Sandboxed operating systems, their hardware envelope and what is driving them.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setShowCatalog(true)} className="gap-1.5">
+            🤖 Bot Catalog
+          </Button>
           <Button onClick={() => setCreating(true)}>Provision empty machine</Button>
           <Button variant="primary" onClick={() => setLaunching(true)}>
             ⚡ Launch an agent
@@ -159,11 +164,16 @@ export default function Fleet() {
       {instances.length === 0 ? (
         <Empty
           title="No machines yet"
-          hint="Describe a task and the console will provision a machine, wait for the desktop, and put an agent on it — one step. Provision an empty machine instead if you want to drive it yourself or record a demonstration first."
+          hint="Describe a task or pick a pre-configured bot archetype from the catalog to provision a specialized machine with tools and persona pre-installed."
           action={
-            <Button variant="primary" onClick={() => setLaunching(true)}>
-              ⚡ Launch your first agent
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => setShowCatalog(true)}>
+                🤖 Explore Bot Catalog
+              </Button>
+              <Button variant="primary" onClick={() => setLaunching(true)}>
+                ⚡ Launch an agent
+              </Button>
+            </div>
           }
         />
       ) : (
@@ -182,6 +192,12 @@ export default function Fleet() {
           ))}
         </div>
       )}
+
+      <BotCatalogModal
+        open={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        onDeployed={() => void load()}
+      />
 
       <QuickLaunch
         open={launching}
@@ -236,12 +252,19 @@ function InstanceCard({
 
       <div className="flex items-start justify-between gap-3 p-4">
         <div className="min-w-0">
-          <Link
-            to={`/instances/${instance.id}`}
-            className="block truncate font-medium hover:text-live-500"
-          >
-            {instance.name}
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/instances/${instance.id}`}
+              className="block truncate font-medium hover:text-live-500"
+            >
+              {instance.name}
+            </Link>
+            {instance.archetype_id && (
+              <span className="rounded bg-sky-500/15 text-sky-400 px-1.5 py-0.2 font-mono text-[10px] ring-1 ring-sky-500/30">
+                {instance.archetype_id}
+              </span>
+            )}
+          </div>
           <div className="mt-0.5 text-xs text-ink-400">
             {instance.tier} · {instance.profile.vcpu} vCPU ·{" "}
             {(instance.profile.memory_mb / 1024).toFixed(0)} GB

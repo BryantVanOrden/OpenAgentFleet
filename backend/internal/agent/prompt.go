@@ -87,8 +87,16 @@ func buildSystem(inst *protocol.Instance, mounted map[string]protocol.MountedToo
 	if len(inst.Egress.Allow) > 0 {
 		fmt.Fprintf(&sb, "- network: only these hosts are reachable: %s\n", strings.Join(inst.Egress.Allow, ", "))
 	}
-	if inst.Egress.BlockLocal {
-		sb.WriteString("- network: private/internal addresses are blocked\n")
+	if inst.ArchetypeID != "" {
+		fmt.Fprintf(&sb, "- archetype: %s\n", inst.ArchetypeID)
+	}
+	if len(inst.PreinstalledTools) > 0 {
+		fmt.Fprintf(&sb, "- preinstalled tools: %s\n", strings.Join(inst.PreinstalledTools, ", "))
+	}
+	if strings.TrimSpace(inst.SystemPrompt) != "" {
+		sb.WriteString("\nSpecialized Bot Persona & Guidelines:\n")
+		sb.WriteString(strings.TrimSpace(inst.SystemPrompt))
+		sb.WriteString("\n")
 	}
 
 	if len(mounted) > 0 {

@@ -37,6 +37,21 @@
 * 🔐 **Cryptographic Credential Vault**: AES-256-GCM sealed credential storage. Secrets are never exposed in prompts or audit logs and are injected strictly at runtime into unprivileged sandbox tmpfs keyrings.
 * 🌐 **Universal Model Fallback Chain**: Works out-of-the-box with local vision models (Ollama / `qwen2.5vl:7b`), OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible gateway (vLLM, LiteLLM) configured as a resilient fallback chain.
 
+## Pre-Configured Bot Archetypes
+
+AgentFleet includes 8 out-of-the-box, role-specialized agent personas equipped with domain tools, repos, and tailored prompts:
+
+| Archetype | Icon | Category | Recommended Hardware | Pre-installed Tooling & Repos |
+| :--- | :---: | :--- | :--- | :--- |
+| **CyberSec PenTester** | 🛡️ | Security | `standard` (4 vCPU, 8 GB) | `nmap`, `wireshark`, `ffuf`, `metasploit`, `ghidra`, `semgrep`, `sqlmap`, `burpsuite` |
+| **Full-Stack Developer** | 💻 | Engineering | `developer-heavy` (8 vCPU, 16 GB) | VS Code, Node/Bun/pnpm, Go, Python, Rust, Docker CLI, PostgreSQL, Playwright |
+| **QA & UI/UX Auditor** | 🎨 | QA & Design | `standard` (4 vCPU, 8 GB) | Playwright, Cypress, Lighthouse CI, Pa11y, Axe-Core, GIMP, Figma Web |
+| **Game Dev & 3D Engine** | 🎮 | Gaming & 3D | `developer-heavy` (8 vCPU, 32 GB, GPU) | Godot Engine 4, Blender 3D, Aseprite, Pygame, GLTF validator, Shader compiler |
+| **Social Media & Growth** | 📱 | Marketing | `micro` (2 vCPU, 4 GB) | Chromium Multi-Profile, Postiz/Buffer CLI, Photopea, FFmpeg Short-Clipper |
+| **Media Studio & Video** | 🎬 | Creative | `power-user` (8 vCPU, 24 GB, GPU) | FFmpeg, Kdenlive, Audacity, Whisper AI Transcriber, ImageMagick, ComfyUI |
+| **Agentic CRM (Comp AI)** | 🤝 | Sales & CRM | `standard` (4 vCPU, 8 GB) | Comp AI CRM (`trycompai/crm`), PostgreSQL, Email Drafting Engine, Lead Enrichment API |
+| **Data Scientist & Quant** | 📈 | Data & Finance | `developer-heavy` (8 vCPU, 16 GB) | JupyterLab, Polars, DuckDB, Pandas, yfinance, Plotly, SciPy, Quarto |
+
 ---
 
 ## Hardware Profiles & Isolation Tiers
