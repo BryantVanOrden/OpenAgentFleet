@@ -22,13 +22,13 @@ class AlertsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Alerts')),
       body: alerts.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('$err', style: const TextStyle(color: Fleet.bad))),
+        error: (err, _) => Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
         data: (list) {
           final blocking = list.where((a) => a.isOpen).toList();
           final history = list.where((a) => !a.isOpen).toList();
 
           if (list.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Column(
@@ -54,7 +54,7 @@ class AlertsScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
                 if (blocking.isNotEmpty) ...[
-                  const _SectionLabel('Waiting on you', color: Fleet.warn),
+                  _SectionLabel('Waiting on you', color: Fleet.warn),
                   for (final a in blocking) _AlertCard(alert: a),
                   const SizedBox(height: 20),
                 ],
@@ -72,9 +72,13 @@ class AlertsScreen extends ConsumerWidget {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text, {this.color = Fleet.ink400});
+  const _SectionLabel(this.text, {this.color});
   final String text;
-  final Color color;
+
+  /// Null means "the default muted tone", resolved from the theme at build
+  /// time — a palette colour cannot be a default parameter value because those
+  /// must be compile-time constants.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -82,7 +86,7 @@ class _SectionLabel extends StatelessWidget {
         child: Text(
           text.toUpperCase(),
           style: TextStyle(
-            color: color,
+            color: color ?? FleetColors.of(context).ink400,
             fontSize: 11,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
@@ -153,7 +157,7 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   ),
                   Text(
                     humanAgo(alert.createdAt),
-                    style: const TextStyle(color: Fleet.ink400, fontSize: 11),
+                    style: TextStyle(color: Fleet.ink400, fontSize: 11),
                   ),
                 ],
               ),
@@ -173,7 +177,7 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
               ],
 
               const SizedBox(height: 10),
-              Text(alert.body, style: const TextStyle(color: Fleet.ink300, fontSize: 13)),
+              Text(alert.body, style: TextStyle(color: Fleet.ink300, fontSize: 13)),
 
               if (alert.reply.isNotEmpty) ...[
                 const SizedBox(height: 10),
@@ -186,7 +190,7 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   ),
                   child: Text(
                     'You replied: ${alert.reply}',
-                    style: const TextStyle(color: Fleet.ink300, fontSize: 12),
+                    style: TextStyle(color: Fleet.ink300, fontSize: 12),
                   ),
                 ),
               ],

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../auth/login_screen.dart';
+import 'theme_card.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -18,6 +19,9 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const ThemeCard(),
+          const SizedBox(height: 12),
+
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -46,7 +50,7 @@ class SettingsScreen extends ConsumerWidget {
                 children: [
                   const Text('Notifications', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'This device is registered for push when the app has a Firebase '
                     'configuration. Critical alerts — an agent stuck on a CAPTCHA or an MFA '
                     'prompt — are sent time-sensitive so they surface through Focus and Do Not '
@@ -67,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
                 children: [
                   const Text('What this app can do', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Watch instances, answer agents that are blocked, take over a desktop, and '
                     'start or stop runs.\n\n'
                     'Provisioning, recording skills, model configuration and access control live '
@@ -84,7 +88,7 @@ class SettingsScreen extends ConsumerWidget {
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: Fleet.bad,
-              side: const BorderSide(color: Fleet.bad),
+              side: BorderSide(color: Fleet.bad),
             ),
             onPressed: () async {
               await api.logout();
@@ -119,7 +123,7 @@ class _Row extends StatelessWidget {
           children: [
             SizedBox(
               width: 110,
-              child: Text(label, style: const TextStyle(color: Fleet.ink400, fontSize: 13)),
+              child: Text(label, style: TextStyle(color: Fleet.ink400, fontSize: 13)),
             ),
             Expanded(
               child: Text(

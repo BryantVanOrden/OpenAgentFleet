@@ -47,7 +47,7 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
             Text(instance.name, overflow: TextOverflow.ellipsis),
             Text(
               '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
-              style: const TextStyle(fontSize: 11, color: Fleet.ink400),
+              style: TextStyle(fontSize: 11, color: Fleet.ink400),
             ),
           ],
         ),
@@ -195,7 +195,7 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
       return Center(
         child: Text(
           'This instance is ${widget.instance.state}.',
-          style: const TextStyle(color: Fleet.ink400),
+          style: TextStyle(color: Fleet.ink400),
         ),
       );
     }
@@ -215,7 +215,7 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                           child: Text(
                             _error!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Fleet.bad, fontSize: 13),
+                            style: TextStyle(color: Fleet.bad, fontSize: 13),
                           ),
                         ),
                       )
@@ -278,10 +278,10 @@ class _ActivityTab extends ConsumerWidget {
 
     return tasks.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) => Center(child: Text('$err', style: const TextStyle(color: Fleet.bad))),
+      error: (err, _) => Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
       data: (list) {
         if (list.isEmpty) {
-          return const Center(
+          return Center(
             child: Text('Nothing has run here yet.', style: TextStyle(color: Fleet.ink400)),
           );
         }
@@ -309,15 +309,15 @@ class _ActivityTab extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Text(
                       'step ${task.step}/${task.maxSteps} · ${humanAgo(task.createdAt)}',
-                      style: const TextStyle(color: Fleet.ink400, fontSize: 11),
+                      style: TextStyle(color: Fleet.ink400, fontSize: 11),
                     ),
                     if (task.error.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(task.error, style: const TextStyle(color: Fleet.bad, fontSize: 12)),
+                      Text(task.error, style: TextStyle(color: Fleet.bad, fontSize: 12)),
                     ],
                     if (task.result.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(task.result, style: const TextStyle(color: Fleet.good, fontSize: 12)),
+                      Text(task.result, style: TextStyle(color: Fleet.good, fontSize: 12)),
                     ],
                     if (task.isLive) ...[
                       const SizedBox(height: 10),

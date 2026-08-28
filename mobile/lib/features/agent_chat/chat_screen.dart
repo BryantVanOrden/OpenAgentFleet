@@ -45,7 +45,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           title: const Text('Run as a task?'),
           content: Text(
             'The agent will start acting on this machine straight away:\n\n"$text"',
-            style: const TextStyle(color: Fleet.ink300),
+            style: TextStyle(color: Fleet.ink300),
           ),
           actions: [
             TextButton(
@@ -86,10 +86,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           child: messages.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, _) =>
-                Center(child: Text('$err', style: const TextStyle(color: Fleet.bad))),
+                Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
             data: (list) {
               if (list.isEmpty) {
-                return const Center(
+                return Center(
                   child: Padding(
                     padding: EdgeInsets.all(32),
                     child: Text(
@@ -124,7 +124,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           top: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: Fleet.ink900,
               border: Border(top: BorderSide(color: Fleet.ink800)),
             ),
@@ -205,7 +205,7 @@ class _Bubble extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     humanAgo(message.createdAt),
-                    style: const TextStyle(color: Fleet.ink400, fontSize: 10),
+                    style: TextStyle(color: Fleet.ink400, fontSize: 10),
                   ),
                 ],
               ),

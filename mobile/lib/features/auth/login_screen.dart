@@ -81,7 +81,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: Fleet.live,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Center(
+                      child: Center(
                         child: Text(
                           'AF',
                           style: TextStyle(
@@ -100,7 +100,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Watch, talk to, and take over your agents.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Fleet.ink400),
@@ -140,7 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Fleet.bad.withValues(alpha: 0.25)),
                       ),
-                      child: Text(_error!, style: const TextStyle(color: Fleet.bad)),
+                      child: Text(_error!, style: TextStyle(color: Fleet.bad)),
                     ),
                   ],
 
@@ -156,7 +156,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : const Text('Sign in'),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     'On an Android emulator, 10.0.2.2 is the host machine.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Fleet.ink400, fontSize: 12),

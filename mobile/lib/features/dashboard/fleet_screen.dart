@@ -36,7 +36,7 @@ class FleetScreen extends ConsumerWidget {
                 const SizedBox(width: 6),
                 Text(
                   connected ? 'live' : 'offline',
-                  style: const TextStyle(color: Fleet.ink400, fontSize: 12),
+                  style: TextStyle(color: Fleet.ink400, fontSize: 12),
                 ),
               ],
             ),
@@ -119,7 +119,7 @@ class _InstanceCard extends ConsumerWidget {
                           '${instance.tier} · ${instance.profile.vcpu.toStringAsFixed(0)} vCPU · '
                           '${(instance.profile.memoryMb / 1024).toStringAsFixed(0)} GB'
                           '${instance.profile.gpu ? " · GPU" : ""}',
-                          style: const TextStyle(color: Fleet.ink400, fontSize: 12),
+                          style: TextStyle(color: Fleet.ink400, fontSize: 12),
                         ),
                       ],
                     ),
@@ -139,7 +139,7 @@ class _InstanceCard extends ConsumerWidget {
                   ),
                   child: Text(
                     instance.lastError,
-                    style: const TextStyle(color: Fleet.bad, fontSize: 12),
+                    style: TextStyle(color: Fleet.bad, fontSize: 12),
                   ),
                 ),
               ],
@@ -184,7 +184,7 @@ class _InstanceCard extends ConsumerWidget {
                             ),
                             Text(
                               'step ${live.step}/${live.maxSteps} · ${humanAgo(live.createdAt)}',
-                              style: const TextStyle(color: Fleet.ink400, fontSize: 11),
+                              style: TextStyle(color: Fleet.ink400, fontSize: 11),
                             ),
                           ],
                         ),
@@ -222,11 +222,11 @@ class _Meter extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(label, style: const TextStyle(color: Fleet.ink400, fontSize: 11)),
+            Text(label, style: TextStyle(color: Fleet.ink400, fontSize: 11)),
             const Spacer(),
             Text(
               trailing ?? '${(fraction * 100).toStringAsFixed(0)}%',
-              style: const TextStyle(
+              style: TextStyle(
                 color: Fleet.ink300,
                 fontSize: 11,
                 fontFeatures: [FontFeature.tabularFigures()],
@@ -254,7 +254,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
         padding: EdgeInsets.all(32),
         child: Column(
@@ -291,12 +291,12 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_outlined, size: 44, color: Fleet.bad),
+            Icon(Icons.cloud_off_outlined, size: 44, color: Fleet.bad),
             const SizedBox(height: 14),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Fleet.ink300, fontSize: 13),
+              style: TextStyle(color: Fleet.ink300, fontSize: 13),
             ),
             const SizedBox(height: 18),
             OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
