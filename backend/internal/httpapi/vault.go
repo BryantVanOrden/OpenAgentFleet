@@ -4,15 +4,50 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
 // ------------------------------------------------------------- Shared Secrets ---
 
+// sharedSecretView is the API projection of a shared fleet secret. It carries
+// the metadata and deliberately omits the value, mirroring Vault.Refs ("lists
+// secret names and notes — never values").
+//
+// This matters because GET /api/vault/secrets is gated at roleAny, which
+// includes the read-only auditor role. Returning protocol.SharedSecret directly
+// handed every caller the plaintext of every fleet credential. Consumers that
+// legitimately need a value resolve it in-process through
+// vault.GlobalBus.GetSecret; it is never sent over the wire.
+type sharedSecretView struct {
+	Key       string    `json:"key"`
+	Scope     string    `json:"scope"`
+	Note      string    `json:"note,omitempty"`
+	CreatedBy string    `json:"created_by,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+	HasValue  bool      `json:"has_value"`
+}
+
+func redactSharedSecret(sec protocol.SharedSecret) sharedSecretView {
+	return sharedSecretView{
+		Key:       sec.Key,
+		Scope:     sec.Scope,
+		Note:      sec.Note,
+		CreatedBy: sec.CreatedBy,
+		UpdatedAt: sec.UpdatedAt,
+		HasValue:  sec.Value != "",
+	}
+}
+
 func (s *Server) handleListSharedSecrets(w http.ResponseWriter, r *http.Request) {
 	list := vault.GlobalBus.ListSecrets(r.Context())
-	writeJSON(w, http.StatusOK, list)
+	out := make([]sharedSecretView, 0, len(list))
+	for _, sec := range list {
+		out = append(out, redactSharedSecret(sec))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type PutSharedSecretReq struct {
