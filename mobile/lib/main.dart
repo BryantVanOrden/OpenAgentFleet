@@ -13,6 +13,7 @@ import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/swarms/swarms_screen.dart';
+import 'features/vault/vault_screen.dart';
 import 'features/voice/voice_screen.dart';
 
 Future<void> main() async {
@@ -108,6 +109,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         children: const [
           FleetScreen(),
           SwarmsScreen(),
+          VaultScreen(),
           VoiceScreen(),
           AlertsScreen(),
           SettingsScreen(),
@@ -126,6 +128,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             icon: Icon(Icons.hub_outlined),
             selectedIcon: Icon(Icons.hub_rounded),
             label: 'Swarms',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.lock_outline),
+            selectedIcon: Icon(Icons.lock_rounded),
+            label: 'Vault',
           ),
           const NavigationDestination(
             icon: Icon(Icons.mic_none_outlined),

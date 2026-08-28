@@ -144,6 +144,66 @@ class ApiClient {
         .toList();
   }
 
+  Future<void> startRecording(String instanceId, String name) =>
+      _post('/api/instances/$instanceId/record/start', {'name': name});
+
+  Future<Skill> stopRecording(String instanceId) async {
+    final data = await _post('/api/instances/$instanceId/record/stop') as Map;
+    return Skill.fromJson(data.cast<String, dynamic>());
+  }
+
+  // -------------------------------------------------------- vault & comms ---
+
+  Future<List<SharedSecret>> sharedSecrets() async {
+    final data = await _get('/api/vault/secrets') as List;
+    return data.map((e) => SharedSecret.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<SharedSecret> putSharedSecret({
+    required String key,
+    required String value,
+    String scope = 'fleet',
+    String note = '',
+  }) async {
+    final data = await _post('/api/vault/secrets', {
+      'key': key,
+      'value': value,
+      'scope': scope,
+      'note': note,
+    }) as Map;
+    return SharedSecret.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteSharedSecret(String key) =>
+      _dio.delete('/api/vault/secrets/${Uri.encodeComponent(key)}');
+
+  Future<List<SharedSession>> sharedSessions({String? domain}) async {
+    final data = await _get('/api/vault/sessions',
+        query: domain == null ? null : {'domain': domain}) as List;
+    return data.map((e) => SharedSession.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<List<PeerMessage>> peerMessages({String? instanceId}) async {
+    final data = await _get('/api/vault/comms',
+        query: instanceId == null ? null : {'instance_id': instanceId}) as List;
+    return data.map((e) => PeerMessage.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<PeerMessage> sendPeerMessage({
+    required String content,
+    String fromInstanceName = 'Mobile Operator',
+    String toInstanceId = 'broadcast',
+    String kind = 'message',
+  }) async {
+    final data = await _post('/api/vault/comms', {
+      'content': content,
+      'from_instance_name': fromInstanceName,
+      'to_instance_id': toInstanceId,
+      'kind': kind,
+    }) as Map;
+    return PeerMessage.fromJson(data.cast<String, dynamic>());
+  }
+
   // ---------------------------------------------------------------- alerts ---
 
   Future<List<Alert>> alerts({bool openOnly = false}) async {

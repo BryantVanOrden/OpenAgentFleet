@@ -167,6 +167,7 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   String? _frame;
   bool _loading = false;
   String? _error;
+  bool _recording = false;
   WebViewController? _webView;
 
   @override
@@ -190,13 +191,6 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     }
   }
 
-  /// Whether an embedded web view exists on this platform.
-  ///
-  /// `webview_flutter` ships implementations for Android, iOS and macOS only.
-  /// On the Linux and Windows desktop builds the plugin compiles but throws at
-  /// run time, so the interactive stream is hidden there rather than offered
-  /// and then failing. Single-frame mode uses `Image.memory` and works
-  /// everywhere, which is why it is the fallback rather than an error screen.
   static bool get _canEmbedWebView =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
@@ -212,6 +206,75 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     });
   }
 
+  Future<void> _toggleRecording() async {
+    final api = ref.read(apiProvider);
+    if (_recording) {
+      try {
+        final skill = await api.stopRecording(widget.instance.id);
+        setState(() => _recording = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Compiled demonstration into skill: "${skill.name}" (${skill.stepCount} steps)!'),
+              backgroundColor: Fleet.live,
+            ),
+          );
+        }
+      } catch (err) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $err'), backgroundColor: Fleet.bad),
+          );
+        }
+      }
+    } else {
+      final ctrl = TextEditingController();
+      final name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('🎬 Record Demonstration'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'e.g. Export CRM Invoices to PDF',
+              labelText: 'What task is this teaching the AI?',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Start Recording'),
+            ),
+          ],
+        ),
+      );
+
+      if (name != null && name.isNotEmpty) {
+        try {
+          await api.startRecording(widget.instance.id, name);
+          setState(() => _recording = true);
+          if (!_streaming && _canEmbedWebView) _startStream();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('🔴 Recording started. Interact with desktop now.')),
+            );
+          }
+        } catch (err) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $err'), backgroundColor: Fleet.bad),
+            );
+          }
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.instance.isRunning) {
@@ -225,6 +288,39 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
 
     return Column(
       children: [
+        if (_recording)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Fleet.bad.withValues(alpha: 0.2),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Fleet.bad,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '🔴 Recording Actions for AI...',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _toggleRecording,
+                  icon: const Icon(Icons.stop, size: 16, color: Colors.white),
+                  label: const Text('Stop & Compile', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Fleet.bad,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: Container(
             color: Colors.black,
@@ -258,39 +354,50 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _loading
-                        ? null
-                        : () {
-                            setState(() => _streaming = false);
-                            _loadFrame();
-                          },
-                    icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                    label: Text(_streaming ? 'Single frame' : 'Refresh frame'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Tooltip(
-                    message: _canEmbedWebView
-                        ? 'Drive the desktop directly'
-                        : 'Interactive takeover needs an embedded browser, which '
-                            'this platform does not provide. Use the web console, '
-                            'or refresh the frame to keep watching.',
-                    child: FilledButton.icon(
-                      onPressed:
-                          (_streaming || !_canEmbedWebView) ? null : _startStream,
-                      icon: Icon(
-                        _canEmbedWebView
-                            ? Icons.cast_connected
-                            : Icons.desktop_access_disabled_outlined,
-                        size: 18,
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _loading
+                            ? null
+                            : () {
+                                setState(() => _streaming = false);
+                                _loadFrame();
+                              },
+                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                        label: Text(_streaming ? 'Single frame' : 'Refresh frame'),
                       ),
-                      label: Text(_canEmbedWebView ? 'Take over' : 'Console only'),
                     ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Tooltip(
+                        message: _canEmbedWebView
+                            ? 'Drive the desktop directly'
+                            : 'Interactive takeover needs an embedded browser',
+                        child: FilledButton.icon(
+                          onPressed: (_streaming || !_canEmbedWebView) ? null : _startStream,
+                          icon: Icon(
+                            _canEmbedWebView ? Icons.cast_connected : Icons.desktop_access_disabled_outlined,
+                            size: 18,
+                          ),
+                          label: Text(_canEmbedWebView ? 'Take over' : 'Console only'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _toggleRecording,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _recording ? Fleet.bad : Fleet.ink800,
+                    ),
+                    icon: Icon(_recording ? Icons.stop_circle : Icons.fiber_manual_record, size: 18),
+                    label: Text(_recording ? 'Stop & Compile Demonstration' : '🎬 Teach Bot (Record Demonstration)'),
                   ),
                 ),
               ],

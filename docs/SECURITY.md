@@ -321,7 +321,11 @@ finding from the security review that has not been fixed yet.
 - [ ] TLS terminated in front of the console and the API
 - [ ] `MAX_INSTANCES` sized against real host RAM
 - [ ] `ALLOW_SHELL=false` unless something actually needs to compile — this is
-      the code-execution toggle, covering `python` and dynamic tools as well
+      the code-execution toggle, covering `python`, `mount_tool` and `call_tool`
+      as well as `shell`. Note the shipped default is **true**
+      (`.env.example`, `docker-compose.yml`, and `envBool("ALLOW_SHELL", true)`
+      in `config.go`), so this is something you turn off deliberately, not
+      something that is off until you ask for it.
 - [ ] `block_local` on by default for every instance, and an explicit egress
       policy on any instance you care about: no policy means no filtering
 - [ ] The API not reachable from the internet while `/api/webhooks/{token}` is

@@ -352,8 +352,85 @@ class SwarmTeam {
                 ?.map((a) => SwarmArtifact.fromJson(a as Map<String, dynamic>))
                 .toList() ??
             [],
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
-            DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
+class SharedSecret {
+  SharedSecret({
+    required this.key,
+    required this.value,
+    required this.scope,
+    this.note = '',
+    this.createdBy = '',
+  });
+
+  final String key;
+  final String value;
+  final String scope;
+  final String note;
+  final String createdBy;
+
+  factory SharedSecret.fromJson(Map<String, dynamic> j) => SharedSecret(
+        key: j['key'] as String? ?? '',
+        value: j['value'] as String? ?? '',
+        scope: j['scope'] as String? ?? 'fleet',
+        note: j['note'] as String? ?? '',
+        createdBy: j['created_by'] as String? ?? '',
+      );
+}
+
+class SharedSession {
+  SharedSession({
+    required this.id,
+    required this.domain,
+    required this.title,
+    required this.cookiesJson,
+    this.createdByInstance = '',
+  });
+
+  final String id;
+  final String domain;
+  final String title;
+  final String cookiesJson;
+  final String createdByInstance;
+
+  factory SharedSession.fromJson(Map<String, dynamic> j) => SharedSession(
+        id: j['id'] as String? ?? '',
+        domain: j['domain'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        cookiesJson: j['cookies_json'] as String? ?? '',
+        createdByInstance: j['created_by_instance'] as String? ?? '',
+      );
+}
+
+class PeerMessage {
+  PeerMessage({
+    required this.id,
+    required this.fromInstanceId,
+    required this.fromInstanceName,
+    required this.toInstanceId,
+    required this.kind,
+    required this.content,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String fromInstanceId;
+  final String fromInstanceName;
+  final String toInstanceId;
+  final String kind;
+  final String content;
+  final DateTime createdAt;
+
+  factory PeerMessage.fromJson(Map<String, dynamic> j) => PeerMessage(
+        id: j['id'] as String? ?? '',
+        fromInstanceId: j['from_instance_id'] as String? ?? '',
+        fromInstanceName: j['from_instance_name'] as String? ?? '',
+        toInstanceId: j['to_instance_id'] as String? ?? 'broadcast',
+        kind: j['kind'] as String? ?? 'message',
+        content: j['content'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
       );
 }
 
