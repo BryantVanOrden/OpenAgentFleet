@@ -60,6 +60,51 @@ AgentFleet includes 10 out-of-the-box, role-specialized agent personas equipped 
 
 ---
 
+## 🐍 Python SDK & `fleetctl` CLI
+
+AgentFleet includes a pip-installable Python client SDK and command-line utility:
+
+```bash
+pip install agentfleet
+```
+
+### Programmatic Python Usage:
+```python
+from agentfleet import FleetClient
+
+# Connect to orchestrator
+fleet = FleetClient("http://localhost:8080", token="your-api-token")
+
+# Deploy bot archetype and run goal
+bot = fleet.deploy_bot("cyber_ops", name="security-auditor")
+task = bot.run("Run SAST vulnerability scan and compile CVSS briefing", wait=True)
+print(f"Result: {task.result}")
+
+# Launch multi-agent swarm
+swarm = fleet.launch_swarm("Fintech Audit", "Full-Stack + QA + CyberSec collaborative team")
+
+# Pocket TTS Voice Feedback (6 curated voices, Shadow default)
+fleet.speak("Task execution finished successfully, operator.", voice="shadow")
+```
+
+### Command-Line Utility (`fleetctl`):
+```bash
+# Run comprehensive platform diagnostics
+fleetctl diagnostics
+
+# Deploy specialized bot
+fleetctl deploy --archetype cyber_ops --name "nightly-scanner"
+
+# Run task and stream live execution
+fleetctl run <bot_id> "Refactor backend authentication and run tests" --wait
+
+# Multi-agent swarms & voice synthesis
+fleetctl swarm list
+fleetctl voice speak "All systems operational." --voice shadow
+```
+
+---
+
 ## Hardware Profiles & Isolation Tiers
 
 AgentFleet ships with four pre-configured hardware tiers:
@@ -72,6 +117,55 @@ AgentFleet ships with four pre-configured hardware tiers:
 | `developer-heavy` | 8.0 | 16 GB | 100 GB | Optional | Compiling large codebases, game engines, SWE-bench tasks |
 
 ---
+
+## What it looks like
+
+Real screenshots of the running console — regenerate with `make screenshots`.
+
+<p align="center">
+  <img src="docs/images/fleet-dark-amber.png" alt="Fleet dashboard" width="900">
+</p>
+
+<p align="center"><em>The fleet: every machine, its hardware envelope, and what its agent is doing right now.</em></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/launch-dark-amber.png" alt="Launch an agent"></td>
+    <td width="50%"><img src="docs/images/alerts-dark-amber.png" alt="Resolution centre"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Launch an agent</strong><br><sub>Describe the task; it provisions the machine and starts the agent in one action.</sub></td>
+    <td align="center"><strong>Resolution centre</strong><br><sub>Everything an agent is blocked on, with the screen at the moment it stopped.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/engines-light-blue.png" alt="AI engines"></td>
+    <td width="50%"><img src="docs/images/skills-light-blue.png" alt="Skill timeline editor"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>AI engines</strong><br><sub>An ordered fallback chain across local and cloud providers.</sub></td>
+    <td align="center"><strong>Skill editor</strong><br><sub>Prune a recorded demonstration into the procedure you meant to show.</sub></td>
+  </tr>
+</table>
+
+### Ten themes
+
+Light and dark, each in five accents, switchable without a reload — and carried
+identically into the Flutter companion app.
+
+<table>
+  <tr>
+    <td><img src="docs/images/theme-dark-amber.png" alt="Dark amber"></td>
+    <td><img src="docs/images/theme-dark-blue.png" alt="Dark blue"></td>
+    <td><img src="docs/images/theme-dark-purple.png" alt="Dark purple"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/theme-light-green.png" alt="Light green"></td>
+    <td><img src="docs/images/theme-light-red.png" alt="Light red"></td>
+    <td><img src="docs/images/theme-light-blue.png" alt="Light blue"></td>
+  </tr>
+</table>
+
+More in the [interface gallery](docs/UI.md).
 
 ## Quick Start
 
@@ -155,6 +249,7 @@ make test             # Run Go test suites and React production build
 
 ## In-Depth Documentation
 
+* 🖼️ [**Interface Gallery**](docs/UI.md) — Every screen, all ten themes, and how the theming is built.
 * 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) — Detailed component design, data flow, schema, and networking model.
 * 🔌 [**REST & WebSocket API Reference**](docs/API.md) — Complete endpoint specifications, request/response schemas, and real-time events.
 * 🎓 [**Skills & Continual Refinement**](docs/SKILLS_AND_REFINEMENT.md) — Learn-by-demonstration recorder, AT-SPI compilation, and AI self-healing workflows.
