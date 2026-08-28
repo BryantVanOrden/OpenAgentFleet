@@ -32,11 +32,12 @@ except Exception:
 
 
 class PersistentREPL:
-    """Stateful Python execution environment."""
+    """Stateful Python execution environment with dynamic tool lifecycle."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.state: dict[str, Any] = {}
+        self.mounted_tools: dict[str, dict[str, Any]] = {}
         self.globals: dict[str, Any] = {
             "__name__": "__agentfleet_repl__",
             "__doc__": "AgentFleet Persistent Python REPL",
@@ -49,6 +50,7 @@ class PersistentREPL:
     def reset(self) -> None:
         with self._lock:
             self.state.clear()
+            self.mounted_tools.clear()
             self.globals = {
                 "__name__": "__agentfleet_repl__",
                 "__doc__": "AgentFleet Persistent Python REPL",
@@ -57,6 +59,58 @@ class PersistentREPL:
                 "inject": inject,
                 "state": self.state,
             }
+
+    def mount_tool(
+        self,
+        name: str,
+        description: str,
+        parameters: dict[str, Any] | None,
+        handler_code: str,
+    ) -> tuple[bool, str]:
+        """Dynamically registers a custom tool backed by Python code in the REPL."""
+        if not name or not name.isidentifier():
+            return False, f"invalid tool name: '{name}' (must be a valid Python identifier)"
+
+        ok, out = self.execute(handler_code)
+        if not ok:
+            return False, f"failed to compile tool handler for '{name}': {out}"
+
+        with self._lock:
+            func = self.globals.get(name)
+            if not callable(func):
+                return False, f"tool handler code must define a callable named '{name}'"
+            self.mounted_tools[name] = {
+                "name": name,
+                "description": description or f"Custom tool {name}",
+                "parameters": parameters or {},
+            }
+        return True, f"mounted tool '{name}' successfully"
+
+    def unmount_tool(self, name: str) -> tuple[bool, str]:
+        """Disposes of a previously mounted tool (reversible lifecycle)."""
+        with self._lock:
+            if name in self.mounted_tools:
+                del self.mounted_tools[name]
+                self.globals.pop(name, None)
+                return True, f"unmounted tool '{name}'"
+            return False, f"tool '{name}' was not mounted"
+
+    def call_tool(self, name: str, params: dict[str, Any] | None) -> tuple[bool, str]:
+        """Executes a mounted tool function with given parameters."""
+        with self._lock:
+            if name not in self.mounted_tools:
+                return False, f"tool '{name}' is not mounted"
+            func = self.globals.get(name)
+            if not callable(func):
+                return False, f"mounted tool '{name}' is not callable"
+
+        args = params or {}
+        call_expr = f"{name}(**{repr(args)})"
+        return self.execute(call_expr)
+
+    def list_tools(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self.mounted_tools.values())
 
     def execute(self, code: str, timeout: int = 60) -> tuple[bool, str]:
         """Execute a block of Python code, capturing stdout/stderr and return value."""

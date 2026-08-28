@@ -229,30 +229,45 @@ const (
 	ActShell       ActionKind = "shell"       // gated by Instance.ShellAccess
 	ActPython      ActionKind = "python"      // persistent Python REPL execution in sandbox
 	ActSpawnAgent  ActionKind = "spawn_agent" // recursive sub-agent delegation
+	ActMountTool   ActionKind = "mount_tool"  // dynamically synthesize and register a custom tool
+	ActUnmountTool ActionKind = "unmount_tool"// dispose of a mounted custom tool
+	ActCallTool    ActionKind = "call_tool"   // execute a dynamically mounted custom tool
 	ActAssert      ActionKind = "assert"      // file exists / size / exit code
 	ActAskHuman    ActionKind = "ask_human"   // hand control back to the operator
 	ActDone        ActionKind = "done"
 	ActFail        ActionKind = "fail"
 )
 
+// MountedTool describes an ephemeral custom tool synthesized by the agent.
+type MountedTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+	HandlerCode string         `json:"handler_code,omitempty"`
+}
+
 // Action is the structured decision returned by the model each turn.
 type Action struct {
-	Thought     string            `json:"thought"`
-	Action      ActionKind        `json:"action"`
-	Target      string            `json:"target,omitempty"`      // accessible label / window title
-	Coordinates []int             `json:"coordinates,omitempty"` // [x,y] in desktop pixels
-	To          []int             `json:"to,omitempty"`          // drag destination
-	Text        string            `json:"text,omitempty"`
-	Key         string            `json:"key,omitempty"`         // e.g. "ctrl+shift+p"
-	Code        string            `json:"code,omitempty"`        // for python action
-	SubGoal     string            `json:"sub_goal,omitempty"`    // for spawn_agent action
-	SubSkillID  string            `json:"sub_skill_id,omitempty"`// for spawn_agent action
-	SubParams   map[string]string `json:"sub_params,omitempty"`  // for spawn_agent action
-	WaitChild   bool              `json:"wait_child,omitempty"`  // whether spawn_agent blocks for child
-	Amount      int               `json:"amount,omitempty"`      // scroll clicks / wait seconds
-	Timeout     int               `json:"timeout,omitempty"`     // seconds, for wait_for
-	Question    string            `json:"question,omitempty"`
-	Summary     string            `json:"summary,omitempty"`     // filled on done/fail
+	Thought         string            `json:"thought"`
+	Action          ActionKind        `json:"action"`
+	Target          string            `json:"target,omitempty"`           // accessible label / window title
+	Coordinates     []int             `json:"coordinates,omitempty"`      // [x,y] in desktop pixels
+	To              []int             `json:"to,omitempty"`               // drag destination
+	Text            string            `json:"text,omitempty"`
+	Key             string            `json:"key,omitempty"`              // e.g. "ctrl+shift+p"
+	Code            string            `json:"code,omitempty"`             // for python action
+	SubGoal         string            `json:"sub_goal,omitempty"`         // for spawn_agent action
+	SubSkillID      string            `json:"sub_skill_id,omitempty"`     // for spawn_agent action
+	SubParams       map[string]string `json:"sub_params,omitempty"`       // for spawn_agent action
+	WaitChild       bool              `json:"wait_child,omitempty"`       // whether spawn_agent blocks for child
+	ToolName        string            `json:"tool_name,omitempty"`        // for mount_tool/unmount_tool/call_tool
+	ToolDescription string            `json:"tool_description,omitempty"` // for mount_tool
+	ToolParameters  map[string]any    `json:"tool_parameters,omitempty"`  // for mount_tool/call_tool
+	ToolHandler     string            `json:"tool_handler,omitempty"`     // for mount_tool Python code
+	Amount          int               `json:"amount,omitempty"`           // scroll clicks / wait seconds
+	Timeout         int               `json:"timeout,omitempty"`          // seconds, for wait_for
+	Question        string            `json:"question,omitempty"`
+	Summary         string            `json:"summary,omitempty"`          // filled on done/fail
 }
 
 // StepRecord is one persisted turn of the agent loop, used for audit replay.

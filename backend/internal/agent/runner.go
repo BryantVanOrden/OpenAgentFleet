@@ -148,7 +148,20 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 	}
 
 	sc := NewSandboxClient(inst.AgentdURL)
-	system := buildSystem(inst)
+	mountedTools := map[string]protocol.MountedTool{}
+	defer func() {
+		// Reversible Disposer: unmount any remaining dynamic tools to leave sandbox clean
+		if len(mountedTools) > 0 {
+			cleanCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			for name := range mountedTools {
+				_, _ = sc.Act(cleanCtx, protocol.Action{
+					Action:   protocol.ActUnmountTool,
+					ToolName: name,
+				})
+			}
+		}
+	}()
 
 	task.State = protocol.TaskRunning
 	_ = r.db.UpdateTaskState(ctx, task.ID, protocol.TaskRunning, task.Step, "", "")
@@ -209,7 +222,7 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		obsKey := r.storeObservation(ctx, task, obs)
 
 		resp, err := r.models.Complete(ctx, task.ProviderID, connectors.Request{
-			System:   system,
+			System:   buildSystem(inst, mountedTools),
 			JSONOnly: true,
 			Messages: []connectors.Message{{
 				Role:      connectors.RoleUser,
@@ -249,7 +262,7 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			"step": task.Step, "action": action, "provider": resp.Provider, "model": resp.Model,
 		})
 
-		outcome, terminal := r.execute(ctx, task, inst, sc, action, obs)
+		outcome, terminal := r.execute(ctx, task, inst, sc, action, obs, mountedTools)
 
 		_ = r.db.AppendStep(ctx, &protocol.StepRecord{
 			TaskID:       task.ID,
@@ -304,6 +317,7 @@ func (r *Runner) execute(
 	sc *SandboxClient,
 	a protocol.Action,
 	obs *protocol.Observation,
+	mountedTools map[string]protocol.MountedTool,
 ) (string, terminalKind) {
 	switch a.Action {
 	case protocol.ActDone:
@@ -398,6 +412,25 @@ func (r *Runner) execute(
 		return fmt.Sprintf("exit %d: %s", res.ExitCode, clip(res.Stdout, 500)), terminalNone
 	case a.Action == protocol.ActPython:
 		return fmt.Sprintf("python output: %s", clip(res.Stdout, 800)), terminalNone
+	case a.Action == protocol.ActMountTool:
+		if res.OK {
+			mountedTools[a.ToolName] = protocol.MountedTool{
+				Name:        a.ToolName,
+				Description: a.ToolDescription,
+				Parameters:  a.ToolParameters,
+				HandlerCode: a.ToolHandler,
+			}
+			return fmt.Sprintf("mounted tool %q: %s", a.ToolName, firstNonEmpty(res.Detail, "ok")), terminalNone
+		}
+		return fmt.Sprintf("failed to mount tool %q: %s", a.ToolName, clip(res.Detail, 200)), terminalNone
+	case a.Action == protocol.ActUnmountTool:
+		delete(mountedTools, a.ToolName)
+		return fmt.Sprintf("unmounted tool %q", a.ToolName), terminalNone
+	case a.Action == protocol.ActCallTool:
+		if !res.OK {
+			return fmt.Sprintf("tool %q error: %s", a.ToolName, clip(res.Stdout, 500)), terminalNone
+		}
+		return fmt.Sprintf("tool %q output: %s", a.ToolName, clip(res.Stdout, 800)), terminalNone
 	default:
 		return firstNonEmpty(res.Detail, "ok"), terminalNone
 	}

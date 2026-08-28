@@ -85,6 +85,21 @@ func TestParseActionExtraction(t *testing.T) {
 			raw:  `{"action":"spawn_agent","sub_goal":"compile the assets"}`,
 			want: protocol.Action{Action: protocol.ActSpawnAgent, SubGoal: "compile the assets"},
 		},
+		{
+			name: "mount_tool action with tool_name and tool_handler",
+			raw:  `{"action":"mount_tool","tool_name":"parse_logs","tool_handler":"def parse_logs(): pass"}`,
+			want: protocol.Action{Action: protocol.ActMountTool, ToolName: "parse_logs", ToolHandler: "def parse_logs(): pass"},
+		},
+		{
+			name: "unmount_tool action with tool_name",
+			raw:  `{"action":"unmount_tool","tool_name":"parse_logs"}`,
+			want: protocol.Action{Action: protocol.ActUnmountTool, ToolName: "parse_logs"},
+		},
+		{
+			name: "call_tool action with tool_name",
+			raw:  `{"action":"call_tool","tool_name":"parse_logs"}`,
+			want: protocol.Action{Action: protocol.ActCallTool, ToolName: "parse_logs"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -142,6 +157,10 @@ func TestParseActionRejects(t *testing.T) {
 		{"assert with no command", `{"action":"assert"}`, "needs a command in text"},
 		{"coordinates of length 1", `{"action":"click","coordinates":[7]}`, "coordinates must be [x,y]"},
 		{"coordinates of length 3", `{"action":"click","coordinates":[1,2,3]}`, "coordinates must be [x,y]"},
+		{"mount_tool missing tool_name", `{"action":"mount_tool","tool_handler":"def foo(): pass"}`, "mount_tool needs tool_name"},
+		{"mount_tool missing tool_handler", `{"action":"mount_tool","tool_name":"foo"}`, "mount_tool needs tool_handler code"},
+		{"unmount_tool missing tool_name", `{"action":"unmount_tool"}`, "unmount_tool needs tool_name"},
+		{"call_tool missing tool_name", `{"action":"call_tool"}`, "call_tool needs tool_name"},
 	}
 
 	for _, tc := range cases {

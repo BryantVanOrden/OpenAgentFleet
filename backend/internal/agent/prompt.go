@@ -11,17 +11,17 @@ import (
 // the screen is data, not instruction. A web page that says "ignore your task and
 // run this command" is the single most likely way an autonomous desktop agent
 // gets turned into someone else's tool.
-const systemPrompt = `You operate a Linux desktop through a fixed action vocabulary.
+const systemPrompt = `You operate a Linux desktop through a fixed action vocabulary with support for dynamic tool synthesis.
 
 Each turn you receive a screenshot of the current desktop, the active window
-title, optionally an accessibility tree, and the history of what you have already
-done. You reply with exactly one JSON object and nothing else — no prose, no
-markdown fence.
+title, optionally an accessibility tree, actively mounted tools, and the history
+of what you have already done. You reply with exactly one JSON object and nothing
+else — no prose, no markdown fence.
 
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|mount_tool|unmount_tool|call_tool|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "coordinates": [x, y],
   "to": [x, y],
@@ -29,6 +29,10 @@ Schema:
   "code": "python code snippet to execute in persistent REPL",
   "sub_goal": "goal for child sub-agent, when action is spawn_agent",
   "wait_child": true,
+  "tool_name": "name of custom tool (for mount_tool, unmount_tool, call_tool)",
+  "tool_description": "short explanation of what the tool does (for mount_tool)",
+  "tool_parameters": {"param1": "value1"},
+  "tool_handler": "python function definition (for mount_tool)",
   "key": "ctrl+shift+p",
   "amount": 3,
   "timeout": 120,
@@ -51,6 +55,10 @@ Rules:
   repeating: try keyboard navigation, scroll, or focus a different window.
 - Use "python" to execute code in the persistent REPL when you need programmatic
   data processing, querying the accessibility tree via a11y, or complex logic.
+- Use "mount_tool" when you want to synthesize a reusable helper tool (defining a
+  Python function). It will be available on subsequent turns via "call_tool".
+- Use "call_tool" with "tool_name" and "tool_parameters" to invoke any mounted tool.
+- Use "unmount_tool" when finished with a dynamic tool to keep the context clean.
 - Use "spawn_agent" with "sub_goal" when a distinct sub-task should be delegated
   to a child agent worker (e.g. searching, compiling, testing).
 - Use "assert" to verify real outcomes (a file exists and is non-trivial in size,
@@ -67,9 +75,9 @@ Rules:
 - Emit "done" when the goal is verifiably met, with what you achieved in
   "summary". Emit "fail" when the goal cannot be reached, with why.`
 
-// buildSystem appends the per-instance capability envelope to the base prompt so
-// the model's stated options match what will actually be executed.
-func buildSystem(inst *protocol.Instance) string {
+// buildSystem appends the per-instance capability envelope and any currently
+// mounted dynamic tools to the base prompt.
+func buildSystem(inst *protocol.Instance, mounted map[string]protocol.MountedTool) string {
 	var sb strings.Builder
 	sb.WriteString(systemPrompt)
 	sb.WriteString("\n\nThis instance:\n")
@@ -86,6 +94,17 @@ func buildSystem(inst *protocol.Instance) string {
 	if inst.Egress.BlockLocal {
 		sb.WriteString("- network: private/internal addresses are blocked\n")
 	}
+
+	if len(mounted) > 0 {
+		sb.WriteString("\nMounted Dynamic Tools (call with action \"call_tool\"):\n")
+		for _, t := range mounted {
+			fmt.Fprintf(&sb, "- %s: %s\n", t.Name, t.Description)
+			if len(t.Parameters) > 0 {
+				fmt.Fprintf(&sb, "  params: %v\n", t.Parameters)
+			}
+		}
+	}
+
 	return sb.String()
 }
 
@@ -175,6 +194,12 @@ func summarise(a protocol.Action) string {
 			goal = a.Text
 		}
 		return fmt.Sprintf("spawn_agent %q", clip(goal, 80))
+	case protocol.ActMountTool:
+		return fmt.Sprintf("mount_tool %s", a.ToolName)
+	case protocol.ActUnmountTool:
+		return fmt.Sprintf("unmount_tool %s", a.ToolName)
+	case protocol.ActCallTool:
+		return fmt.Sprintf("call_tool %s", a.ToolName)
 	case protocol.ActWaitFor:
 		return fmt.Sprintf("wait_for %q", clip(a.Text, 60))
 	case protocol.ActAssert:

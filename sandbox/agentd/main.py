@@ -121,6 +121,10 @@ class ActRequest(BaseModel):
     to: list[int] | None = None
     text: str | None = None
     code: str | None = None
+    tool_name: str | None = None
+    tool_description: str | None = None
+    tool_parameters: dict[str, Any] | None = None
+    tool_handler: str | None = None
     key: str | None = None
     amount: int = 0
     timeout: int = 120
@@ -230,6 +234,31 @@ def act(req: ActRequest) -> dict:
             return {"ok": False, "detail": "python action needs code"}
         ok, out = REPL.execute(code, timeout=min(req.timeout or 120, 600))
         return {"ok": ok, "detail": "python executed", "stdout": out}
+
+    if kind == "mount_tool":
+        from repl import REPL
+        name = req.tool_name or req.target or ""
+        handler = req.tool_handler or req.code or req.text or ""
+        if not name or not handler:
+            return {"ok": False, "detail": "mount_tool requires tool_name and tool_handler code"}
+        ok, out = REPL.mount_tool(name, req.tool_description or "", req.tool_parameters, handler)
+        return {"ok": ok, "detail": out, "stdout": out}
+
+    if kind == "unmount_tool":
+        from repl import REPL
+        name = req.tool_name or req.target or req.text or ""
+        if not name:
+            return {"ok": False, "detail": "unmount_tool requires tool_name"}
+        ok, out = REPL.unmount_tool(name)
+        return {"ok": ok, "detail": out, "stdout": out}
+
+    if kind == "call_tool":
+        from repl import REPL
+        name = req.tool_name or req.target or ""
+        if not name:
+            return {"ok": False, "detail": "call_tool requires tool_name"}
+        ok, out = REPL.call_tool(name, req.tool_parameters)
+        return {"ok": ok, "detail": f"tool {name} executed", "stdout": out}
 
     return {"ok": False, "detail": f"unsupported action {kind!r}"}
 

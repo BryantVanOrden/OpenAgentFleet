@@ -13,8 +13,10 @@ var validActions = map[protocol.ActionKind]bool{
 	protocol.ActType: true, protocol.ActKey: true, protocol.ActScroll: true,
 	protocol.ActDrag: true, protocol.ActWait: true, protocol.ActWaitFor: true,
 	protocol.ActFocus: true, protocol.ActShell: true, protocol.ActPython: true,
-	protocol.ActSpawnAgent: true, protocol.ActAssert: true,
-	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,
+	protocol.ActSpawnAgent: true, protocol.ActMountTool: true,
+	protocol.ActUnmountTool: true, protocol.ActCallTool: true,
+	protocol.ActAssert: true, protocol.ActAskHuman: true,
+	protocol.ActDone: true, protocol.ActFail: true,
 }
 
 // ParseAction pulls a single action object out of a model reply. Models wrap
@@ -79,6 +81,37 @@ func ParseAction(raw string) (protocol.Action, error) {
 		}
 		if strings.TrimSpace(a.SubGoal) == "" {
 			return a, fmt.Errorf("spawn_agent needs a sub-goal in sub_goal or text")
+		}
+	case protocol.ActMountTool:
+		if a.ToolName == "" && a.Target != "" {
+			a.ToolName = a.Target
+		}
+		if strings.TrimSpace(a.ToolName) == "" {
+			return a, fmt.Errorf("mount_tool needs tool_name")
+		}
+		if a.ToolHandler == "" && a.Code != "" {
+			a.ToolHandler = a.Code
+		} else if a.ToolHandler == "" && a.Text != "" {
+			a.ToolHandler = a.Text
+		}
+		if strings.TrimSpace(a.ToolHandler) == "" {
+			return a, fmt.Errorf("mount_tool needs tool_handler code")
+		}
+	case protocol.ActUnmountTool:
+		if a.ToolName == "" && a.Target != "" {
+			a.ToolName = a.Target
+		} else if a.ToolName == "" && a.Text != "" {
+			a.ToolName = a.Text
+		}
+		if strings.TrimSpace(a.ToolName) == "" {
+			return a, fmt.Errorf("unmount_tool needs tool_name")
+		}
+	case protocol.ActCallTool:
+		if a.ToolName == "" && a.Target != "" {
+			a.ToolName = a.Target
+		}
+		if strings.TrimSpace(a.ToolName) == "" {
+			return a, fmt.Errorf("call_tool needs tool_name")
 		}
 	case protocol.ActAskHuman:
 		if a.Question == "" {

@@ -78,6 +78,10 @@ export interface AgentAction {
   sub_goal?: string;
   sub_skill_id?: string;
   wait_child?: boolean;
+  tool_name?: string;
+  tool_description?: string;
+  tool_parameters?: Record<string, unknown>;
+  tool_handler?: string;
   key?: string;
   question?: string;
   summary?: string;
