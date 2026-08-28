@@ -540,11 +540,12 @@ type RawEvent struct {
 type ProviderKind string
 
 const (
-	ProviderOpenAI     ProviderKind = "openai"
-	ProviderOllama     ProviderKind = "ollama"
-	ProviderAnthropic  ProviderKind = "anthropic"
-	ProviderGemini     ProviderKind = "gemini"
-	ProviderCompatible ProviderKind = "openai-compatible" // vLLM, LocalAI, LiteLLM, ...
+	ProviderOpenAI      ProviderKind = "openai"
+	ProviderOllama      ProviderKind = "ollama"
+	ProviderAnthropic   ProviderKind = "anthropic"
+	ProviderGemini      ProviderKind = "gemini"
+	ProviderAntigravity ProviderKind = "antigravity"       // Google Antigravity & Gemini Subscription Gateway
+	ProviderCompatible  ProviderKind = "openai-compatible" // vLLM, LocalAI, LiteLLM, ...
 )
 
 // Provider is a configured model endpoint.

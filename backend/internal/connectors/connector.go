@@ -96,7 +96,7 @@ func Build(p protocol.Provider, apiKey string, hc *http.Client) (Connector, erro
 		}
 		return &anthropic{p: p, base: base, key: apiKey, hc: hc}, nil
 
-	case protocol.ProviderGemini:
+	case protocol.ProviderGemini, protocol.ProviderAntigravity:
 		if base == "" {
 			base = "https://generativelanguage.googleapis.com"
 		}

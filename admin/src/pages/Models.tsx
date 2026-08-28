@@ -32,6 +32,11 @@ const KIND_HINTS: Record<Provider["kind"], { base: string; model: string; note: 
     model: "gemini-2.0-flash",
     note: "generateContent API.",
   },
+  antigravity: {
+    base: "https://generativelanguage.googleapis.com",
+    model: "gemini-2.5-pro",
+    note: "Google Antigravity & Gemini Subscription Gateway. Power your agents with deep reasoning and native multimodal vision using your existing Google Antigravity account.",
+  },
   "openai-compatible": {
     base: "http://vllm:8000/v1",
     model: "Qwen/Qwen2.5-VL-7B-Instruct",

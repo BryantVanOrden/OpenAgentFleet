@@ -152,7 +152,7 @@ export interface Skill {
 export interface Provider {
   id: string;
   name: string;
-  kind: "openai" | "ollama" | "anthropic" | "gemini" | "openai-compatible";
+  kind: "openai" | "ollama" | "anthropic" | "gemini" | "antigravity" | "openai-compatible";
   base_url?: string;
   model: string;
   api_key_ref?: string;
