@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/bus"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
@@ -331,6 +333,50 @@ func (r *Runner) execute(
 
 	case protocol.ActFail:
 		return "failed: " + clip(a.Summary, 200), terminalFail
+
+	// remember/recall are handled here rather than in agentd: episodic memory is
+	// fleet-wide, so a discovery made on one desktop has to be retrievable from
+	// another. agentd only ever sees its own sandbox.
+	//
+	// These were advertised in the system prompt with nothing behind them, so a
+	// model that followed the instruction got "unsupported action" back and
+	// burned a step every time it tried.
+	case protocol.ActRemember:
+		content := firstNonEmpty(a.Text, a.Summary, a.Question)
+		if content == "" {
+			return "failed: remember needs the text to store", terminalNone
+		}
+		title := firstNonEmpty(a.Target, clip(content, 60))
+		if err := memory.GlobalEngine.StoreMemory(ctx, protocol.MemoryRecord{
+			Namespace:        "fleet",
+			Title:            title,
+			Content:          content,
+			Tags:             []string{"agent", inst.Name},
+			SourceTaskID:     task.ID,
+			SourceInstanceID: inst.ID,
+		}); err != nil {
+			return "failed to store memory: " + err.Error(), terminalNone
+		}
+		return "remembered: " + clip(title, 120), terminalNone
+
+	case protocol.ActRecall:
+		query := firstNonEmpty(a.Query, a.Text, a.Target)
+		if query == "" {
+			return "failed: recall needs a query", terminalNone
+		}
+		hits := memory.GlobalEngine.Search(ctx, "fleet", query, 5)
+		if len(hits) == 0 {
+			// An explicit miss, not an error: "nothing recorded about X" is
+			// information the agent should act on rather than retry.
+			return "recalled nothing for " + clip(query, 80) +
+				" — no prior run has recorded this", terminalNone
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "recalled %d memor%s:", len(hits), plural(len(hits), "y", "ies"))
+		for _, m := range hits {
+			fmt.Fprintf(&sb, "\n- %s: %s", m.Title, clip(m.Content, 200))
+		}
+		return sb.String(), terminalNone
 
 	case protocol.ActAskHuman:
 		reply, err := r.escalate(ctx, task, inst, protocol.AlertNeedsHuman, "warn",
@@ -672,4 +718,12 @@ func lastHistory(h []turnSummary) string {
 		return "(none)"
 	}
 	return h[len(h)-1].Action
+}
+
+// plural picks a suffix without a format-string dance at the call site.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

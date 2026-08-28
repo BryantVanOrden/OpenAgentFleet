@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -15,7 +16,13 @@ import (
 type Engine struct {
 	mu       sync.RWMutex
 	memories map[string]protocol.MemoryRecord
+	// seq disambiguates records created within the same nanosecond tick.
+	seq uint64
 }
+
+// GlobalEngine is the fleet-wide episodic memory, shared across instances so a
+// discovery made by one agent is retrievable by another.
+var GlobalEngine = NewEngine()
 
 func NewEngine() *Engine {
 	return &Engine{
@@ -29,7 +36,13 @@ func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) err
 	defer e.mu.Unlock()
 
 	if mem.ID == "" {
-		mem.ID = "mem-" + time.Now().Format("20060102150405")
+		// A timestamp alone is not an identity. This formatted to second
+		// resolution, so two memories stored in the same second produced the
+		// same key and the second silently overwrote the first — losing exactly
+		// the discoveries an agent bothered to record, and most often during a
+		// burst, which is when they matter.
+		e.seq++
+		mem.ID = fmt.Sprintf("mem-%d-%d", time.Now().UnixNano(), e.seq)
 	}
 	if mem.Namespace == "" {
 		mem.Namespace = "global"
