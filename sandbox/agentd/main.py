@@ -33,6 +33,12 @@ ALLOW_SHELL = os.environ.get("ALLOW_SHELL", "false").lower() in ("1", "true", "y
 INSTANCE_ID = os.environ.get("AGENTFLEET_INSTANCE", "")
 KEYRING_DIR = "/var/run/agentfleet/keyring"
 
+# How long to keep reporting "not ready" while the desktop is still a flat
+# colour. Long enough for XFCE to paint on a slow host, short enough that a
+# genuinely blank desktop does not hang provisioning forever.
+BLANK_SCREEN_GRACE_SECONDS = 75.0
+_STARTED_AT = time.time()
+
 app = FastAPI(title="agentd", docs_url=None, redoc_url=None, openapi_url=None)
 
 
@@ -45,18 +51,47 @@ def _now() -> str:
 
 @app.get("/health")
 def health() -> dict:
-    # A frame grab is the real readiness signal: X can be up while the desktop
-    # session is still starting, and an agent handed a black screen wastes steps.
+    """Readiness, meaning "an agent can do useful work here".
+
+    A frame grab alone is not enough. X accepts connections well before XFCE has
+    painted anything, so the grab succeeds against a blank screen and the
+    orchestrator declares the instance running. The agent's first observation is
+    then of an empty desktop — a wasted step at best, and worse than that for
+    stall detection: the difference hash of a uniform image is all zeros, so two
+    consecutive blank frames look byte-identical and can trip the "screen has not
+    changed" escalation before the agent has done anything at all.
+
+    So readiness also requires the frame to be non-uniform. The uptime escape
+    hatch matters: a desktop that is legitimately a flat colour would otherwise
+    never become ready, and never starting is a worse failure than starting early.
+    """
     try:
         frame = capture.grab()
-        ready = frame.width > 0 and frame.height > 0
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"display not ready: {exc}") from exc
 
+    if frame.width <= 0 or frame.height <= 0:
+        raise HTTPException(status_code=503, detail="display has no dimensions yet")
+
+    screen_hash = capture.dhash(frame)
+    painted = screen_hash != "0" * len(screen_hash)
+    waited = time.time() - _STARTED_AT
+
+    if not painted and waited < BLANK_SCREEN_GRACE_SECONDS:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"desktop is still blank after {waited:.0f}s; "
+                "waiting for the session to paint"
+            ),
+        )
+
     return {
-        "status": "ok" if ready else "starting",
+        "status": "ok",
         "instance": INSTANCE_ID,
         "resolution": f"{frame.width}x{frame.height}",
+        "painted": painted,
+        "hash": screen_hash,
         "a11y": a11y.AVAILABLE,
         "shell": ALLOW_SHELL,
         "recording": RECORDER.active,
