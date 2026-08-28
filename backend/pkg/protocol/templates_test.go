@@ -4,13 +4,13 @@ import "testing"
 
 func TestDefaultBotTemplates(t *testing.T) {
 	templates := DefaultBotTemplates()
-	if len(templates) != 8 {
-		t.Fatalf("expected 8 bot templates, got %d", len(templates))
+	if len(templates) != 10 {
+		t.Fatalf("expected 10 bot templates, got %d", len(templates))
 	}
 
 	expectedIDs := []string{
-		"cyber_ops", "fullstack_dev", "qa_ui_ux", "game_dev",
-		"growth_media", "media_studio", "agentic_crm", "data_quant",
+		"cyber_ops", "fullstack_dev", "devops_sre", "qa_ui_ux", "game_dev",
+		"growth_media", "media_studio", "agentic_crm", "data_quant", "deep_researcher",
 	}
 
 	for _, expectedID := range expectedIDs {
