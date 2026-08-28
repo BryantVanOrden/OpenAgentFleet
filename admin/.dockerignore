@@ -1,0 +1,10 @@
+# Never ship the host's node_modules into the build context: it is 20+ MB of
+# transfer per build, and the native binaries in it (esbuild, rollup) are built
+# for the host platform, not the image.
+node_modules
+dist
+.vite
+tsconfig.tsbuildinfo
+*.log
+.env
+.env.*

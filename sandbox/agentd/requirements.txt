@@ -1,0 +1,8 @@
+# agentd runtime deps. Deliberately small: everything heavy (X, AT-SPI, xdotool)
+# comes from apt, where the C bindings are already built.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+Pillow==11.1.0
+mss==10.0.0
+python-xlib==0.33

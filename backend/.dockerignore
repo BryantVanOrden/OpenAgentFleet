@@ -1,0 +1,8 @@
+# The build runs `go mod download` from go.mod/go.sum; a host build cache or a
+# stray binary in the context only slows the transfer down.
+agentfleet
+agentfleet.exe
+dist
+*.log
+.env
+.env.*

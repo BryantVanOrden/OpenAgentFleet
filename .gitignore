@@ -1,0 +1,43 @@
+.env
+*.log
+
+# backend
+backend/agentfleet
+backend/dist/
+
+# admin
+admin/node_modules/
+admin/dist/
+
+# mobile
+# android/ and ios/ ARE committed — the app does not build without them.
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/.flutter-plugins-dependencies
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/key.properties
+mobile/android/app/debug/
+mobile/android/app/profile/
+mobile/android/app/release/
+mobile/android/**/hs_err_pid*.log
+mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/ios/Flutter/ephemeral/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/**/*.jks
+mobile/**/*.keystore
+mobile/**/google-services.json
+mobile/**/GoogleService-Info.plist
+
+# credentials — never commit these
+deploy/*.json
+deploy/*.p8
+!deploy/placeholder
+
+# build artifacts
+admin/tsconfig.tsbuildinfo
+**/__pycache__/
+*.pyc

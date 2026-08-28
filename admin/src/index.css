@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+/* Industrial dark palette. One accent (amber) for "a machine is doing something
+   right now", one for danger, and a lot of restraint everywhere else — a fleet
+   console is read at a glance under stress, not admired. */
+@theme {
+  --color-ink-950: #08090c;
+  --color-ink-900: #0d0f14;
+  --color-ink-850: #12151c;
+  --color-ink-800: #171b24;
+  --color-ink-700: #1f242f;
+  --color-ink-600: #2b3240;
+  --color-ink-500: #3d4757;
+  --color-ink-400: #5b687c;
+  --color-ink-300: #8a97ab;
+  --color-ink-200: #c3ccd9;
+  --color-ink-100: #e8edf4;
+
+  --color-live-500: #f5a524;
+  --color-live-400: #ffbe4d;
+  --color-good-500: #22c55e;
+  --color-warn-500: #f97316;
+  --color-bad-500: #ef4444;
+  --color-cool-500: #38bdf8;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbars that do not shout. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* The pulse used on anything actively running. Slower than a spinner on purpose:
+   a fleet view with twelve machines should not strobe. */
+@keyframes fleet-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-live {
+  animation: fleet-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes fleet-toast {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fleet-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 33%;
+  background: linear-gradient(90deg, transparent, rgb(245 165 36 / 0.35), transparent);
+  animation: fleet-sweep 1.8s linear infinite;
+}

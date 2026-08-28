@@ -1,0 +1,44 @@
+name: agentfleet_companion
+description: Watch, talk to, and take over your autonomous OS agents.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State. Riverpod over Bloc here because most of this app is "watch a stream
+  # and rebuild"; the ceremony of a bloc per screen would not earn its keep.
+  flutter_riverpod: ^2.6.1
+
+  # Networking.
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.1
+
+  # The desktop stream. noVNC is served by the orchestrator's authenticated
+  # proxy, so an embedded web view gets a working remote desktop — including
+  # touch-to-mouse — without shipping an RFB client.
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.3.2
+  webview_flutter_wkwebview: ^3.17.0
+
+  # Push. Firebase covers Android and iOS; the backend also speaks APNs directly
+  # for builds that skip Firebase entirely.
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.6
+  flutter_local_notifications: ^18.0.1
+
+  shared_preferences: ^2.3.3
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

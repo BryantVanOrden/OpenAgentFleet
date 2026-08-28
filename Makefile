@@ -1,0 +1,90 @@
+SHELL := /bin/bash
+COMPOSE := docker compose
+
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Show this help
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: env
+env: ## Create .env from the example and generate secrets
+	@if [ -f .env ]; then echo ".env already exists — not touching it"; exit 0; fi
+	@cp .env.example .env
+	@jwt=$$(openssl rand -base64 32); master=$$(openssl rand -base64 32); \
+	 gid=$$(stat -c %g /var/run/docker.sock 2>/dev/null || echo 999); \
+	 sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$$jwt|; s|^MASTER_KEY=.*|MASTER_KEY=$$master|; s|^DOCKER_GID=.*|DOCKER_GID=$$gid|" .env
+	@echo "Wrote .env with fresh secrets. Back up MASTER_KEY — losing it means losing every stored credential."
+
+.PHONY: doctor
+doctor: ## Check the host, config, images, ports and models before you start
+	@bash scripts/doctor.sh
+
+.PHONY: smoke
+smoke: ## End-to-end test against a running stack (provisions and destroys a sandbox)
+	@bash scripts/smoke.sh
+
+.PHONY: smoke-agent
+smoke-agent: ## Same, plus a real autonomous task against a real model
+	@bash scripts/smoke.sh --with-agent
+
+.PHONY: sandbox
+sandbox: ## Build the sandbox desktop image
+	docker build -t agentfleet/sandbox:latest ./sandbox
+
+.PHONY: up
+up: env sandbox ## Build the sandbox image and start the whole stack
+	$(COMPOSE) up -d --build
+	@echo
+	@echo "Console:  http://localhost:$${ADMIN_PORT:-8081}"
+	@echo "API:      http://localhost:$${API_PORT:-8080}/healthz"
+
+.PHONY: down
+down: ## Stop the stack (sandboxes are left running)
+	$(COMPOSE) down
+
+.PHONY: clean-sandboxes
+clean-sandboxes: ## Destroy every sandbox container this platform created
+	@ids=$$(docker ps -aq --filter label=managed-by=agentfleet); \
+	 if [ -n "$$ids" ]; then docker rm -f $$ids; else echo "no sandboxes running"; fi
+
+.PHONY: nuke
+nuke: down clean-sandboxes ## Stop everything and delete all data
+	$(COMPOSE) down -v
+
+.PHONY: logs
+logs: ## Tail orchestrator logs
+	$(COMPOSE) logs -f api
+
+.PHONY: psql
+psql: ## Open a database shell
+	$(COMPOSE) exec db psql -U $${POSTGRES_USER:-agentfleet} -d $${POSTGRES_DB:-agentfleet}
+
+# --- development -------------------------------------------------------------
+
+.PHONY: backend
+backend: ## Run the orchestrator locally (needs Go and a reachable Postgres)
+	cd backend && go run ./cmd/server
+
+.PHONY: admin
+admin: ## Run the admin console dev server
+	cd admin && npm install && npm run dev
+
+.PHONY: mobile
+mobile: ## Run the Flutter companion app
+	cd mobile && flutter pub get && flutter run
+
+.PHONY: test
+test: ## Run every test suite
+	cd backend && go test ./...
+	cd admin && npm run build
+
+.PHONY: fmt
+fmt: ## Format Go and Dart sources
+	cd backend && gofmt -w .
+	cd mobile && dart format lib
+
+.PHONY: vet
+vet: ## Static analysis
+	cd backend && go vet ./...

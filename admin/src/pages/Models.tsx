@@ -1,0 +1,425 @@
+import { useCallback, useEffect, useState } from "react";
+import { api, type Provider } from "../lib/api";
+import {
+  Button,
+  Card,
+  Empty,
+  ErrorNote,
+  Field,
+  Modal,
+  cx,
+  inputClass,
+} from "../components/ui";
+
+const KIND_HINTS: Record<Provider["kind"], { base: string; model: string; note: string }> = {
+  ollama: {
+    base: "http://host.docker.internal:11434",
+    model: "qwen2.5vl:7b",
+    note: "Native Ollama API. Needs a vision model — a text-only model cannot see the desktop.",
+  },
+  openai: {
+    base: "https://api.openai.com/v1",
+    model: "gpt-4o",
+    note: "Standard OpenAI endpoint.",
+  },
+  anthropic: {
+    base: "https://api.anthropic.com",
+    model: "claude-sonnet-4-5",
+    note: "Messages API.",
+  },
+  gemini: {
+    base: "https://generativelanguage.googleapis.com",
+    model: "gemini-2.0-flash",
+    note: "generateContent API.",
+  },
+  "openai-compatible": {
+    base: "http://vllm:8000/v1",
+    model: "Qwen/Qwen2.5-VL-7B-Instruct",
+    note: "vLLM, LocalAI, LiteLLM, OpenRouter — anything speaking /chat/completions.",
+  },
+};
+
+/**
+ * AI engines.
+ *
+ * Providers are tried in priority order, so this page is really a fallback
+ * chain: put the fast local model first and a cloud model behind it, and a
+ * dead endpoint costs you one failed call instead of a failed run.
+ */
+export default function Models({ role }: { role: string }) {
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [editing, setEditing] = useState<Partial<Provider> | null>(null);
+  const [probes, setProbes] = useState<Record<string, { ok: boolean; error?: string }>>({});
+  const [error, setError] = useState<string | null>(null);
+  const readOnly = role !== "admin";
+
+  const load = useCallback(async () => {
+    try {
+      setProviders(await api.providers());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const probe = async (p: Provider) => {
+    setProbes((s) => ({ ...s, [p.id]: { ok: false, error: "checking…" } }));
+    try {
+      const result = await api.probeProvider(p.id);
+      setProbes((s) => ({ ...s, [p.id]: result }));
+    } catch (err) {
+      setProbes((s) => ({
+        ...s,
+        [p.id]: { ok: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    }
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">AI engines</h1>
+          <p className="text-sm text-ink-400">
+            Ordered fallback chain. Lower priority runs first; a provider that fails twice is
+            skipped for a minute before it is tried again.
+          </p>
+        </div>
+        {!readOnly && (
+          <Button
+            variant="primary"
+            onClick={() =>
+              setEditing({
+                kind: "ollama",
+                base_url: KIND_HINTS.ollama.base,
+                model: KIND_HINTS.ollama.model,
+                vision: true,
+                temperature: 0.2,
+                max_tokens: 1024,
+                priority: providers.length * 10 + 10,
+                enabled: true,
+              })
+            }
+          >
+            + Add engine
+          </Button>
+        )}
+      </header>
+
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+      {providers.length === 0 ? (
+        <Empty
+          title="No engines configured"
+          hint="Add at least one vision-capable model. Ollama with a local VL model costs nothing and keeps screenshots on your own hardware."
+        />
+      ) : (
+        <div className="space-y-3">
+          {providers.map((p) => {
+            const probe_ = probes[p.id];
+            return (
+              <div
+                key={p.id}
+                className={cx(
+                  "flex items-center gap-4 rounded-xl bg-ink-900 p-4 ring-1",
+                  p.enabled ? "ring-ink-700" : "opacity-60 ring-ink-800",
+                )}
+              >
+                <div className="w-10 text-center font-mono text-xs text-ink-500">{p.priority}</div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{p.name}</span>
+                    <span className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[11px] text-ink-400">
+                      {p.kind}
+                    </span>
+                    {p.vision ? (
+                      <span className="rounded bg-good-500/15 px-1.5 py-0.5 text-[11px] text-good-500">
+                        vision
+                      </span>
+                    ) : (
+                      <span
+                        className="rounded bg-warn-500/15 px-1.5 py-0.5 text-[11px] text-warn-500"
+                        title="Skipped for any step that includes a screenshot."
+                      >
+                        text only
+                      </span>
+                    )}
+                    {!p.enabled && (
+                      <span className="rounded bg-ink-800 px-1.5 py-0.5 text-[11px] text-ink-400">
+                        disabled
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-xs text-ink-400">
+                    {p.model} · {p.base_url || "default endpoint"} · temp {p.temperature} ·{" "}
+                    {p.max_tokens} tok
+                  </div>
+                  {probe_ && (
+                    <div
+                      className={cx(
+                        "mt-1 font-mono text-xs",
+                        probe_.ok ? "text-good-500" : "text-bad-500",
+                      )}
+                    >
+                      {probe_.ok ? "reachable" : probe_.error}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex shrink-0 gap-2">
+                  <Button size="sm" onClick={() => probe(p)}>
+                    Test
+                  </Button>
+                  {!readOnly && (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={async () => {
+                          if (!confirm(`Remove ${p.name}?`)) return;
+                          await api.deleteProvider(p.id);
+                          await load();
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Card title="How the chain behaves">
+        <ul className="space-y-1.5 text-xs text-ink-400">
+          <li>· A step that carries a screenshot skips any engine not marked vision-capable.</li>
+          <li>
+            · A task can pin itself to one engine; the rest of the chain still stands behind it as a
+            fallback.
+          </li>
+          <li>
+            · API keys are sealed with AES-256-GCM under MASTER_KEY and are never returned by the
+            API, logged, or included in a prompt.
+          </li>
+          <li>
+            · Screenshots go to whichever engine serves the step. If that matters for your data,
+            keep a local engine at the top of the chain and disable the cloud ones.
+          </li>
+        </ul>
+      </Card>
+
+      <EngineModal
+        provider={editing}
+        onClose={() => setEditing(null)}
+        onSaved={async () => {
+          setEditing(null);
+          await load();
+        }}
+        onError={setError}
+      />
+    </div>
+  );
+}
+
+function EngineModal({
+  provider,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  provider: Partial<Provider> | null;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (m: string) => void;
+}) {
+  const [draft, setDraft] = useState<Partial<Provider> & { api_key?: string }>({});
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (provider) setDraft({ ...provider });
+  }, [provider]);
+
+  useEffect(() => {
+    if (draft.kind !== "ollama") return;
+    api
+      .ollamaModels(draft.base_url)
+      .then((r) => setOllamaModels(r.models ?? []))
+      .catch(() => setOllamaModels([]));
+  }, [draft.kind, draft.base_url]);
+
+  if (!provider) return null;
+  const hint = KIND_HINTS[(draft.kind ?? "ollama") as Provider["kind"]];
+
+  const set = (patch: Partial<Provider> & { api_key?: string }) =>
+    setDraft((d) => ({ ...d, ...patch }));
+
+  return (
+    <Modal open title={provider.id ? "Edit engine" : "Add engine"} onClose={onClose} wide>
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          try {
+            await api.saveProvider(draft);
+            onSaved();
+          } catch (err) {
+            onError(err instanceof Error ? err.message : String(err));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Name">
+            <input
+              className={inputClass}
+              value={draft.name ?? ""}
+              onChange={(e) => set({ name: e.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Kind">
+            <select
+              className={inputClass}
+              value={draft.kind ?? "ollama"}
+              onChange={(e) => {
+                const kind = e.target.value as Provider["kind"];
+                set({ kind, base_url: KIND_HINTS[kind].base, model: KIND_HINTS[kind].model });
+              }}
+            >
+              {Object.keys(KIND_HINTS).map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <p className="text-xs text-ink-400">{hint.note}</p>
+
+        <Field label="Base URL" hint="Leave blank for the provider default.">
+          <input
+            className={inputClass}
+            value={draft.base_url ?? ""}
+            onChange={(e) => set({ base_url: e.target.value })}
+            placeholder={hint.base}
+          />
+        </Field>
+
+        <Field label="Model">
+          {draft.kind === "ollama" && ollamaModels.length > 0 ? (
+            <select
+              className={inputClass}
+              value={draft.model ?? ""}
+              onChange={(e) => set({ model: e.target.value })}
+            >
+              {ollamaModels.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={inputClass}
+              value={draft.model ?? ""}
+              onChange={(e) => set({ model: e.target.value })}
+              placeholder={hint.model}
+              required
+            />
+          )}
+        </Field>
+
+        {draft.kind !== "ollama" && (
+          <Field
+            label="API key"
+            hint={
+              draft.api_key_ref
+                ? `Stored as ${draft.api_key_ref}. Leave blank to keep the existing key.`
+                : "Sealed into the vault; never returned by the API."
+            }
+          >
+            <input
+              className={inputClass}
+              type="password"
+              autoComplete="off"
+              value={draft.api_key ?? ""}
+              onChange={(e) => set({ api_key: e.target.value })}
+            />
+          </Field>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Temperature">
+            <input
+              type="number"
+              step={0.1}
+              min={0}
+              max={2}
+              className={inputClass}
+              value={draft.temperature ?? 0.2}
+              onChange={(e) => set({ temperature: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Max tokens">
+            <input
+              type="number"
+              min={64}
+              className={inputClass}
+              value={draft.max_tokens ?? 1024}
+              onChange={(e) => set({ max_tokens: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Priority" hint="Lower runs first.">
+            <input
+              type="number"
+              className={inputClass}
+              value={draft.priority ?? 100}
+              onChange={(e) => set({ priority: Number(e.target.value) })}
+            />
+          </Field>
+        </div>
+
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.vision ?? true}
+              onChange={(e) => set({ vision: e.target.checked })}
+            />
+            Vision capable
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.enabled ?? true}
+              onChange={(e) => set({ enabled: e.target.checked })}
+            />
+            Enabled
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? "Saving…" : "Save engine"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
