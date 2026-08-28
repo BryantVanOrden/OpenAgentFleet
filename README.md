@@ -298,16 +298,18 @@ AgentFleet is distributed under the **[PolyForm Noncommercial License 1.0.0](LIC
 
 ## ⚡ Support the Project — Buy Me a Monster ⚡
 
-If you find AgentFleet useful and want to fuel late-night coding sessions and open-source updates, you can support development with **XRP**:
+If you find AgentFleet useful and want to fuel late-night coding sessions and open-source updates, you can support development with **XRP** or **Bitcoin (BTC)**:
 
-<p align="center">
-  <img src="docs/assets/xrp_qr.png" alt="XRP QR Code" width="180" /><br>
-  <strong>XRP Address:</strong><br>
-  <code>rf82s1CDagppvM6ATqc1nSrL6GackzHJrm</code><br><br>
-  <strong>Destination Tag / Memo (Required):</strong><br>
-  <code>796343731</code>
-</p>
+<div align="center">
+
+| 🪙 **XRP (Ripple)** | ₿ **Bitcoin (BTC)** |
+| :---: | :---: |
+| <img src="docs/assets/xrp_qr.png" alt="XRP QR Code" width="160" /> | <img src="docs/assets/btc_qr.png" alt="BTC QR Code" width="160" /> |
+| **Address:**<br><code>rf82s1CDagppvM6ATqc1nSrL6GackzHJrm</code> | **Address:**<br><code>bc1qvre807vxh08puxwc2z5adnm59tta7v5mqmky45</code> |
+| **Destination Tag / Memo (Required):**<br><code>796343731</code> | *No memo required* |
+
+</div>
 
 > [!IMPORTANT]
-> **Destination Tag / Memo is required** when sending to this Robinhood deposit address (`796343731`). Thank you for your support! 🚀
+> **Destination Tag / Memo is required** when sending XRP to the Robinhood deposit address (`796343731`). Thank you for your support! 🚀
 
