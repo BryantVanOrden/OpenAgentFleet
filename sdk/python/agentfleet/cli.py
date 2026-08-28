@@ -15,6 +15,18 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentfleet.client import FleetClient
@@ -450,11 +462,16 @@ def cmd_hub_export(args: argparse.Namespace) -> None:
     from agentfleet.hub import ArchetypeManifest
 
     client = _get_client(args)
+    tmpl = None
     try:
         tmpl = client._get(f"/api/templates/{args.archetype}")
-        if not tmpl:
-            tmpl = {"id": args.archetype, "name": args.archetype, "recommended_tier": "standard"}
-        
+    except Exception:
+        pass
+
+    if not tmpl:
+        tmpl = {"id": args.archetype, "name": args.archetype, "recommended_tier": "standard"}
+    
+    try:
         manifest = ArchetypeManifest(
             version="1.0.0",
             id=tmpl.get("id", args.archetype),
