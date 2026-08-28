@@ -195,8 +195,15 @@ export default function Vault() {
                   {sec.scope}
                 </span>
               </div>
-              <p className="font-mono text-xs text-ink-300 bg-ink-950 p-2 rounded border border-ink-850 truncate">
-                {sec.value}
+              {/* The API deliberately never returns a secret's value — the list
+                  endpoint is readable by the auditor role, so returning it made
+                  every fleet credential readable by anyone who could log in.
+                  Show that a value exists, not what it is. */}
+              <p className="flex items-center gap-2 rounded border border-ink-850 bg-ink-950 p-2 font-mono text-xs text-ink-400">
+                <span aria-hidden="true">••••••••••••</span>
+                <span className="text-ink-500">
+                  {sec.has_value ? "value stored, never displayed" : "no value set"}
+                </span>
               </p>
               {sec.note && <p className="text-xs text-ink-400">{sec.note}</p>}
               <div className="flex justify-between items-center pt-2 border-t border-ink-800 text-[10px] font-mono text-ink-500">

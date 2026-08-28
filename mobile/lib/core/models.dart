@@ -356,27 +356,33 @@ class SwarmTeam {
       );
 }
 
+/// A shared fleet secret as the API returns it — metadata only.
+///
+/// There is no value field, deliberately: the list endpoint is readable by the
+/// auditor role, so returning values handed every fleet credential to anyone
+/// who could sign in. [hasValue] says whether one is set; the value itself
+/// never crosses the wire.
 class SharedSecret {
   SharedSecret({
     required this.key,
-    required this.value,
     required this.scope,
     this.note = '',
     this.createdBy = '',
+    this.hasValue = false,
   });
 
   final String key;
-  final String value;
   final String scope;
   final String note;
   final String createdBy;
+  final bool hasValue;
 
   factory SharedSecret.fromJson(Map<String, dynamic> j) => SharedSecret(
         key: j['key'] as String? ?? '',
-        value: j['value'] as String? ?? '',
         scope: j['scope'] as String? ?? 'fleet',
         note: j['note'] as String? ?? '',
         createdBy: j['created_by'] as String? ?? '',
+        hasValue: j['has_value'] as bool? ?? false,
       );
 }
 

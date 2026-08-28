@@ -334,10 +334,17 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 4),
-                Text(sec.value,
+                // The value is never sent to clients — show that one exists.
+                Text(
+                    sec.hasValue
+                        ? '•' * 12 + '  value stored, never displayed'
+                        : 'no value set',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: 'monospace', color: Fleet.ink300, fontSize: 12)),
+                    style: TextStyle(
+                        fontFamily: 'monospace',
+                        color: Fleet.ink400,
+                        fontSize: 12)),
                 if (sec.note.isNotEmpty)
                   Text(sec.note, style: TextStyle(color: Fleet.ink400, fontSize: 11)),
               ],

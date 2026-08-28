@@ -304,13 +304,22 @@ export interface CronTriggerRecord {
   created_at: string;
 }
 
+/**
+ * A shared fleet secret as the API returns it — metadata only.
+ *
+ * There is no `value` field, and that is deliberate rather than an oversight:
+ * the list endpoint is gated at `roleAny`, which includes the read-only auditor
+ * role, so returning the value handed every fleet credential to anyone who
+ * could sign in. Use `has_value` to show whether one is set. Consumers that
+ * genuinely need a value resolve it server-side; it never crosses the wire.
+ */
 export interface SharedSecret {
   key: string;
-  value: string;
   scope: string;
   note?: string;
   created_by?: string;
   updated_at: string;
+  has_value: boolean;
 }
 
 export interface SharedSession {
