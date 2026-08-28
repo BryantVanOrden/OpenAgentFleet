@@ -39,6 +39,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --- 2. automation + policy tooling ------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         xdotool wmctrl xclip scrot imagemagick \
+        git ripgrep jq build-essential pkg-config \
+        unzip tar nano htop tmux ffmpeg nmap \
+        net-tools dnsutils iputils-ping tree psmisc \
+        sudo strace lsof openssh-client \
         python3 python3-pip python3-venv \
         python3-gi python3-pyatspi gir1.2-atspi-2.0 \
         nftables iproute2 \
@@ -78,11 +82,13 @@ COPY agentd/ /opt/agentd/
 COPY supervisord.conf /etc/supervisor/conf.d/agentfleet.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY egress.sh /usr/local/bin/egress.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/egress.sh
+COPY init-archetype.sh /usr/local/bin/init-archetype.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/egress.sh /usr/local/bin/init-archetype.sh
 
-# The agent runs unprivileged. Anything it does to this filesystem is thrown
-# away with the container.
+# The agent runs unprivileged with passwordless sudo so it can install packages on the fly
 RUN useradd -m -s /bin/bash -u 1000 agent \
+    && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
+    && chmod 0440 /etc/sudoers.d/agent \
     && mkdir -p /home/agent/work /var/log/agentfleet /var/run/agentfleet \
     && chown -R agent:agent /home/agent /var/log/agentfleet /var/run/agentfleet
 

@@ -87,8 +87,8 @@ OPERATING PLAYBOOK:
 				"github.com/astral-sh/uv",
 			},
 			DefaultEnvironment: map[string]string{
-				"NODE_ENV":           "development",
-				"PYTHONUNBUFFERED":   "1",
+				"NODE_ENV":          "development",
+				"PYTHONUNBUFFERED":  "1",
 				"CARGO_INCREMENTAL": "1",
 			},
 			SpecializedPrompt: `You are a world-class Full-Stack Software Engineer and Systems Architect.

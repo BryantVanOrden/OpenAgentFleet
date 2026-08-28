@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, setToken, type User } from "../lib/api";
 import { Button, ErrorNote, Field, inputClass } from "../components/ui";
+import ThemePicker from "../components/ThemePicker";
 
 /**
  * Login, with a first-run path. A fresh deployment has no users at all, so
@@ -32,7 +33,13 @@ export default function Login({ onAuthenticated }: { onAuthenticated: (u: User) 
   };
 
   return (
-    <div className="grid h-full place-items-center px-4">
+    <div className="relative grid h-full place-items-center px-4">
+      {/* Reachable before sign-in: someone on a bright screen should not have to
+          authenticate in the dark to find the light switch. */}
+      <div className="absolute top-4 right-4 w-40">
+        <ThemePicker placement="down" />
+      </div>
+
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-1 text-center">
           <div className="mx-auto grid size-11 place-items-center rounded-xl bg-live-500 text-lg font-bold text-ink-950">

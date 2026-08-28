@@ -20,6 +20,11 @@ fi
 # Secrets are injected at run time through agentd, never baked into the image.
 install -d -m 0700 -o agent -g agent /var/run/agentfleet/keyring
 
+# Initialize archetype workspace and clone preinstalled repositories
+if [[ -x /usr/local/bin/init-archetype.sh ]]; then
+    /usr/local/bin/init-archetype.sh || log "warning: archetype init had non-fatal error"
+fi
+
 # Resolution can be changed per instance without rebuilding.
 log "display ${DISPLAY} at ${SCREEN_RESOLUTION}"
 

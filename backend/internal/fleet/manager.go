@@ -239,6 +239,20 @@ func (m *Manager) sandboxEnv(inst *protocol.Instance, p protocol.TierProfile) []
 		"ALLOW_SHELL=" + strconv.FormatBool(inst.ShellAccess),
 		"SCREEN_RESOLUTION=" + envOr("SCREEN_RESOLUTION", "1920x1080x24"),
 	}
+	if inst.ArchetypeID != "" {
+		env = append(env, "ARCHETYPE_ID="+inst.ArchetypeID)
+	}
+	if len(inst.PreinstalledTools) > 0 {
+		env = append(env, "PREINSTALLED_TOOLS="+strings.Join(inst.PreinstalledTools, ","))
+	}
+	if tmpl := protocol.BotTemplateByID(inst.ArchetypeID); tmpl != nil {
+		if len(tmpl.PreinstalledRepos) > 0 {
+			env = append(env, "PREINSTALLED_REPOS="+strings.Join(tmpl.PreinstalledRepos, ","))
+		}
+		for k, v := range tmpl.DefaultEnvironment {
+			env = append(env, k+"="+v)
+		}
+	}
 	if hasEgressPolicy(inst.Egress) {
 		env = append(env,
 			"EGRESS_ALLOW="+strings.Join(inst.Egress.Allow, ","),

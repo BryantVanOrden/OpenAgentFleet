@@ -1,27 +1,161 @@
 @import "tailwindcss";
 
-/* Industrial dark palette. One accent (amber) for "a machine is doing something
-   right now", one for danger, and a lot of restraint everywhere else — a fleet
-   console is read at a glance under stress, not admired. */
-@theme {
-  --color-ink-950: #08090c;
-  --color-ink-900: #0d0f14;
-  --color-ink-850: #12151c;
-  --color-ink-800: #171b24;
-  --color-ink-700: #1f242f;
-  --color-ink-600: #2b3240;
-  --color-ink-500: #3d4757;
-  --color-ink-400: #5b687c;
-  --color-ink-300: #8a97ab;
-  --color-ink-200: #c3ccd9;
-  --color-ink-100: #e8edf4;
+/* ---------------------------------------------------------------------------
+   Theming
+   ---------------------------------------------------------------------------
+   Two independent axes, both set as attributes on <html>:
 
-  --color-live-500: #f5a524;
-  --color-live-400: #ffbe4d;
-  --color-good-500: #22c55e;
-  --color-warn-500: #f97316;
-  --color-bad-500: #ef4444;
-  --color-cool-500: #38bdf8;
+     data-mode="dark" | "light"
+     data-accent="amber" | "red" | "blue" | "purple" | "green"
+
+   Everything below is expressed as raw CSS variables, and the Tailwind theme
+   tokens just point at them. That is what lets ten themes exist without a
+   single component changing: `bg-ink-900` keeps working, it simply resolves to
+   a different colour.
+
+   The `ink` scale is named for DEPTH, not darkness — ink-950 is always
+   "furthest back" and ink-100 is always "most prominent text". In light mode
+   ink-950 is near-white. That is deliberate; the alternative was renaming every
+   utility across a dozen files.
+
+   Both the variable definitions and the overrides sit on :root (the <html>
+   element), which matters: a custom property that references another resolves
+   against the element it is declared on, so the override has to land there too.
+--------------------------------------------------------------------------- */
+
+/* ------------------------------------------------------------ dark (default) */
+:root {
+  --surface-0: #08090c;
+  --surface-1: #0d0f14;
+  --surface-2: #12151c;
+  --surface-3: #171b24;
+  --surface-4: #1f242f;
+  --line: #2b3240;
+  --line-strong: #3d4757;
+  --text-dim: #5b687c;
+  --text-muted: #8a97ab;
+  --text-soft: #c3ccd9;
+  --text: #e8edf4;
+
+  --good: #22c55e;
+  --warn: #f97316;
+  --bad: #ef4444;
+  --cool: #38bdf8;
+
+  --shadow-strength: 0.45;
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------- light */
+:root[data-mode="light"] {
+  /* Page is faintly off-white so cards can be pure white and still read as
+     raised. A pure-white page with white cards is flat and muddy. */
+  --surface-0: #f4f6f9;
+  --surface-1: #ffffff;
+  --surface-2: #f7f9fb;
+  --surface-3: #eef1f6;
+  --surface-4: #e3e8ef;
+  --line: #d5dce5;
+  --line-strong: #b3becd;
+  --text-dim: #97a2b2;
+  --text-muted: #667487;
+  --text-soft: #3c4757;
+  --text: #10151d;
+
+  --good: #15803d;
+  --warn: #c2410c;
+  --bad: #b91c1c;
+  --cool: #0369a1;
+
+  --shadow-strength: 0.10;
+  color-scheme: light;
+}
+
+/* ------------------------------------------------------------------ accents */
+/* Dark-mode accents are bright: they sit on near-black and are read as glow.
+   Light-mode accents are deep: they sit on white and must also carry white
+   text when used as a button fill, which a pastel cannot do accessibly. */
+
+:root,
+:root[data-accent="amber"] {
+  --accent: #f5a524;
+  --accent-hover: #ffbe4d;
+  --accent-soft: #f5a52426;
+}
+:root[data-mode="light"],
+:root[data-mode="light"][data-accent="amber"] {
+  --accent: #b45309;
+  --accent-hover: #92400e;
+  --accent-soft: #b4530914;
+}
+
+:root[data-accent="red"] {
+  --accent: #f87171;
+  --accent-hover: #fca5a5;
+  --accent-soft: #f8717126;
+}
+:root[data-mode="light"][data-accent="red"] {
+  --accent: #be123c;
+  --accent-hover: #9f1239;
+  --accent-soft: #be123c14;
+}
+
+:root[data-accent="blue"] {
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --accent-soft: #38bdf826;
+}
+:root[data-mode="light"][data-accent="blue"] {
+  --accent: #1d4ed8;
+  --accent-hover: #1e3a8a;
+  --accent-soft: #1d4ed814;
+}
+
+:root[data-accent="purple"] {
+  --accent: #a78bfa;
+  --accent-hover: #c4b5fd;
+  --accent-soft: #a78bfa26;
+}
+:root[data-mode="light"][data-accent="purple"] {
+  --accent: #6d28d9;
+  --accent-hover: #5b21b6;
+  --accent-soft: #6d28d914;
+}
+
+:root[data-accent="green"] {
+  --accent: #34d399;
+  --accent-hover: #6ee7b7;
+  --accent-soft: #34d39926;
+}
+:root[data-mode="light"][data-accent="green"] {
+  --accent: #047857;
+  --accent-hover: #065f46;
+  --accent-soft: #04785714;
+}
+
+/* --------------------------------------------------------- tailwind tokens */
+@theme {
+  --color-ink-950: var(--surface-0);
+  --color-ink-900: var(--surface-1);
+  --color-ink-850: var(--surface-2);
+  --color-ink-800: var(--surface-3);
+  --color-ink-700: var(--surface-4);
+  --color-ink-600: var(--line);
+  --color-ink-500: var(--line-strong);
+  --color-ink-400: var(--text-dim);
+  --color-ink-300: var(--text-muted);
+  --color-ink-200: var(--text-soft);
+  --color-ink-100: var(--text);
+
+  /* `live` is the accent. The name predates theming and is used across every
+     page for "a machine is doing something right now". */
+  --color-live-500: var(--accent);
+  --color-live-400: var(--accent-hover);
+
+  --color-good-500: var(--good);
+  --color-warn-500: var(--warn);
+  --color-bad-500: var(--bad);
+  --color-cool-500: var(--cool);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
@@ -34,26 +168,60 @@ body,
 }
 
 body {
-  background: var(--color-ink-950);
-  color: var(--color-ink-100);
+  background: var(--surface-0);
+  color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbars that do not shout. */
+/* Theme switches should feel like a light coming on, not a page reload. Scoped
+   to colour only — transitioning `all` would drag layout and animations too. */
+body,
+body * {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    fill 180ms ease;
+}
+/* Respect the user's motion preference, and never fight an explicit animation. */
+@media (prefers-reduced-motion: reduce) {
+  body,
+  body * {
+    transition: none;
+  }
+}
+
+/* Scrollbars that do not shout, and that follow the theme. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-ink-600) transparent;
+  scrollbar-color: var(--line) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-ink-600);
+  background: var(--line);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+  background-clip: content-box;
+}
+
+/* Selection picks up the accent so it reads as part of the theme. */
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Focus ring — one definition, accent-coloured, visible in both modes. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The pulse used on anything actively running. Slower than a spinner on purpose:
@@ -95,6 +263,6 @@ body {
   position: absolute;
   inset: 0;
   width: 33%;
-  background: linear-gradient(90deg, transparent, rgb(245 165 36 / 0.35), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
   animation: fleet-sweep 1.8s linear infinite;
 }

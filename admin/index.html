@@ -1,10 +1,28 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AgentFleet</title>
-    <meta name="color-scheme" content="dark" />
+    <script>
+      // Applied before first paint. Reading the theme in React instead would
+      // render one frame of the default theme first, which is the white flash
+      // every dark-mode app is judged on.
+      (function () {
+        try {
+          var mode = localStorage.getItem("agentfleet.mode") || "system";
+          var accent = localStorage.getItem("agentfleet.accent") || "amber";
+          if (mode === "system") {
+            mode = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          }
+          document.documentElement.dataset.mode = mode;
+          document.documentElement.dataset.accent = accent;
+        } catch (e) {
+          document.documentElement.dataset.mode = "dark";
+          document.documentElement.dataset.accent = "amber";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

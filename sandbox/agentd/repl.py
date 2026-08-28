@@ -133,7 +133,10 @@ class PersistentREPL:
                     expr_code = compile(code, "<repl>", "eval")
                     res = eval(expr_code, self.globals)
                     if res is not None:
-                        print(repr(res))
+                        if isinstance(res, str):
+                            print(res)
+                        else:
+                            print(repr(res))
                 except SyntaxError:
                     # Multi-statement or block: compile as exec
                     exec_code = compile(code, "<repl>", "exec")

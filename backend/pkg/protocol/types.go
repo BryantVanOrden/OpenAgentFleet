@@ -65,8 +65,8 @@ type Instance struct {
 	ID                string            `json:"id"`
 	Name              string            `json:"name"`
 	OwnerID           string            `json:"owner_id"`
-	ArchetypeID       string            `json:"archetype_id,omitempty"` // bot archetype template id
-	SystemPrompt      string            `json:"system_prompt,omitempty"`// specialized persona instructions
+	ArchetypeID       string            `json:"archetype_id,omitempty"`  // bot archetype template id
+	SystemPrompt      string            `json:"system_prompt,omitempty"` // specialized persona instructions
 	PreinstalledTools []string          `json:"preinstalled_tools,omitempty"`
 	Tier              Tier              `json:"tier"`
 	Driver            Driver            `json:"driver"`
@@ -240,17 +240,17 @@ const (
 	ActScroll      ActionKind = "scroll"
 	ActDrag        ActionKind = "drag"
 	ActWait        ActionKind = "wait"
-	ActWaitFor     ActionKind = "wait_for"    // poll until text appears on screen
-	ActFocus       ActionKind = "focus"       // raise a window by title
-	ActShell       ActionKind = "shell"       // gated by Instance.ShellAccess
-	ActPython      ActionKind = "python"      // persistent Python REPL execution in sandbox
-	ActSpawnAgent  ActionKind = "spawn_agent" // recursive sub-agent delegation
-	ActMountTool   ActionKind = "mount_tool"  // dynamically synthesize and register a custom tool
-	ActUnmountTool ActionKind = "unmount_tool"// dispose of a mounted custom tool
-	ActCallTool    ActionKind = "call_tool"   // execute a dynamically mounted custom tool
-	ActDeepSearch  ActionKind = "deep_search" // live web search and intelligence synthesis
-	ActAssert      ActionKind = "assert"      // file exists / size / exit code
-	ActAskHuman    ActionKind = "ask_human"   // hand control back to the operator
+	ActWaitFor     ActionKind = "wait_for"     // poll until text appears on screen
+	ActFocus       ActionKind = "focus"        // raise a window by title
+	ActShell       ActionKind = "shell"        // gated by Instance.ShellAccess
+	ActPython      ActionKind = "python"       // persistent Python REPL execution in sandbox
+	ActSpawnAgent  ActionKind = "spawn_agent"  // recursive sub-agent delegation
+	ActMountTool   ActionKind = "mount_tool"   // dynamically synthesize and register a custom tool
+	ActUnmountTool ActionKind = "unmount_tool" // dispose of a mounted custom tool
+	ActCallTool    ActionKind = "call_tool"    // execute a dynamically mounted custom tool
+	ActDeepSearch  ActionKind = "deep_search"  // live web search and intelligence synthesis
+	ActAssert      ActionKind = "assert"       // file exists / size / exit code
+	ActAskHuman    ActionKind = "ask_human"    // hand control back to the operator
 	ActDone        ActionKind = "done"
 	ActFail        ActionKind = "fail"
 )
@@ -267,10 +267,10 @@ type MountedTool struct {
 type Action struct {
 	Thought         string            `json:"thought"`
 	Action          ActionKind        `json:"action"`
-	Target          string            `json:"target,omitempty"`           // accessible label / window title
-	Mark            int               `json:"mark,omitempty"`             // Set-of-Marks ID (e.g. 1, 2, 3)
-	Coordinates     []int             `json:"coordinates,omitempty"`      // [x,y] in desktop pixels
-	To              []int             `json:"to,omitempty"`               // drag destination
+	Target          string            `json:"target,omitempty"`      // accessible label / window title
+	Mark            int               `json:"mark,omitempty"`        // Set-of-Marks ID (e.g. 1, 2, 3)
+	Coordinates     []int             `json:"coordinates,omitempty"` // [x,y] in desktop pixels
+	To              []int             `json:"to,omitempty"`          // drag destination
 	Text            string            `json:"text,omitempty"`
 	Key             string            `json:"key,omitempty"`              // e.g. "ctrl+shift+p"
 	Code            string            `json:"code,omitempty"`             // for python action
@@ -286,7 +286,7 @@ type Action struct {
 	Amount          int               `json:"amount,omitempty"`           // scroll clicks / wait seconds
 	Timeout         int               `json:"timeout,omitempty"`          // seconds, for wait_for
 	Question        string            `json:"question,omitempty"`
-	Summary         string            `json:"summary,omitempty"`          // filled on done/fail
+	Summary         string            `json:"summary,omitempty"` // filled on done/fail
 }
 
 // StepRecord is one persisted turn of the agent loop, used for audit replay.
@@ -323,17 +323,17 @@ type SkillStep struct {
 
 // Skill is a recorded, editable workflow.
 type Skill struct {
-	ID               string      `json:"id"`
-	Name             string      `json:"name"`
-	Description      string      `json:"description"`
-	Params           []string    `json:"params,omitempty"`
-	Steps            []SkillStep `json:"steps"`
-	Markdown         string      `json:"markdown"` // rendered SKILL.md handed to the model
-	SourceRunID      string      `json:"source_run_id,omitempty"`
-	Version          int         `json:"version"`                     // incremented on refinement
-	RefinementNotes  string      `json:"refinement_notes,omitempty"`  // notes from self-improvement loop
-	CreatedAt        time.Time   `json:"created_at"`
-	UpdatedAt        time.Time   `json:"updated_at"`
+	ID              string      `json:"id"`
+	Name            string      `json:"name"`
+	Description     string      `json:"description"`
+	Params          []string    `json:"params,omitempty"`
+	Steps           []SkillStep `json:"steps"`
+	Markdown        string      `json:"markdown"` // rendered SKILL.md handed to the model
+	SourceRunID     string      `json:"source_run_id,omitempty"`
+	Version         int         `json:"version"`                    // incremented on refinement
+	RefinementNotes string      `json:"refinement_notes,omitempty"` // notes from self-improvement loop
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
 // RawEvent is a single captured input/accessibility event from the recorder.

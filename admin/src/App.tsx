@@ -4,6 +4,7 @@ import { api, getToken, setToken, type Alert, type User } from "./lib/api";
 import { useEvents } from "./lib/events";
 import { cx } from "./components/ui";
 import ToastHost, { toast } from "./components/Toasts";
+import ThemePicker from "./components/ThemePicker";
 import Login from "./pages/Login";
 import Fleet from "./pages/Fleet";
 import InstanceDetail from "./pages/InstanceDetail";
@@ -142,6 +143,7 @@ export default function App() {
         </nav>
 
         <div className="space-y-2 border-t border-ink-800 px-4 py-3 text-xs">
+          <ThemePicker />
           <div className="flex items-center gap-2 text-ink-400">
             <span
               className={cx(
