@@ -1,0 +1,174 @@
+name: AgentFleet CI & Release Build Pipeline
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      build_binaries:
+        description: "Force heavy cross-platform builds (APK, Linux, Windows)"
+        required: false
+        default: "false"
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Fast Validation Suite (Go Orchestrator, Python Sandbox, React Admin)
+  # ---------------------------------------------------------------------------
+  fast-validation:
+    name: Fast CI (Go, Python, React)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: backend/go.sum
+
+      - name: Test Go Backend
+        run: |
+          cd backend
+          go test -v ./...
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies & Test Sandbox agentd
+        run: |
+          cd sandbox/agentd
+          pip install -r requirements.txt || true
+          python -m unittest discover -p "test_*.py"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Build React Admin Console
+        run: |
+          cd admin
+          npm ci
+          npm run build
+
+  # ---------------------------------------------------------------------------
+  # 2. Heavy Cross-Platform Build: Flutter Android APK
+  # (Only runs if repo variable `RUN_HEAVY_BUILDS` is set to 'yes' or triggered manually)
+  # ---------------------------------------------------------------------------
+  build-flutter-apk:
+    name: Build Flutter Android APK
+    needs: fast-validation
+    if: vars.RUN_HEAVY_BUILDS == 'yes' || inputs.build_binaries == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Build Android APK
+        run: |
+          cd mobile
+          flutter pub get
+          flutter build apk --release --split-per-abi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentfleet-companion-apk
+          path: mobile/build/app/outputs/flutter-apk/*.apk
+
+  # ---------------------------------------------------------------------------
+  # 3. Heavy Cross-Platform Build: Linux Desktop Binary
+  # (Only runs if repo variable `RUN_HEAVY_BUILDS` is set to 'yes' or triggered manually)
+  # ---------------------------------------------------------------------------
+  build-linux-desktop:
+    name: Build Linux Desktop Binary
+    needs: fast-validation
+    if: vars.RUN_HEAVY_BUILDS == 'yes' || inputs.build_binaries == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Build Linux Desktop Bundle
+        run: |
+          cd mobile
+          flutter pub get
+          flutter config --enable-linux-desktop
+          flutter build linux --release
+
+      - name: Upload Linux Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentfleet-linux-desktop
+          path: mobile/build/linux/x64/release/bundle/
+
+  # ---------------------------------------------------------------------------
+  # 4. Heavy Cross-Platform Build: Windows Desktop EXE
+  # (Only runs if repo variable `RUN_HEAVY_BUILDS` is set to 'yes' or triggered manually)
+  # ---------------------------------------------------------------------------
+  build-windows-exe:
+    name: Build Windows Desktop Executable (.exe)
+    needs: fast-validation
+    if: vars.RUN_HEAVY_BUILDS == 'yes' || inputs.build_binaries == true
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Build Windows Executable
+        run: |
+          cd mobile
+          flutter pub get
+          flutter config --enable-windows-desktop
+          flutter build windows --release
+
+      - name: Upload Windows Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentfleet-windows-exe
+          path: mobile/build/windows/x64/runner/Release/

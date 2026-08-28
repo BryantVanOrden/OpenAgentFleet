@@ -12,6 +12,8 @@ import 'features/alerts/alerts_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/swarms/swarms_screen.dart';
+import 'features/voice/voice_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +74,9 @@ class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
       themeMode: choice.mode,
       theme: buildTheme(Brightness.light, choice.accent),
       darkTheme: buildTheme(Brightness.dark, choice.accent),
+      // Both palettes get built above; this pins the static accessors to
+      // whichever one is actually on screen.
+      builder: (context, child) => FleetThemeSync(child: child ?? const SizedBox.shrink()),
       home: widget.api.isAuthenticated
           ? const HomeShell()
           : LoginScreen(onSignedIn: () => _push.init()),
@@ -99,7 +104,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return Scaffold(
       body: IndexedStack(
         index: _index,
-        children: const [FleetScreen(), AlertsScreen(), SettingsScreen()],
+        children: const [
+          FleetScreen(),
+          SwarmsScreen(),
+          VoiceScreen(),
+          AlertsScreen(),
+          SettingsScreen(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -109,6 +120,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             icon: Icon(Icons.grid_view_outlined),
             selectedIcon: Icon(Icons.grid_view_rounded),
             label: 'Fleet',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.hub_outlined),
+            selectedIcon: Icon(Icons.hub_rounded),
+            label: 'Swarms',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.mic_none_outlined),
+            selectedIcon: Icon(Icons.mic_rounded),
+            label: 'Voice',
           ),
           NavigationDestination(
             icon: Badge(

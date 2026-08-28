@@ -161,8 +161,31 @@ class FleetColors extends ThemeExtension<FleetColors> {
   }
 }
 
-/// Palette the static accessors read. Installed by [buildTheme].
+/// Palette the static accessors read.
 FleetColors _active = FleetColors.build(Brightness.dark, FleetAccent.amber);
+
+/// Point the static accessors at the theme that is actually being rendered.
+///
+/// This exists because [MaterialApp] evaluates `theme` and `darkTheme` both, so
+/// whichever [buildTheme] call ran last would otherwise win — leaving the
+/// statics on the dark palette while the app renders light. [FleetThemeSync]
+/// calls this from inside the tree, where the resolved theme is known.
+void syncActivePalette(FleetColors colors) => _active = colors;
+
+/// Drop-in for `MaterialApp.builder`. Reads the resolved theme and installs it
+/// before any descendant builds.
+class FleetThemeSync extends StatelessWidget {
+  const FleetThemeSync({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolved = Theme.of(context).extension<FleetColors>();
+    if (resolved != null) syncActivePalette(resolved);
+    return child;
+  }
+}
 
 /// Static colour accessors. See the class doc on [FleetAccent] for why these
 /// exist alongside the [FleetColors] extension.

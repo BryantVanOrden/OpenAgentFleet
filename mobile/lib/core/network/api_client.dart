@@ -156,6 +156,40 @@ class ApiClient {
   Future<void> sendChat(String instanceId, String body, {bool asTask = false}) =>
       _post('/api/chat/$instanceId', {'body': body, 'as_task': asTask});
 
+  // --------------------------------------------------------------- swarms ---
+
+  Future<List<SwarmTeam>> swarms() async {
+    final data = await _get('/api/swarms') as List;
+    return data.map((e) => SwarmTeam.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<SwarmTeam> swarm(String id) async {
+    final data = await _get('/api/swarms/$id') as Map<String, dynamic>;
+    return SwarmTeam.fromJson(data);
+  }
+
+  Future<SwarmTeam> createSwarm(String name, String mission) async {
+    final data = await _post('/api/swarms', {'name': name, 'mission': mission})
+        as Map<String, dynamic>;
+    return SwarmTeam.fromJson(data);
+  }
+
+  Future<SwarmMessage> postSwarmMessage(
+    String id,
+    String content, {
+    String fromBot = 'Mobile Operator',
+    String toBot = 'all',
+    String phase = 'execution',
+  }) async {
+    final data = await _post('/api/swarms/$id/messages', {
+      'from_bot': fromBot,
+      'to_bot': toBot,
+      'phase': phase,
+      'content': content,
+    }) as Map<String, dynamic>;
+    return SwarmMessage.fromJson(data);
+  }
+
   // --------------------------------------------------------------- devices ---
 
   Future<void> registerDevice(String pushToken, String platform) =>

@@ -226,6 +226,129 @@ class FleetEvent {
       );
 }
 
+class SwarmMember {
+  SwarmMember({
+    required this.instanceId,
+    required this.instanceName,
+    required this.role,
+    required this.archetypeId,
+    required this.status,
+  });
+
+  final String instanceId;
+  final String instanceName;
+  final String role;
+  final String archetypeId;
+  final String status;
+
+  factory SwarmMember.fromJson(Map<String, dynamic> j) => SwarmMember(
+        instanceId: j['instance_id'] as String? ?? '',
+        instanceName: j['instance_name'] as String? ?? '',
+        role: j['role'] as String? ?? '',
+        archetypeId: j['archetype_id'] as String? ?? '',
+        status: j['status'] as String? ?? 'working',
+      );
+}
+
+class SwarmMessage {
+  SwarmMessage({
+    required this.id,
+    required this.swarmId,
+    required this.fromBot,
+    required this.toBot,
+    required this.phase,
+    required this.content,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String swarmId;
+  final String fromBot;
+  final String toBot;
+  final String phase;
+  final String content;
+  final DateTime createdAt;
+
+  factory SwarmMessage.fromJson(Map<String, dynamic> j) => SwarmMessage(
+        id: j['id'] as String? ?? '',
+        swarmId: j['swarm_id'] as String? ?? '',
+        fromBot: j['from_bot'] as String? ?? '',
+        toBot: j['to_bot'] as String? ?? '',
+        phase: j['phase'] as String? ?? '',
+        content: j['content'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
+class SwarmArtifact {
+  SwarmArtifact({
+    required this.id,
+    required this.title,
+    required this.author,
+    required this.category,
+    required this.content,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String author;
+  final String category;
+  final String content;
+  final DateTime createdAt;
+
+  factory SwarmArtifact.fromJson(Map<String, dynamic> j) => SwarmArtifact(
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        author: j['author'] as String? ?? '',
+        category: j['category'] as String? ?? '',
+        content: j['content'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
+class SwarmTeam {
+  SwarmTeam({
+    required this.id,
+    required this.name,
+    required this.mission,
+    required this.status,
+    required this.members,
+    required this.messages,
+    required this.artifacts,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String name;
+  final String mission;
+  final String status;
+  final List<SwarmMember> members;
+  final List<SwarmMessage> messages;
+  final List<SwarmArtifact> artifacts;
+  final DateTime createdAt;
+
+  factory SwarmTeam.fromJson(Map<String, dynamic> j) => SwarmTeam(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        mission: j['mission'] as String? ?? '',
+        status: j['status'] as String? ?? 'running',
+        members: (j['members'] as List?)
+                ?.map((m) => SwarmMember.fromJson(m as Map<String, dynamic>))
+                .toList() ??
+            [],
+        messages: (j['messages'] as List?)
+                ?.map((m) => SwarmMessage.fromJson(m as Map<String, dynamic>))
+                .toList() ??
+            [],
+        artifacts: (j['artifacts'] as List?)
+                ?.map((a) => SwarmArtifact.fromJson(a as Map<String, dynamic>))
+                .toList() ??
+            [],
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 String humanAgo(DateTime at) {
   final seconds = DateTime.now().difference(at).inSeconds;
   if (seconds < 45) return 'just now';
