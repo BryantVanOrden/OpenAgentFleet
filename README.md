@@ -29,16 +29,22 @@
 ## Key Superpowers
 
 * 🛡️ **Hard-Sandboxed Desktops**: Containerized Ubuntu XFCE sessions governed by strict cgroup envelopes (CPU, RAM, disk quotas), optional GPU passthrough, and kernel-level `nftables` network egress policies.
+* ⏪ **OS Snapshot Time-Machine & Auto-Rollback**: Instant copy-on-write workspace snapshots before risky file/system actions with automatic rollback if assertions fail.
+* 🔌 **Native Model Context Protocol (MCP) Bridge**: Connect Anthropic open-standard MCP tool servers (GitHub, Postgres, Slack, Brave Search, AWS) out of the box with zero custom code.
+* ⛓️ **Multi-Bot Workflow DAG Pipelines**: Visual multi-agent workflow DAG builder chaining specialist bots across sequential stages (e.g. Audit ➔ Code ➔ Test ➔ PR).
+* 📊 **Token Cost & Financial Telemetry Cockpit**: Live tracking of Prompt, Completion, and Cached tokens, model response latency, and dollar spend ($ USD).
+* 📦 **Portable `.agentfleet.yaml` Archetype Hub**: One-click serialization, export, and import of complete bot personas, tools, and environments.
+* 🎬 **Interactive Grok-Style Demonstration Recording HUD**: Teach bots by doing! Record live desktop demonstrations that compile directly into semantic `SKILL.md` playbooks.
 * 🎙️ **Pocket TTS Real-Time Voice Co-Pilot**: Ultra-low-latency CPU text-to-speech powered by Kyutai Labs' Pocket TTS with 6 curated voice models (4 Male: **Shadow** [default], Atlas, Vortex, Echo; 2 Female: Aura, Lyra) for spoken duplex dialogue.
 * 🐝 **Autonomous Multi-Agent Swarms & Mission Control**: Collaborative multi-bot team swarms operating on a shared blackboard with peer review and real-time deliverable handoffs.
+* 🔐 **Shared Fleet Vault & Inter-Agent Comms**: Direct peer-to-peer inter-bot messaging, broadcast channels, shared secret variables, and browser cookie/session handoffs.
 * 🧠 **Persistent Long-Term Episodic Vector Memory**: Cross-fleet semantic memory index for storing and retrieving successful workflows, API workarounds, and AT-SPI coordinates across all sandboxes.
 * ⚡ **Event-Driven Webhook Sinks & 24/7 Autopilot**: Public ingress endpoints (`/api/webhooks/{token}`) for GitHub PRs, Comp AI CRM leads, Stripe events, plus autonomous background cron schedules.
 * 👁️ **Hybrid Visual & Accessibility Perception**: Blends high-resolution WebP visual frames with AT-SPI semantic accessibility trees. Automatic image-to-display coordinate mapping ensures pixel-perfect interaction across arbitrary resolutions.
-* 🧠 **Continual Harness & AI Self-Refinement**: Inspired by recursive agent research, AgentFleet's post-task refinement engine inspects execution trajectories to self-heal fragile coordinate clicks into robust accessible selectors, automatically evolving `SKILL.md` workflows from `v1` to `v2`.
+* 🧠 **Continual Harness & AI Self-Refinement**: Post-task refinement engine inspects execution trajectories to self-heal fragile coordinate clicks into robust accessible selectors, automatically evolving `SKILL.md` workflows from `v1` to `v2`.
 * 🔀 **Recursive Sub-Agent Orchestration**: Agents can dynamically spawn and coordinate child sub-agents (`spawn_agent`) to handle parallel research, compilation, or verification tasks with full parent-child hierarchy tracking.
 * 🐍 **Persistent Python REPL Substrate**: Embeds a stateful, interactive Python REPL inside the sandbox daemon (`agentd`). Agents can manipulate data, query the AT-SPI bus programmatically, and maintain state variables across turns.
-* 📱 **Mobile Human-in-the-Loop Triage**: First-class Flutter mobile companion with time-sensitive APNs/FCM push dispatch. When agents encounter CAPTCHAs, 2FA prompts, or perceptual stalls, they pause and request authoritative instruction from your phone.
-* 🔐 **Cryptographic Credential Vault**: AES-256-GCM sealed credential storage under `MASTER_KEY`, with each secret's ref bound as additional authenticated data so a sealed value cannot be moved to another name. The API never returns a secret value, and provider API keys travel in request headers, never in a URL. Automatic run-scoped injection into a sandbox keyring is *not* wired up yet — `agentd` exposes the endpoint, nothing calls it. See [SECURITY.md](docs/SECURITY.md#credentials).
+* 📱 **Mobile Human-in-the-Loop Triage**: First-class Flutter mobile companion with time-sensitive push dispatch for CAPTCHAs, MFA, and human approvals with 1-tap resolution.
 * 🌐 **Universal Model Fallback Chain**: Works out-of-the-box with local vision models (Ollama / `qwen2.5vl:7b`), OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible gateway (vLLM, LiteLLM) configured as a resilient fallback chain.
 
 ## Pre-Configured Bot Archetypes
