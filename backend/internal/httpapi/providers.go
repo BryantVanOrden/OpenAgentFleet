@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
@@ -106,6 +107,41 @@ func (s *Server) handleAntigravityModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
+// handleDynamicModels discovers models for any provider kind.
+//
+// A failed discovery still returns a usable list — the built-in catalogue is
+// better than an empty dropdown — but it is reported as `live: false` with the
+// reason. Returning a confident-looking list of models the provider may not
+// serve is how an operator ends up picking one that 404s three steps into a run.
+func (s *Server) handleDynamicModels(w http.ResponseWriter, r *http.Request) {
+	kind := protocol.ProviderKind(r.URL.Query().Get("kind"))
+	base := r.URL.Query().Get("base_url")
+	key := r.URL.Query().Get("api_key")
+	if kind == "" {
+		kind = protocol.ProviderOllama
+	}
+
+	models, err := connectors.ListDynamicModels(r.Context(), kind, base, key)
+	if models == nil {
+		models = []connectors.ModelDescriptor{}
+	}
+
+	var fallback *connectors.CatalogueFallback
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, map[string]any{"models": models, "live": true})
+	case errors.As(err, &fallback):
+		writeJSON(w, http.StatusOK, map[string]any{
+			"models": models, "live": false, "reason": fallback.Reason,
+		})
+	default:
+		// An unknown provider kind, not a discovery failure.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"models": []connectors.ModelDescriptor{}, "live": false, "error": err.Error(),
+		})
+	}
 }
 
 // -------------------------------------------------------------- secrets ---

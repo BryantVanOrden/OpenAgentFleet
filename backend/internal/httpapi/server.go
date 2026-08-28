@@ -147,8 +147,16 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /api/providers/{id}", auth(roleAdmin, s.handleUpsertProvider))
 	mux.Handle("DELETE /api/providers/{id}", auth(roleAdmin, s.handleDeleteProvider))
 	mux.Handle("POST /api/providers/{id}/probe", auth(roleAdmin, s.handleProbeProvider))
+	// Model discovery for any provider kind. The two routes below it predate
+	// this one and are kept so existing clients keep working; new code should
+	// use this, which covers every kind rather than two special cases.
+	//
+	// roleAdmin, not roleAny: the caller passes an API key as a query parameter
+	// for an unsaved provider, and this is the only place in the API where a
+	// credential arrives that way. Only admins configure engines.
+	mux.Handle("GET /api/providers/models", auth(roleAdmin, s.handleDynamicModels))
 	mux.Handle("GET /api/providers/ollama/models", auth(roleAdmin, s.handleOllamaModels))
-	mux.Handle("GET /api/providers/antigravity/models", auth(roleAny, s.handleAntigravityModels))
+	mux.Handle("GET /api/providers/antigravity/models", auth(roleAdmin, s.handleAntigravityModels))
 
 	mux.Handle("GET /api/secrets", auth(roleAdmin, s.handleListSecrets))
 	mux.Handle("PUT /api/secrets/{ref}", auth(roleAdmin, s.handlePutSecret))

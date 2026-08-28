@@ -172,6 +172,16 @@ export interface AntigravityModelInfo {
   description: string;
 }
 
+/** One model as reported by provider discovery. */
+export interface ModelDescriptor {
+  id: string;
+  name: string;
+  speed?: string;
+  thinking?: string;
+  vision: boolean;
+  description?: string;
+}
+
 export interface Alert {
   id: string;
   kind: string;
@@ -566,6 +576,28 @@ export const api = {
     p.id ? put<Provider>(`/api/providers/${p.id}`, p) : post<Provider>("/api/providers", p),
   deleteProvider: (id: string) => del<void>(`/api/providers/${id}`),
   probeProvider: (id: string) => post<{ ok: boolean; error?: string }>(`/api/providers/${id}/probe`),
+  /**
+   * Discover the models a provider actually serves, for any provider kind.
+   *
+   * `live` distinguishes a real answer from the built-in catalogue. The
+   * catalogue is still returned on failure — an empty dropdown is worse than a
+   * stale one — but the caller must say which it is showing, or an operator
+   * picks a model their provider does not serve and only finds out mid-run.
+   */
+  dynamicModels: (kind: string, baseUrl?: string, apiKey?: string) =>
+    get<{
+      models: ModelDescriptor[];
+      live: boolean;
+      reason?: string;
+      error?: string;
+    }>(
+      `/api/providers/models?${new URLSearchParams({
+        kind,
+        ...(baseUrl ? { base_url: baseUrl } : {}),
+        ...(apiKey ? { api_key: apiKey } : {}),
+      }).toString()}`,
+    ),
+
   ollamaModels: (baseUrl?: string) =>
     get<{ models: string[]; error?: string }>(
       `/api/providers/ollama/models${baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""}`,

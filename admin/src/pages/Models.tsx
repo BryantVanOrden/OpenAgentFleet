@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Provider } from "../lib/api";
+import { api, type ModelDescriptor, type Provider } from "../lib/api";
 import {
   Button,
   Card,
@@ -247,10 +247,12 @@ function EngineModal({
   onError: (m: string) => void;
 }) {
   const [draft, setDraft] = useState<Partial<Provider> & { api_key?: string }>({});
-  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
-  const [antigravityModels, setAntigravityModels] = useState<
-    Array<{ id: string; name: string; speed: string; thinking_level: string; vision: boolean; description: string }>
-  >([]);
+  // Discovery is uniform across provider kinds; `live` says whether the list
+  // came from the provider or from the built-in catalogue.
+  const [discovered, setDiscovered] = useState<ModelDescriptor[]>([]);
+  const [live, setLive] = useState(false);
+  const [reason, setReason] = useState<string | undefined>();
+  const [discovering, setDiscovering] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -258,17 +260,32 @@ function EngineModal({
   }, [provider]);
 
   useEffect(() => {
-    if (draft.kind === "ollama") {
+    if (!draft.kind) return;
+    let cancelled = false;
+    setDiscovering(true);
+    // Debounced: an API key is typed, and one request per keystroke would both
+    // hammer the provider and rate-limit the operator out of their own console.
+    const t = setTimeout(() => {
       api
-        .ollamaModels(draft.base_url)
-        .then((r) => setOllamaModels(r.models ?? []))
-        .catch(() => setOllamaModels([]));
-    } else if (draft.kind === "antigravity") {
-      api
-        .antigravityModels(draft.base_url, draft.api_key)
-        .then((r) => setAntigravityModels(r.models ?? []))
-        .catch(() => setAntigravityModels([]));
-    }
+        .dynamicModels(draft.kind!, draft.base_url, draft.api_key)
+        .then((r) => {
+          if (cancelled) return;
+          setDiscovered(r.models ?? []);
+          setLive(Boolean(r.live));
+          setReason(r.reason ?? r.error);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setDiscovered([]);
+          setLive(false);
+          setReason(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => !cancelled && setDiscovering(false));
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [draft.kind, draft.base_url, draft.api_key]);
 
   if (!provider) return null;
@@ -332,51 +349,63 @@ function EngineModal({
           />
         </Field>
 
-        <Field label="Model">
-          {draft.kind === "ollama" && ollamaModels.length > 0 ? (
-            <select
-              className={inputClass}
-              value={draft.model ?? ""}
-              onChange={(e) => set({ model: e.target.value })}
-            >
-              {ollamaModels.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          ) : draft.kind === "antigravity" && antigravityModels.length > 0 ? (
-            <div className="space-y-2">
+        <Field
+          label="Model"
+          hint={
+            discovering
+              ? "Asking the provider what it serves…"
+              : live
+                ? `${discovered.length} model${discovered.length === 1 ? "" : "s"} reported by the provider`
+                : reason
+          }
+        >
+          <div className="space-y-2">
+            {discovered.length > 0 && (
               <select
                 className={inputClass}
-                value={draft.model ?? "gemini-3.7-flash"}
+                value={discovered.some((m) => m.id === draft.model) ? draft.model : ""}
                 onChange={(e) => {
-                  const m = antigravityModels.find((x) => x.id === e.target.value);
-                  set({ model: e.target.value, vision: m ? m.vision : true });
+                  const m = discovered.find((x) => x.id === e.target.value);
+                  // Carry the provider's own vision flag across: picking a
+                  // text-only model and leaving "vision" ticked produces an
+                  // engine the agent loop will silently skip on every step that
+                  // includes a screenshot, which is every step.
+                  set({ model: e.target.value, ...(m ? { vision: m.vision } : {}) });
                 }}
               >
-                {antigravityModels.map((m) => (
+                <option value="" disabled>
+                  Select a model…
+                </option>
+                {discovered.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({m.speed} · {m.thinking_level} Thinking)
+                    {m.name}
+                    {m.speed ? ` · ${m.speed}` : ""}
+                    {m.vision ? "" : "  (text only)"}
                   </option>
                 ))}
               </select>
-              <input
-                className={cx(inputClass, "text-xs text-ink-300 font-mono")}
-                value={draft.model ?? ""}
-                onChange={(e) => set({ model: e.target.value })}
-                placeholder="or enter custom / experimental model ID"
-              />
-            </div>
-          ) : (
+            )}
+
+            {/* Always editable. Providers ship models faster than any catalogue
+                tracks them, and a dropdown that cannot be overridden makes a
+                brand-new model unusable until someone updates this code. */}
             <input
-              className={inputClass}
+              className={cx(inputClass, discovered.length > 0 && "font-mono text-xs")}
               value={draft.model ?? ""}
               onChange={(e) => set({ model: e.target.value })}
-              placeholder={hint.model}
+              placeholder={
+                discovered.length > 0 ? "or type a model id directly" : hint.model
+              }
               required
             />
-          )}
+
+            {!discovering && !live && discovered.length > 0 && (
+              <p className="text-xs text-warn-500">
+                Not a live list — these are known models, not confirmed by your
+                provider. Check the endpoint and key, or type the id directly.
+              </p>
+            )}
+          </div>
         </Field>
 
         {draft.kind !== "ollama" && (
