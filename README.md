@@ -293,3 +293,21 @@ AgentFleet is distributed under the **[PolyForm Noncommercial License 1.0.0](LIC
 
 * **Non-Commercial Use**: Free for personal, research, academic, and non-commercial evaluation use.
 * **Commercial & Enterprise Use**: For commercial deployments, SaaS integration, or commercial redistributions, a commercial license is required. Contact **Bryant VanOrden** (`supermanismebvo123@gmail.com`) for enterprise terms.
+
+---
+
+## ⚡ Support the Project — Buy Me a Monster ⚡
+
+If you find AgentFleet useful and want to fuel late-night coding sessions and open-source updates, you can support development with **XRP**:
+
+<p align="center">
+  <img src="docs/assets/xrp_qr.png" alt="XRP QR Code" width="180" /><br>
+  <strong>XRP Address:</strong><br>
+  <code>rf82s1CDagppvM6ATqc1nSrL6GackzHJrm</code><br><br>
+  <strong>Destination Tag / Memo (Required):</strong><br>
+  <code>796343731</code>
+</p>
+
+> [!IMPORTANT]
+> **Destination Tag / Memo is required** when sending to this Robinhood deposit address (`796343731`). Thank you for your support! 🚀
+
