@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
 // ------------------------------------------------------------- Shared Secrets ---

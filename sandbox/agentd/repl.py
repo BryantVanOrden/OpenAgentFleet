@@ -73,15 +73,19 @@ class _InjectFacade:
         "quote",
     )
 
-    def __init__(self, module: Any) -> None:
-        self._module = module
+    def __init__(self) -> None:
+        # Bound methods only. The raw module is deliberately NOT kept as an
+        # attribute — `inject._module.shell(cmd, True)` would hand the parameter
+        # back to the caller and undo the whole point of the facade.
         for name in self._FORWARD:
-            fn = getattr(module, name, None) if module is not None else None
+            fn = getattr(_inject, name, None) if _inject is not None else None
             if fn is not None:
                 setattr(self, name, fn)
 
     def __repr__(self) -> str:  # what `inject` prints as in the REPL
-        return "<agentfleet input helpers: %s, shell, assert_condition>" % ", ".join(self._FORWARD)
+        return "<agentfleet input helpers: %s, screenshot, shell, assert_condition>" % ", ".join(
+            self._FORWARD
+        )
 
     def screenshot(self, *args: Any, **kwargs: Any) -> Any:
         """Grab the current framebuffer (the `capture` module's `grab`)."""
@@ -91,19 +95,19 @@ class _InjectFacade:
 
     def shell(self, command: str, timeout: int = 600) -> tuple[bool, str, int]:
         """Run a shell command. There is no allow flag to pass."""
-        if self._module is None:
+        if _inject is None:
             return False, "input helpers unavailable", 127
         if not _CODE_EXECUTION_ENABLED:
             return False, "code execution is disabled for this instance", 126
-        return self._module.shell(command, True, timeout=timeout)
+        return _inject.shell(command, True, timeout=timeout)
 
     def assert_condition(self, expression: str) -> tuple[bool, str]:
-        if self._module is None:
+        if _inject is None:
             return False, "input helpers unavailable"
-        return self._module.assert_condition(expression, _CODE_EXECUTION_ENABLED)
+        return _inject.assert_condition(expression, _CODE_EXECUTION_ENABLED)
 
 
-inject = _InjectFacade(_inject)
+inject = _InjectFacade()
 
 
 class PersistentREPL:

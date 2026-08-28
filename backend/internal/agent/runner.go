@@ -641,6 +641,11 @@ func mapToDesktop(a protocol.Action, obs *protocol.Observation) protocol.Action 
 	}
 	out := a
 	if a.Mark > 0 {
+		// Marks are already in desktop space — agentd builds them from AT-SPI
+		// extents and only shifts them into frame space for drawing. So this
+		// returns early and deliberately does NOT call ToDesktop: doing so
+		// would scale an already-correct coordinate a second time and every
+		// set-of-marks click would land short of its target.
 		for _, m := range obs.Marks {
 			if m.ID == a.Mark {
 				out.Coordinates = []int{m.CX, m.CY}

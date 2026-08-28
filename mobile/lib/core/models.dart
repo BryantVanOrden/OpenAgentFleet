@@ -434,6 +434,72 @@ class PeerMessage {
       );
 }
 
+class PipelineNode {
+  PipelineNode({
+    required this.id,
+    required this.name,
+    required this.archetypeId,
+    required this.goalTemplate,
+  });
+
+  final String id;
+  final String name;
+  final String archetypeId;
+  final String goalTemplate;
+
+  factory PipelineNode.fromJson(Map<String, dynamic> j) => PipelineNode(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        archetypeId: j['archetype_id'] as String? ?? 'fullstack_dev',
+        goalTemplate: j['goal_template'] as String? ?? '',
+      );
+}
+
+class WorkflowPipeline {
+  WorkflowPipeline({
+    required this.id,
+    required this.name,
+    this.description = '',
+    required this.nodes,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final List<PipelineNode> nodes;
+
+  factory WorkflowPipeline.fromJson(Map<String, dynamic> j) => WorkflowPipeline(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+        nodes: (j['nodes'] as List?)
+                ?.map((n) => PipelineNode.fromJson(n as Map<String, dynamic>))
+                .toList() ??
+            [],
+      );
+}
+
+class PipelineRun {
+  PipelineRun({
+    required this.id,
+    required this.pipelineId,
+    required this.status,
+    required this.startedAt,
+  });
+
+  final String id;
+  final String pipelineId;
+  final String status;
+  final DateTime startedAt;
+
+  factory PipelineRun.fromJson(Map<String, dynamic> j) => PipelineRun(
+        id: j['id'] as String? ?? '',
+        pipelineId: j['pipeline_id'] as String? ?? '',
+        status: j['status'] as String? ?? 'running',
+        startedAt: DateTime.tryParse(j['started_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 String humanAgo(DateTime at) {
   final seconds = DateTime.now().difference(at).inSeconds;
   if (seconds < 45) return 'just now';

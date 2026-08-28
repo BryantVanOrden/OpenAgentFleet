@@ -204,6 +204,18 @@ class ApiClient {
     return PeerMessage.fromJson(data.cast<String, dynamic>());
   }
 
+  // ------------------------------------------------------------ pipelines ---
+
+  Future<List<WorkflowPipeline>> pipelines() async {
+    final data = await _get('/api/pipelines') as List;
+    return data.map((e) => WorkflowPipeline.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<PipelineRun> runPipeline(String id) async {
+    final data = await _post('/api/pipelines/$id/run') as Map;
+    return PipelineRun.fromJson(data.cast<String, dynamic>());
+  }
+
   // ---------------------------------------------------------------- alerts ---
 
   Future<List<Alert>> alerts({bool openOnly = false}) async {

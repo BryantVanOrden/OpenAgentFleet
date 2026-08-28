@@ -16,11 +16,17 @@ import Settings from "./pages/Settings";
 import MissionControl from "./pages/MissionControl";
 import Triggers from "./pages/Triggers";
 import Vault from "./pages/Vault";
+import Pipelines from "./pages/Pipelines";
+import Financials from "./pages/Financials";
+import MCPHub from "./pages/MCPHub";
 
 const NAV = [
   { to: "/fleet", label: "Fleet", icon: "▦" },
   { to: "/swarms", label: "Mission Control", icon: "🐝" },
+  { to: "/pipelines", label: "Pipelines", icon: "⛓" },
   { to: "/vault", label: "Fleet Vault", icon: "🔐" },
+  { to: "/mcp", label: "MCP Hub", icon: "🔌" },
+  { to: "/financials", label: "Financials", icon: "📊" },
   { to: "/triggers", label: "Autopilot Sinks", icon: "⚡" },
   { to: "/skills", label: "Skills", icon: "⌥" },
   { to: "/alerts", label: "Alerts", icon: "!" },
@@ -190,7 +196,10 @@ export default function App() {
           <Route path="/" element={<Navigate to="/fleet" replace />} />
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/swarms" element={<MissionControl />} />
+          <Route path="/pipelines" element={<Pipelines />} />
           <Route path="/vault" element={<Vault />} />
+          <Route path="/mcp" element={<MCPHub />} />
+          <Route path="/financials" element={<Financials />} />
           <Route path="/triggers" element={<Triggers />} />
           <Route path="/instances/:id" element={<InstanceDetail role={user.role} />} />
           <Route path="/skills" element={<Skills />} />

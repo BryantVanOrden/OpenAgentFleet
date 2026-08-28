@@ -334,6 +334,85 @@ export interface PeerMessage {
   created_at: string;
 }
 
+export interface MCPServer {
+  id: string;
+  name: string;
+  transport: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  tools_count: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MCPTool {
+  server_id: string;
+  name: string;
+  description: string;
+  input_schema?: Record<string, unknown>;
+}
+
+export interface PipelineNode {
+  id: string;
+  name: string;
+  archetype_id: string;
+  goal_template: string;
+  params?: Record<string, string>;
+}
+
+export interface PipelineEdge {
+  from_node_id: string;
+  to_node_id: string;
+  condition?: string;
+}
+
+export interface WorkflowPipeline {
+  id: string;
+  name: string;
+  description?: string;
+  nodes: PipelineNode[];
+  edges: PipelineEdge[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineRun {
+  id: string;
+  pipeline_id: string;
+  status: "running" | "completed" | "failed";
+  current_node_id?: string;
+  node_results?: Record<string, string>;
+  started_at: string;
+  finished_at?: string;
+}
+
+export interface FinancialSummary {
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_cached_tokens: number;
+  total_cost_usd: number;
+  avg_latency_ms: number;
+  turns_count: number;
+}
+
+export interface TokenTelemetryRecord {
+  id: string;
+  task_id: string;
+  instance_id: string;
+  archetype_id?: string;
+  provider_id: string;
+  model_name: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  created_at: string;
+}
+
 export const api = {
   // Authentication
   login: (email: string, password: string) =>
@@ -429,6 +508,28 @@ export const api = {
     content: string;
     data?: Record<string, unknown>;
   }) => post<PeerMessage>("/api/vault/comms", body),
+
+  // Model Context Protocol (MCP) Bridge
+  mcpServers: () => get<MCPServer[]>("/api/mcp/servers"),
+  registerMCPServer: (body: Partial<MCPServer>) => post<MCPServer>("/api/mcp/servers", body),
+  deleteMCPServer: (id: string) => del<void>(`/api/mcp/servers/${id}`),
+  mcpTools: (serverId?: string) =>
+    get<MCPTool[]>(`/api/mcp/tools${serverId ? `?server_id=${serverId}` : ""}`),
+  callMCPTool: (body: { server_id: string; tool_name: string; params: Record<string, unknown> }) =>
+    post<unknown>("/api/mcp/call", body),
+
+  // Workflow DAG Pipelines
+  pipelines: () => get<WorkflowPipeline[]>("/api/pipelines"),
+  savePipeline: (body: Partial<WorkflowPipeline>) => post<WorkflowPipeline>("/api/pipelines", body),
+  pipeline: (id: string) => get<WorkflowPipeline>(`/api/pipelines/${id}`),
+  deletePipeline: (id: string) => del<void>(`/api/pipelines/${id}`),
+  runPipeline: (id: string) => post<PipelineRun>(`/api/pipelines/${id}/run`),
+  pipelineRuns: (id: string) => get<PipelineRun[]>(`/api/pipelines/${id}/runs`),
+
+  // Financial Telemetry
+  financialSummary: () => get<FinancialSummary>("/api/telemetry/financials"),
+  telemetryRecords: (limit = 50) =>
+    get<TokenTelemetryRecord[]>(`/api/telemetry/records?limit=${limit}`),
 
   // Webhooks & Triggers
   webhooks: () => get<WebhookRecord[]>("/api/webhooks"),

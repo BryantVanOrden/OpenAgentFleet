@@ -120,6 +120,25 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/vault/comms", auth(roleAny, s.handleListPeerMessages))
 	mux.Handle("POST /api/vault/comms", auth(roleOperator, s.handleSendPeerMessage))
 
+	// Model Context Protocol (MCP) Bridge
+	mux.Handle("GET /api/mcp/servers", auth(roleAny, s.handleListMCPServers))
+	mux.Handle("POST /api/mcp/servers", auth(roleAdmin, s.handleRegisterMCPServer))
+	mux.Handle("DELETE /api/mcp/servers/{id}", auth(roleAdmin, s.handleDeleteMCPServer))
+	mux.Handle("GET /api/mcp/tools", auth(roleAny, s.handleListMCPTools))
+	mux.Handle("POST /api/mcp/call", auth(roleOperator, s.handleCallMCPTool))
+
+	// Multi-Bot Workflow DAG Pipelines
+	mux.Handle("GET /api/pipelines", auth(roleAny, s.handleListPipelines))
+	mux.Handle("POST /api/pipelines", auth(roleOperator, s.handleSavePipeline))
+	mux.Handle("GET /api/pipelines/{id}", auth(roleAny, s.handleGetPipeline))
+	mux.Handle("DELETE /api/pipelines/{id}", auth(roleAdmin, s.handleDeletePipeline))
+	mux.Handle("POST /api/pipelines/{id}/run", auth(roleOperator, s.handleRunPipeline))
+	mux.Handle("GET /api/pipelines/{id}/runs", auth(roleAny, s.handleListPipelineRuns))
+
+	// Token & Financial Telemetry Cockpit
+	mux.Handle("GET /api/telemetry/financials", auth(roleAny, s.handleGetFinancialSummary))
+	mux.Handle("GET /api/telemetry/records", auth(roleAny, s.handleListTelemetryRecords))
+
 	mux.Handle("GET /api/alerts", auth(roleAny, s.handleListAlerts))
 	mux.Handle("POST /api/alerts/{id}/reply", auth(roleOperator, s.handleReplyAlert))
 

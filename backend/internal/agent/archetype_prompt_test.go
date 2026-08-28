@@ -10,8 +10,10 @@ import (
 
 func TestArchetypePromptInjection(t *testing.T) {
 	templates := protocol.DefaultBotTemplates()
-	if len(templates) != 10 {
-		t.Fatalf("expected 10 bot templates, got %d", len(templates))
+	// Lower bound, not an exact count: adding an archetype is a change, not a
+	// regression, and this test is here to catch an empty or gutted catalogue.
+	if len(templates) < 10 {
+		t.Fatalf("got %d bot templates, want at least 10", len(templates))
 	}
 
 	for _, tmpl := range templates {

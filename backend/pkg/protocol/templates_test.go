@@ -4,13 +4,20 @@ import "testing"
 
 func TestDefaultBotTemplates(t *testing.T) {
 	templates := DefaultBotTemplates()
-	if len(templates) != 10 {
-		t.Fatalf("expected 10 bot templates, got %d", len(templates))
-	}
 
+	// The list below is the set callers and docs rely on existing. Asserting
+	// presence rather than an exact length is deliberate: an exact count breaks
+	// every time an archetype is added — which is a change, not a defect — while
+	// still failing loudly if one is removed or renamed.
 	expectedIDs := []string{
+		"fleet_manager",
 		"cyber_ops", "fullstack_dev", "devops_sre", "qa_ui_ux", "game_dev",
 		"growth_media", "media_studio", "agentic_crm", "data_quant", "deep_researcher",
+	}
+
+	if len(templates) < len(expectedIDs) {
+		t.Fatalf("got %d bot templates, want at least the %d documented ones",
+			len(templates), len(expectedIDs))
 	}
 
 	for _, expectedID := range expectedIDs {

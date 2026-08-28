@@ -174,3 +174,26 @@ class FleetClient:
         """Synthesizes speech using Pocket TTS across 6 curated voice models."""
         payload = {"text": text, "voice": voice}
         return self._post("/voice/speak", payload) or {"status": "spoken", "voice": voice}
+
+    # ----------------------------------------------------------- MCP & Pipelines ---
+
+    def list_mcp_servers(self) -> list[dict[str, Any]]:
+        """Lists connected Model Context Protocol (MCP) servers."""
+        return self._get("/api/mcp/servers") or []
+
+    def register_mcp_server(self, name: str, command: str, transport: str = "stdio") -> dict[str, Any]:
+        """Registers a new Model Context Protocol tool server."""
+        payload = {"name": name, "command": command, "transport": transport}
+        return self._post("/api/mcp/servers", payload) or {}
+
+    def list_pipelines(self) -> list[dict[str, Any]]:
+        """Lists multi-bot workflow DAG pipelines."""
+        return self._get("/api/pipelines") or []
+
+    def run_pipeline(self, pipeline_id: str) -> dict[str, Any]:
+        """Triggers execution of a workflow pipeline."""
+        return self._post(f"/api/pipelines/{pipeline_id}/run") or {}
+
+    def get_financial_summary(self) -> dict[str, Any]:
+        """Fetches fleet-wide token and cost financial telemetry."""
+        return self._get("/api/telemetry/financials") or {}

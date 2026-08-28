@@ -97,7 +97,7 @@ def observe(req: ObserveRequest) -> dict:
             from som import annotate_frame
             nodes = a11y.snapshot() if req.a11y else []
             if nodes:
-                annotated_img, marks = annotate_frame(frame.image, nodes)
+                annotated_img, marks = annotate_frame(frame.image, nodes, origin=frame.origin)
                 frame = capture.Frame(
                     image=annotated_img,
                     width=frame.width,

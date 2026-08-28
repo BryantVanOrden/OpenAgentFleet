@@ -146,6 +146,17 @@ type Task struct {
 
 // MarkItem is one numbered element in a Set-of-Marks overlay: the box drawn on
 // the screenshot and the accessible identity behind it.
+//
+// Coordinates here are DESKTOP pixels, not image pixels — unlike the
+// coordinates a model reports, which are in the space of the picture it was
+// shown. agentd derives marks from AT-SPI extents, which are already desktop
+// coordinates, and only translates them into frame space for drawing.
+//
+// That asymmetry is deliberate but easy to get wrong in both directions: a mark
+// centre must be used verbatim, and must NOT be passed through
+// Observation.ToDesktop, or it would be scaled a second time and every
+// set-of-marks click would land short. See annotate_frame in
+// sandbox/agentd/som.py.
 type MarkItem struct {
 	ID     int    `json:"id"`
 	Role   string `json:"role,omitempty"`
@@ -238,23 +249,23 @@ func clampInt(v, lo, hi int) int {
 type ActionKind string
 
 const (
-	ActClick       ActionKind = "click"
-	ActDoubleClick ActionKind = "double_click"
-	ActRightClick  ActionKind = "right_click"
-	ActType        ActionKind = "type"
-	ActKey         ActionKind = "key"
-	ActScroll      ActionKind = "scroll"
-	ActDrag        ActionKind = "drag"
-	ActWait        ActionKind = "wait"
-	ActWaitFor     ActionKind = "wait_for"     // poll until text appears on screen
-	ActFocus       ActionKind = "focus"        // raise a window by title
-	ActShell       ActionKind = "shell"        // gated by Instance.ShellAccess
-	ActPython      ActionKind = "python"       // persistent Python REPL execution in sandbox
-	ActSpawnAgent  ActionKind = "spawn_agent"  // recursive sub-agent delegation
-	ActMountTool   ActionKind = "mount_tool"   // dynamically synthesize and register a custom tool
-	ActUnmountTool ActionKind = "unmount_tool" // dispose of a mounted custom tool
-	ActCallTool    ActionKind = "call_tool"    // execute a dynamically mounted custom tool
-	ActDeepSearch  ActionKind = "deep_search"  // live web search and intelligence synthesis
+	ActClick        ActionKind = "click"
+	ActDoubleClick  ActionKind = "double_click"
+	ActRightClick   ActionKind = "right_click"
+	ActType         ActionKind = "type"
+	ActKey          ActionKind = "key"
+	ActScroll       ActionKind = "scroll"
+	ActDrag         ActionKind = "drag"
+	ActWait         ActionKind = "wait"
+	ActWaitFor      ActionKind = "wait_for"      // poll until text appears on screen
+	ActFocus        ActionKind = "focus"         // raise a window by title
+	ActShell        ActionKind = "shell"         // gated by Instance.ShellAccess
+	ActPython       ActionKind = "python"        // persistent Python REPL execution in sandbox
+	ActSpawnAgent   ActionKind = "spawn_agent"   // recursive sub-agent delegation
+	ActMountTool    ActionKind = "mount_tool"    // dynamically synthesize and register a custom tool
+	ActUnmountTool  ActionKind = "unmount_tool"  // dispose of a mounted custom tool
+	ActCallTool     ActionKind = "call_tool"     // execute a dynamically mounted custom tool
+	ActDeepSearch   ActionKind = "deep_search"   // live web search and intelligence synthesis
 	ActRemember     ActionKind = "remember"      // store long-term episodic memory across the fleet
 	ActRecall       ActionKind = "recall"        // semantically search fleet episodic memory
 	ActSpeak        ActionKind = "speak"         // spoken voice output via Pocket TTS
@@ -262,6 +273,9 @@ const (
 	ActDelegateTask ActionKind = "delegate_task" // manager bot delegates sub-task to a peer bot
 	ActShareSecret  ActionKind = "share_secret"  // publish a variable/secret to the shared fleet vault
 	ActShareSession ActionKind = "share_session" // share cookies/auth session with peer bots
+	ActSnapshot     ActionKind = "snapshot"      // create OS container workspace snapshot checkpoint
+	ActRollback     ActionKind = "rollback"      // rollback OS container to a previous snapshot
+	ActCallMCP      ActionKind = "call_mcp"      // invoke tool on a Model Context Protocol (MCP) server
 	ActAssert       ActionKind = "assert"        // file exists / size / exit code
 	ActAskHuman     ActionKind = "ask_human"     // hand control back to the operator
 	ActDone         ActionKind = "done"
@@ -311,6 +325,96 @@ type SharedSession struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+// OSSnapshot represents an OS container workspace checkpoint.
+type OSSnapshot struct {
+	ID           string    `json:"id"`
+	InstanceID   string    `json:"instance_id"`
+	TaskID       string    `json:"task_id,omitempty"`
+	StepNumber   int       `json:"step_number"`
+	Name         string    `json:"name"`
+	SnapshotPath string    `json:"snapshot_path"`
+	FileCount    int       `json:"file_count"`
+	SizeBytes    int64     `json:"size_bytes"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// MCPServer represents a configured Model Context Protocol server.
+type MCPServer struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Transport  string            `json:"transport"` // "stdio" or "sse"
+	Command    string            `json:"command"`
+	Args       []string          `json:"args,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	URL        string            `json:"url,omitempty"`
+	ToolsCount int               `json:"tools_count"`
+	Active     bool              `json:"active"`
+	CreatedAt  time.Time         `json:"created_at"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+}
+
+// MCPTool represents an available tool exposed by an MCP server.
+type MCPTool struct {
+	ServerID    string         `json:"server_id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema,omitempty"`
+}
+
+// PipelineNode represents one step/agent in a multi-bot workflow DAG.
+type PipelineNode struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	ArchetypeID  string            `json:"archetype_id"`
+	GoalTemplate string            `json:"goal_template"`
+	Params       map[string]string `json:"params,omitempty"`
+}
+
+// PipelineEdge represents a directed dependency between two workflow nodes.
+type PipelineEdge struct {
+	FromNodeID string `json:"from_node_id"`
+	ToNodeID   string `json:"to_node_id"`
+	Condition  string `json:"condition,omitempty"` // optional condition, e.g. "success"
+}
+
+// WorkflowPipeline represents a multi-bot DAG orchestration workflow.
+type WorkflowPipeline struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Nodes       []PipelineNode `json:"nodes"`
+	Edges       []PipelineEdge `json:"edges"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+// PipelineRun tracks an execution of a workflow pipeline.
+type PipelineRun struct {
+	ID            string            `json:"id"`
+	PipelineID    string            `json:"pipeline_id"`
+	Status        string            `json:"status"` // "running", "completed", "failed"
+	CurrentNodeID string            `json:"current_node_id,omitempty"`
+	NodeResults   map[string]string `json:"node_results,omitempty"`
+	StartedAt     time.Time         `json:"started_at"`
+	FinishedAt    *time.Time        `json:"finished_at,omitempty"`
+}
+
+// TokenTelemetryRecord tracks token usage, dollar cost, and latency for financial telemetry.
+type TokenTelemetryRecord struct {
+	ID               string    `json:"id"`
+	TaskID           string    `json:"task_id"`
+	InstanceID       string    `json:"instance_id"`
+	ArchetypeID      string    `json:"archetype_id,omitempty"`
+	ProviderID       string    `json:"provider_id"`
+	ModelName        string    `json:"model_name"`
+	PromptTokens     int       `json:"prompt_tokens"`
+	CompletionTokens int       `json:"completion_tokens"`
+	CachedTokens     int       `json:"cached_tokens"`
+	CostUSD          float64   `json:"cost_usd"`
+	LatencyMS        int       `json:"latency_ms"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 // MemoryRecord represents a long-term cross-fleet semantic memory item.
 type MemoryRecord struct {
 	ID               string    `json:"id"`
@@ -357,6 +461,11 @@ type Action struct {
 	SecretVal       string            `json:"secret_val,omitempty"`       // value for share_secret
 	SessionDomain   string            `json:"session_domain,omitempty"`   // domain for share_session
 	SessionCookies  string            `json:"session_cookies,omitempty"`  // cookies JSON for share_session
+	SnapshotName    string            `json:"snapshot_name,omitempty"`    // for snapshot action
+	RollbackID      string            `json:"rollback_id,omitempty"`      // for rollback action
+	MCPServerID     string            `json:"mcp_server_id,omitempty"`    // for call_mcp action
+	MCPToolName     string            `json:"mcp_tool_name,omitempty"`    // for call_mcp action
+	MCPParams       map[string]any    `json:"mcp_params,omitempty"`       // for call_mcp action
 	Amount          int               `json:"amount,omitempty"`           // scroll clicks / wait seconds
 	Timeout         int               `json:"timeout,omitempty"`          // seconds, for wait_for
 	Question        string            `json:"question,omitempty"`

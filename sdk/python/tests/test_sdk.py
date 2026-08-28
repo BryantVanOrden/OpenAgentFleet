@@ -120,6 +120,33 @@ class TestAgentFleetSDK(unittest.TestCase):
         self.assertEqual(swarm.id, "swarm-001")
         self.assertEqual(swarm.name, "App Security Team")
 
+    def test_archetype_manifest_serialization(self):
+        from agentfleet.hub import ArchetypeManifest
+
+        manifest = ArchetypeManifest(
+            version="1.0.0",
+            id="solana_auditor",
+            name="Solana Smart Contract Auditor",
+            tagline="Audits Anchor rust contracts",
+            category="Web3 & Crypto",
+            recommended_tier="developer-heavy",
+            vcpu=8.0,
+            memory_mb=16384,
+            disk_gb=40,
+            gpu=False,
+            preinstalled_tools=["solana-cli", "anchor-cli", "cargo"],
+            system_prompt="Audit smart contracts for reentrancy.",
+            default_environment={"RUST_LOG": "info"},
+            mcp_servers=[],
+            recorded_skills=[],
+        )
+        d = manifest.to_dict()
+        self.assertEqual(d["id"], "solana_auditor")
+        self.assertEqual(d["name"], "Solana Smart Contract Auditor")
+        loaded = ArchetypeManifest.from_dict(d)
+        self.assertEqual(loaded.id, manifest.id)
+        self.assertEqual(loaded.vcpu, 8.0)
+
 
 if __name__ == "__main__":
     unittest.main()

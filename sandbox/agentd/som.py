@@ -33,8 +33,21 @@ def annotate_frame(
     image: Image.Image,
     nodes: list[Any],
     max_marks: int = 80,
+    origin: tuple[int, int] = (0, 0),
 ) -> tuple[Image.Image, list[dict[str, Any]]]:
-    """Draws Set-of-Marks visual badges on the frame.
+    """Draw Set-of-Marks badges on a frame.
+
+    Two coordinate spaces meet here, and confusing them puts every click in the
+    wrong place:
+
+    * AT-SPI reports node extents in DESKTOP coordinates (pyatspi.DESKTOP_COORDS).
+    * `image` is the captured frame, whose top-left is `origin` on the desktop.
+      That is (0, 0) for a full-desktop grab and non-zero for a zoomed crop.
+
+    So boxes are DRAWN at `node - origin` (frame space), while the returned
+    `cx`/`cy` stay in DESKTOP space. The orchestrator therefore uses a mark
+    centre verbatim and must not run it through the image->desktop mapping it
+    applies to model-supplied coordinates — see `MarkItem` in pkg/protocol.
 
     Returns:
         (annotated_image, marks_list)
@@ -56,10 +69,14 @@ def annotate_frame(
         if mark_id > max_marks:
             break
 
-        x = getattr(node, "x", 0)
-        y = getattr(node, "y", 0)
+        # Desktop-space extents, kept for the returned centre.
+        dx = getattr(node, "x", 0)
+        dy = getattr(node, "y", 0)
         w = getattr(node, "w", 0)
         h = getattr(node, "h", 0)
+        # Frame-space position, used for drawing.
+        x = dx - origin[0]
+        y = dy - origin[1]
         role = getattr(node, "role", "element")
         name = getattr(node, "name", "") or getattr(node, "text", "")
 
@@ -89,15 +106,16 @@ def annotate_frame(
         draw.rectangle([badge_x0, badge_y0, badge_x1, badge_y1], fill=(20, 24, 33, 230), outline=border_color, width=1)
         draw.text((badge_x0 + 2, badge_y0 + 1), badge_text, fill=(255, 255, 255, 255), font=font)
 
-        cx = x + w // 2
-        cy = y + h // 2
+        # Centre in DESKTOP space, so the orchestrator can click it directly.
+        cx = dx + w // 2
+        cy = dy + h // 2
 
         marks.append({
             "id": mark_id,
             "role": role,
             "label": name,
-            "x": x,
-            "y": y,
+            "x": dx,
+            "y": dy,
             "width": w,
             "height": h,
             "cx": cx,
