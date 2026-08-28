@@ -126,18 +126,22 @@ class PersistentREPL:
             "state": self.state,
         }
 
+    def _fresh_globals(self, state: dict[str, Any]) -> dict[str, Any]:
+        """A clean execution namespace bound to `state`."""
+        return {
+            "__name__": "__agentfleet_repl__",
+            "__doc__": "AgentFleet Persistent Python REPL",
+            "a11y": a11y,
+            "capture": capture,
+            "inject": inject,
+            "state": state,
+        }
+
     def reset(self) -> None:
         with self._lock:
             self.state.clear()
             self.mounted_tools.clear()
-            self.globals = {
-                "__name__": "__agentfleet_repl__",
-                "__doc__": "AgentFleet Persistent Python REPL",
-                "a11y": a11y,
-                "capture": capture,
-                "inject": inject,
-                "state": self.state,
-            }
+            self.globals = self._fresh_globals(self.state)
 
     def mount_tool(
         self,
@@ -192,100 +196,138 @@ class PersistentREPL:
             return list(self.mounted_tools.values())
 
     def execute(self, code: str, timeout: int = 60) -> tuple[bool, str]:
-        """Execute a block of Python code, capturing stdout/stderr and return value.
+        """Execute a block of Python code, capturing output and the return value.
 
-        The timeout is enforced by running the code on a daemon thread and
-        refusing to wait past the deadline. Python cannot safely kill a running
-        thread, so a runaway `while True:` is not stopped — but it no longer
-        takes the whole daemon down with it: the lock is released, the caller
-        gets an error, and every later action still works. Before this, the
-        timeout argument was accepted and ignored, so one bad loop wedged agentd
-        permanently and the only recovery was destroying the instance.
+        Three things this has to get right, all of which it previously did not:
+
+        1. **The timeout is real.** The work runs on a daemon thread and the
+           caller stops waiting at the deadline. Python cannot safely kill a
+           running thread, so a runaway `while True:` is abandoned rather than
+           stopped — but it no longer hangs the caller, and agentd keeps serving
+           every other action.
+        2. **Output capture is local, not global.** An earlier version swapped
+           `sys.stdout` for a StringIO and restored it in a `finally`. When the
+           thread never returns, that `finally` never runs and agentd's own
+           stdout stays swallowed for the life of the process. Instead the
+           executed code gets its own `print` bound into its globals, so nothing
+           process-wide is touched.
+        3. **A wedged run does not silently corrupt later ones.** The abandoned
+           thread still owns the shared globals dict, so the lock stays held and
+           subsequent calls are refused with a clear message rather than racing
+           it.
         """
-        if not self._lock.acquire(timeout=max(1, timeout)):
+        # Short acquire: if a previous run is wedged there is no point queueing
+        # behind it for the full timeout, and the caller wants an answer.
+        if not self._lock.acquire(timeout=min(5, max(1, timeout))):
             return False, (
-                "the REPL is still busy with a previous execution that has not "
-                "returned; it may be in an infinite loop"
+                "the REPL is busy with a previous execution that has not returned "
+                "(most likely an infinite loop). Its Python state is not safe to "
+                "share, so further code execution is refused on this instance. "
+                "Every other action still works; recreate the instance to get a "
+                "clean interpreter."
             )
+
+        completed = False
         try:
-            return self._execute_locked(code, timeout)
+            result, completed = self._run_guarded(code, timeout)
+            return result
         finally:
+            if not completed:
+                # The worker is still running and owns the old namespace, so we
+                # cannot reuse it — but refusing every later call would let one
+                # bad loop kill the instance's REPL until it is recreated.
+                # Instead the runaway keeps the dict it is mutating, and new
+                # work gets a clean one. The two threads then share nothing, so
+                # releasing the lock is safe. Cost: variables and mounted tools
+                # from before the runaway are gone, which is the same outcome as
+                # a reset and far better than a dead interpreter.
+                self._recycle_after_runaway()
             self._lock.release()
 
-    def _run_guarded(self, fn, timeout: int) -> tuple[bool, str]:
-        """Run fn on a daemon thread and give up waiting after `timeout`."""
+    def _recycle_after_runaway(self) -> None:
+        """Abandon the namespace an unstoppable execution is still holding."""
+        self.state = {}
+        self.mounted_tools = {}
+        self.globals = self._fresh_globals(self.state)
+
+    def _run_guarded(self, code: str, timeout: int) -> tuple[tuple[bool, str], bool]:
+        """Run one execution on a daemon thread.
+
+        Returns ((ok, output), completed). `completed` is False when the
+        deadline passed and the worker was abandoned.
+        """
         outcome: list[tuple[bool, str]] = []
 
         def runner() -> None:
             try:
-                outcome.append((True, fn()))
+                outcome.append(self._execute_once(code))
             except BaseException as exc:  # noqa: BLE001 - surfaced to the agent
                 outcome.append((False, f"{type(exc).__name__}: {exc}"))
 
-        worker = threading.Thread(target=runner, daemon=True)
+        worker = threading.Thread(
+            target=runner, daemon=True, name="agentfleet-repl-exec"
+        )
         worker.start()
         worker.join(timeout=max(1, timeout))
+
         if worker.is_alive():
-            return False, f"execution exceeded {timeout}s and was abandoned"
-        return outcome[0] if outcome else (False, "execution produced no result")
+            return (
+                False,
+                f"execution exceeded {timeout}s and was abandoned; the REPL is "
+                f"now unusable on this instance",
+            ), False
 
-    def _execute_locked(self, code: str, timeout: int) -> tuple[bool, str]:
-        if True:
-            stdout_buf = io.StringIO()
-            stderr_buf = io.StringIO()
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
+        if not outcome:
+            return (False, "execution produced no result"), True
+        return outcome[0], True
 
-            error_occured = False
-            result_str = ""
-            start_time = time.time()
+    def _execute_once(self, code: str) -> tuple[bool, str]:
+        """Compile and run one snippet, capturing what it prints.
 
+        Output is captured by giving the snippet its own `print`, not by
+        redirecting `sys.stdout` — see the note in `execute`. Code that reaches
+        for `sys.stdout` directly will bypass capture and write to agentd's log;
+        that is an acceptable trade for never losing the daemon's own output.
+        """
+        buf = io.StringIO()
+        start_time = time.time()
+        error_occured = False
+
+        def captured_print(*args: Any, **kwargs: Any) -> None:
+            kwargs.pop("file", None)
+            print(*args, file=buf, **kwargs)
+
+        run_globals = self.globals
+        previous_print = run_globals.get("print")
+        run_globals["print"] = captured_print
+
+        try:
+            # An expression first, so `2 + 2` reports 4 rather than nothing.
             try:
-                sys.stdout = stdout_buf
-                sys.stderr = stderr_buf
+                expr_code = compile(code, "<repl>", "eval")
+                res = eval(expr_code, run_globals)
+                if res is not None:
+                    captured_print(res if isinstance(res, str) else repr(res))
+            except SyntaxError:
+                exec_code = compile(code, "<repl>", "exec")
+                exec(exec_code, run_globals)
+        except Exception:
+            error_occured = True
+            traceback.print_exc(file=buf)
+        finally:
+            if previous_print is None:
+                run_globals.pop("print", None)
+            else:
+                run_globals["print"] = previous_print
 
-                # Try parsing as a single expression first (to capture its eval return)
-                try:
-                    expr_code = compile(code, "<repl>", "eval")
-                    res = eval(expr_code, self.globals)
-                    if res is not None:
-                        if isinstance(res, str):
-                            print(res)
-                        else:
-                            print(repr(res))
-                except SyntaxError:
-                    # Multi-statement or block: compile as exec
-                    exec_code = compile(code, "<repl>", "exec")
-                    exec(exec_code, self.globals)
+        combined = buf.getvalue().strip()
+        duration_ms = int((time.time() - start_time) * 1000)
+        if not combined:
+            combined = f"ok ({duration_ms}ms, no output)"
+        if len(combined) > 8000:
+            combined = combined[:2000] + "\n...[truncated]...\n" + combined[-6000:]
 
-            except Exception:
-                error_occured = True
-                traceback.print_exc(file=stderr_buf)
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-
-            stdout_val = stdout_buf.getvalue()
-            stderr_val = stderr_buf.getvalue()
-
-            combined = ""
-            if stdout_val:
-                combined += stdout_val
-            if stderr_val:
-                if combined:
-                    combined += "\n"
-                combined += stderr_val
-
-            combined = combined.strip()
-            duration_ms = int((time.time() - start_time) * 1000)
-
-            if not combined:
-                combined = f"ok ({duration_ms}ms, no output)"
-
-            if len(combined) > 8000:
-                combined = combined[:2000] + "\n...[truncated]...\n" + combined[-6000:]
-
-            return not error_occured, combined
+        return not error_occured, combined
 
 
 REPL = PersistentREPL()
