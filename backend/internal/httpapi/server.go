@@ -148,6 +148,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/providers/{id}", auth(roleAdmin, s.handleDeleteProvider))
 	mux.Handle("POST /api/providers/{id}/probe", auth(roleAdmin, s.handleProbeProvider))
 	mux.Handle("GET /api/providers/ollama/models", auth(roleAdmin, s.handleOllamaModels))
+	mux.Handle("GET /api/providers/antigravity/models", auth(roleAny, s.handleAntigravityModels))
 
 	mux.Handle("GET /api/secrets", auth(roleAdmin, s.handleListSecrets))
 	mux.Handle("PUT /api/secrets/{ref}", auth(roleAdmin, s.handlePutSecret))

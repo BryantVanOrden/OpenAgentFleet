@@ -248,6 +248,9 @@ function EngineModal({
 }) {
   const [draft, setDraft] = useState<Partial<Provider> & { api_key?: string }>({});
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [antigravityModels, setAntigravityModels] = useState<
+    Array<{ id: string; name: string; speed: string; thinking_level: string; vision: boolean; description: string }>
+  >([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -255,12 +258,18 @@ function EngineModal({
   }, [provider]);
 
   useEffect(() => {
-    if (draft.kind !== "ollama") return;
-    api
-      .ollamaModels(draft.base_url)
-      .then((r) => setOllamaModels(r.models ?? []))
-      .catch(() => setOllamaModels([]));
-  }, [draft.kind, draft.base_url]);
+    if (draft.kind === "ollama") {
+      api
+        .ollamaModels(draft.base_url)
+        .then((r) => setOllamaModels(r.models ?? []))
+        .catch(() => setOllamaModels([]));
+    } else if (draft.kind === "antigravity") {
+      api
+        .antigravityModels(draft.base_url, draft.api_key)
+        .then((r) => setAntigravityModels(r.models ?? []))
+        .catch(() => setAntigravityModels([]));
+    }
+  }, [draft.kind, draft.base_url, draft.api_key]);
 
   if (!provider) return null;
   const hint = KIND_HINTS[(draft.kind ?? "ollama") as Provider["kind"]];
@@ -336,6 +345,29 @@ function EngineModal({
                 </option>
               ))}
             </select>
+          ) : draft.kind === "antigravity" && antigravityModels.length > 0 ? (
+            <div className="space-y-2">
+              <select
+                className={inputClass}
+                value={draft.model ?? "gemini-3.7-flash"}
+                onChange={(e) => {
+                  const m = antigravityModels.find((x) => x.id === e.target.value);
+                  set({ model: e.target.value, vision: m ? m.vision : true });
+                }}
+              >
+                {antigravityModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.speed} · {m.thinking_level} Thinking)
+                  </option>
+                ))}
+              </select>
+              <input
+                className={cx(inputClass, "text-xs text-ink-300 font-mono")}
+                value={draft.model ?? ""}
+                onChange={(e) => set({ model: e.target.value })}
+                placeholder="or enter custom / experimental model ID"
+              />
+            </div>
           ) : (
             <input
               className={inputClass}

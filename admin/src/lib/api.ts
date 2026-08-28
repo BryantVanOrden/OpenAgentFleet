@@ -163,6 +163,15 @@ export interface Provider {
   enabled: boolean;
 }
 
+export interface AntigravityModelInfo {
+  id: string;
+  name: string;
+  speed: string;
+  thinking_level: string;
+  vision: boolean;
+  description: string;
+}
+
 export interface Alert {
   id: string;
   kind: string;
@@ -560,6 +569,13 @@ export const api = {
   ollamaModels: (baseUrl?: string) =>
     get<{ models: string[]; error?: string }>(
       `/api/providers/ollama/models${baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""}`,
+    ),
+  antigravityModels: (baseUrl?: string, apiKey?: string) =>
+    get<{ models: AntigravityModelInfo[]; error?: string }>(
+      `/api/providers/antigravity/models?${new URLSearchParams({
+        ...(baseUrl ? { base_url: baseUrl } : {}),
+        ...(apiKey ? { api_key: apiKey } : {}),
+      }).toString()}`,
     ),
 
   secrets: () => get<{ ref: string; note: string; updated_at: string }[]>("/api/secrets"),

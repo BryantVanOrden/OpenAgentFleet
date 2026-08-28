@@ -96,6 +96,18 @@ func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"models": models})
 }
 
+// handleAntigravityModels returns the dynamically available Google Antigravity & Gemini models.
+func (s *Server) handleAntigravityModels(w http.ResponseWriter, r *http.Request) {
+	base := r.URL.Query().Get("base_url")
+	key := r.URL.Query().Get("api_key")
+	models, err := connectors.ListAntigravityModels(r.Context(), base, key)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"models": []connectors.AntigravityModelInfo{}, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
 // -------------------------------------------------------------- secrets ---
 
 func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {

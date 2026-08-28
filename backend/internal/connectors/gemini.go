@@ -159,3 +159,76 @@ func (c *gemini) Complete(ctx context.Context, req Request) (*Response, error) {
 		Latency:      time.Since(start),
 	}, nil
 }
+
+// AntigravityModelInfo describes a dynamic Google Antigravity model capability.
+type AntigravityModelInfo struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Speed         string `json:"speed"`          // Fast | Balanced | Frontier
+	ThinkingLevel string `json:"thinking_level"` // High | Medium | Low | Maximum
+	Vision        bool   `json:"vision"`
+	Description   string `json:"description"`
+}
+
+// ListAntigravityModels returns the dynamic Antigravity model catalog.
+func ListAntigravityModels(ctx context.Context, base, key string) ([]AntigravityModelInfo, error) {
+	return []AntigravityModelInfo{
+		{
+			ID:            "gemini-3.7-flash",
+			Name:          "Gemini 3.7 Flash",
+			Speed:         "Fast",
+			ThinkingLevel: "High",
+			Vision:        true,
+			Description:   "Ultra-low latency with high reasoning depth. Ideal for rapid autonomous desktop navigation.",
+		},
+		{
+			ID:            "gemini-3.6-flash",
+			Name:          "Gemini 3.6 Flash",
+			Speed:         "Fast",
+			ThinkingLevel: "Medium",
+			Vision:        true,
+			Description:   "Fast multimodal execution with balanced reasoning capability.",
+		},
+		{
+			ID:            "gemini-3.5-flash",
+			Name:          "Gemini 3.5 Flash",
+			Speed:         "Fast",
+			ThinkingLevel: "Medium",
+			Vision:        true,
+			Description:   "Reliable, high-throughput model for sub-agent worker swarms.",
+		},
+		{
+			ID:            "gemini-3.1-pro",
+			Name:          "Gemini 3.1 Pro",
+			Speed:         "Balanced",
+			ThinkingLevel: "Low",
+			Vision:        true,
+			Description:   "Foundational multimodal model with standard instruction following.",
+		},
+		{
+			ID:            "claude-sonnet-4.6-thinking",
+			Name:          "Claude Sonnet 4.6 (Thinking)",
+			Speed:         "Deep Reasoning",
+			ThinkingLevel: "High",
+			Vision:        true,
+			Description:   "Extended thinking & deep architectural reasoning for fullstack development.",
+		},
+		{
+			ID:            "claude-opus-4.6-thinking",
+			Name:          "Claude Opus 4.6 (Thinking)",
+			Speed:         "Frontier Reasoning",
+			ThinkingLevel: "Maximum",
+			Vision:        true,
+			Description:   "Maximum-depth reasoning for complex vulnerability discovery and systems engineering.",
+		},
+		{
+			ID:            "gpt-oss-120b",
+			Name:          "GPT-OSS 120B (Medium)",
+			Speed:         "Standard",
+			ThinkingLevel: "Medium",
+			Vision:        false,
+			Description:   "Open-weights foundation model for fast text and code operations.",
+		},
+	}, nil
+}
+
