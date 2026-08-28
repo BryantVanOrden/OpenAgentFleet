@@ -63,20 +63,18 @@ func TestRoleAllows(t *testing.T) {
 	}
 }
 
-// TestRoleAllowsUnknownGateFailsOpen documents a sharp edge rather than
-// endorsing it: an unrecognised gate name resolves to rank 0, and every role —
-// including a role string that means nothing — clears rank 0. Today that is
-// unreachable because Routes() only ever passes the roleAny/roleOperator/
-// roleAdmin constants, so the behaviour is pinned here instead of changed. If
-// this test starts failing, roleAllows was made fail-closed; update it. If a
-// route is ever added with a typo'd gate, this comment is the explanation.
-func TestRoleAllowsUnknownGateFailsOpen(t *testing.T) {
+// TestRoleAllowsUnknownGateFailsClosed pins the safe half of the sharp edge this
+// test used to document. An unrecognised gate name no longer resolves to rank 0
+// — it is refused outright, for every role including admin. That matters because
+// the failure it guards against is a typo in a route's gate name, which would
+// otherwise silently open that route to anyone with any role at all.
+func TestRoleAllowsUnknownGateFailsClosed(t *testing.T) {
 	for _, role := range []string{
 		string(protocol.RoleAuditor), string(protocol.RoleOperator),
 		string(protocol.RoleAdmin), "nobody", "",
 	} {
-		if !roleAllows(role, "typo-gate") {
-			t.Errorf("roleAllows(%q, \"typo-gate\") = false; roleAllows is now fail-closed", role)
+		if roleAllows(role, "typo-gate") {
+			t.Errorf("roleAllows(%q, \"typo-gate\") = true; an unknown gate must be refused", role)
 		}
 	}
 }
