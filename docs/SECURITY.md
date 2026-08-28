@@ -131,23 +131,26 @@ namespace. `sudo nft flush ruleset` therefore used to delete the entire policy �
 allow-list, RFC1918 block and all — from inside the container the policy exists
 to contain. Cgroup limits are enforced by the host and survive; egress did not.
 
-What this does and does not give an attacker who gets code execution in the
-sandbox (via `shell`, `python`, or a human typing at the desktop):
+What this is worth, for an attacker who has code execution in the sandbox (via
+`shell`, `python`, or a human typing at the desktop):
 
-- **Does not** give a one-liner that drops the egress policy. That is the point
-  of the change.
-- **Does** still give root, if they want it and know how. A sudoers deny-list
-  matches on the resolved binary path, so `sudo bash`, or copying `nft`
-  somewhere else and running the copy, walks straight around it. It is a
-  guardrail against the obvious command, not a boundary.
-- **Does not** apply at all on an orchestrator-provisioned instance, because
+- **On an orchestrator-provisioned instance, sudo does not work at all.**
   `no-new-privileges` (`backend/internal/fleet/manager.go`) makes the kernel
-  ignore sudo's setuid bit and sudo fails outright for the agent user. That flag
-  remains the control that matters; the deny-list is what is left when the image
-  is run directly with `docker run`, which is how a developer first tests it.
+  ignore sudo's setuid bit, so every `sudo` the agent runs simply fails. That
+  flag is still the control that matters, and it has not changed.
+- **The deny-list is what is left when that flag is not there** — most obviously
+  when someone runs the image directly with `docker run`, which is how a
+  developer first tests it. In that case the agent has real root, and the
+  deny-list stops the direct, obvious command: no one-line `sudo nft flush
+  ruleset` that drops the egress policy.
+- **It does not stop a determined attacker in that case.** A sudoers deny-list
+  matches on the resolved binary path, so `sudo bash`, or copying `nft` somewhere
+  else and running the copy, walks straight around it. Read it as a guardrail
+  against the obvious move — and against an agent talked into it by a web page —
+  not as a boundary.
 - The archetype workspace README still advertises "sudo enabled (NOPASSWD)" to
-  the model (`sandbox/init-archetype.sh`). That line is now wrong as well as
-  unwise, and should go.
+  the model (`sandbox/init-archetype.sh`). That line is now inaccurate as well as
+  unwise, and should go: telling the model it has root is an invitation.
 
 **This is container isolation, not VM isolation.** A kernel exploit reaches the
 host. The `developer-heavy` tier is the one most likely to run untrusted build
@@ -273,14 +276,54 @@ important thing to understand about deploying this:
   public internet without a reverse proxy, TLS, and a hard look at who has an
   account.
 
+## Known gaps
+
+Open, known, and listed here rather than discovered later. Each is a real
+finding from the security review that has not been fixed yet.
+
+- **The webhook endpoint is unauthenticated and seeded with literal tokens.**
+  `POST /api/webhooks/{token}` is public by design, and two webhooks are created
+  at process start with guessable tokens (`github-pr-sync`, `crm-lead-enrich`).
+  Today the handler only echoes the target archetype, and the body is read with
+  no `http.MaxBytesReader` — an easy memory-exhaustion DoS. The moment this stub
+  actually dispatches a task, an anonymous caller starts autonomous agents. Do
+  not expose the API to the internet before this is fixed. Webhooks and cron
+  triggers also live in package-level maps, not the database: they vanish on
+  restart and have no owner scoping.
+- **`deep_search` is an unfiltered fetch.** Any `http(s)` URL, no private-range
+  check, no response size cap, and the body lands in the model's prompt with no
+  untrusted-content fence. With no egress policy on the instance, that reaches
+  the sandbox network.
+- **REPL state persists across tasks.** The interpreter is one module-level
+  singleton per container, never reset between runs. A task can leave behind a
+  background thread, a monkeypatched helper, or a redefined tool that a later
+  task — possibly a different operator's — inherits. Cleanup at end-of-run does
+  not help if the orchestrator dies mid-task; a reset at the *start* of every run
+  is the fix.
+- **A wedged REPL execution is abandoned, not killed.** `execute()` now honours
+  its timeout by giving up on the worker thread and releasing the lock, so one
+  `while True:` no longer wedges `agentd` permanently. But Python cannot kill a
+  thread: the loop keeps burning a CPU inside the container until the instance is
+  destroyed.
+- **The step feed carries attacker-influenced content.** `task_steps` persists
+  and the event bus broadcasts the whole action, including model-authored tool
+  handlers and `python` source. That is correct for an audit trail — treat the
+  contents as untrusted data, render them as inert text, and note that the feed
+  is readable by any authenticated role.
+
 ## Deployment checklist
 
 - [ ] `JWT_SECRET` and `MASTER_KEY` generated with `openssl rand -base64 32`
+      (`MASTER_KEY` must decode to exactly 32 bytes)
 - [ ] `MASTER_KEY` backed up outside the repository
 - [ ] `AGENTFLEET_ENV=production` (the orchestrator then refuses to start on
-      development defaults)
+      development defaults, including a short or missing `MASTER_KEY`)
 - [ ] TLS terminated in front of the console and the API
 - [ ] `MAX_INSTANCES` sized against real host RAM
-- [ ] `ALLOW_SHELL=false` unless something actually needs to compile
-- [ ] `block_local` on by default for every instance
+- [ ] `ALLOW_SHELL=false` unless something actually needs to compile — this is
+      the code-execution toggle, covering `python` and dynamic tools as well
+- [ ] `block_local` on by default for every instance, and an explicit egress
+      policy on any instance you care about: no policy means no filtering
+- [ ] The API not reachable from the internet while `/api/webhooks/{token}` is
+      unauthenticated (see Known gaps)
 - [ ] Postgres and artifact storage backed up — they hold the audit trail

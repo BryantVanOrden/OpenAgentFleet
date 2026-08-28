@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -272,10 +274,23 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _streaming ? null : _startStream,
-                    icon: const Icon(Icons.cast_connected, size: 18),
-                    label: const Text('Take over'),
+                  child: Tooltip(
+                    message: _canEmbedWebView
+                        ? 'Drive the desktop directly'
+                        : 'Interactive takeover needs an embedded browser, which '
+                            'this platform does not provide. Use the web console, '
+                            'or refresh the frame to keep watching.',
+                    child: FilledButton.icon(
+                      onPressed:
+                          (_streaming || !_canEmbedWebView) ? null : _startStream,
+                      icon: Icon(
+                        _canEmbedWebView
+                            ? Icons.cast_connected
+                            : Icons.desktop_access_disabled_outlined,
+                        size: 18,
+                      ),
+                      label: Text(_canEmbedWebView ? 'Take over' : 'Console only'),
+                    ),
                   ),
                 ),
               ],

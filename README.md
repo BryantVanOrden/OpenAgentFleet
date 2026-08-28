@@ -38,7 +38,7 @@
 * 🔀 **Recursive Sub-Agent Orchestration**: Agents can dynamically spawn and coordinate child sub-agents (`spawn_agent`) to handle parallel research, compilation, or verification tasks with full parent-child hierarchy tracking.
 * 🐍 **Persistent Python REPL Substrate**: Embeds a stateful, interactive Python REPL inside the sandbox daemon (`agentd`). Agents can manipulate data, query the AT-SPI bus programmatically, and maintain state variables across turns.
 * 📱 **Mobile Human-in-the-Loop Triage**: First-class Flutter mobile companion with time-sensitive APNs/FCM push dispatch. When agents encounter CAPTCHAs, 2FA prompts, or perceptual stalls, they pause and request authoritative instruction from your phone.
-* 🔐 **Cryptographic Credential Vault**: AES-256-GCM sealed credential storage. Secrets are never exposed in prompts or audit logs and are injected strictly at runtime into unprivileged sandbox tmpfs keyrings.
+* 🔐 **Cryptographic Credential Vault**: AES-256-GCM sealed credential storage under `MASTER_KEY`, with each secret's ref bound as additional authenticated data so a sealed value cannot be moved to another name. The API never returns a secret value, and provider API keys travel in request headers, never in a URL. Automatic run-scoped injection into a sandbox keyring is *not* wired up yet — `agentd` exposes the endpoint, nothing calls it. See [SECURITY.md](docs/SECURITY.md#credentials).
 * 🌐 **Universal Model Fallback Chain**: Works out-of-the-box with local vision models (Ollama / `qwen2.5vl:7b`), OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible gateway (vLLM, LiteLLM) configured as a resilient fallback chain.
 
 ## Pre-Configured Bot Archetypes

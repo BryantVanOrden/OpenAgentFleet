@@ -80,6 +80,19 @@ The app is triage-first — watch, chat, unblock, take over — so the desktop
 builds are genuinely useful as a second-screen monitor beside the console
 rather than a phone app forced into a window.
 
+**One capability differs by platform.** Interactive takeover embeds the noVNC
+client in a web view, and `webview_flutter` implements Android, iOS and macOS
+only. On the **Linux and Windows desktop builds the takeover button is disabled**
+and labelled "Console only" — everything else works, including the live
+single-frame view, chat, alerts and starting or stopping runs. To drive a
+desktop from those platforms, use the web console, which has no such limit.
+
+| | Android | iOS | macOS | Linux | Windows |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Fleet, chat, alerts, run control | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Live single-frame desktop view | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Interactive takeover (embedded noVNC) | ✅ | ✅ | ✅ | ✖ | ✖ |
+
 **Firebase is optional.** `Firebase.initializeApp()` failing is caught and the
 app degrades to in-app alerts only, so it builds and runs with no
 `google-services.json` present. Push notifications are the only thing you lose.
