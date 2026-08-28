@@ -22,7 +22,8 @@ class AlertsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Alerts')),
       body: alerts.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
+        error: (err, _) =>
+            Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
         data: (list) {
           final blocking = list.where((a) => a.isOpen).toList();
           final history = list.where((a) => !a.isOpen).toList();
@@ -34,7 +35,8 @@ class AlertsScreen extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_circle_outline, size: 44, color: Fleet.good),
+                    Icon(Icons.check_circle_outline,
+                        size: 44, color: Fleet.good),
                     SizedBox(height: 14),
                     Text('Nothing needs you'),
                     SizedBox(height: 4),
@@ -119,7 +121,8 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
     try {
       await ref.read(apiProvider).replyAlert(widget.alert.id, text);
       ref.invalidate(alertsProvider);
-      messenger.showSnackBar(const SnackBar(content: Text('Sent — the agent is resuming.')));
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Sent — the agent is resuming.')));
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
     } finally {
@@ -131,14 +134,18 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
   Widget build(BuildContext context) {
     final alert = widget.alert;
     final api = ref.read(apiProvider);
-    final accent = Fleet.forState(alert.severity == 'critical' ? 'error' : alert.severity);
+    final accent =
+        Fleet.forState(alert.severity == 'critical' ? 'error' : alert.severity);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: alert.isOpen ? Fleet.warn.withValues(alpha: 0.4) : Fleet.ink700),
+          side: BorderSide(
+              color: alert.isOpen
+                  ? Fleet.warn.withValues(alpha: 0.4)
+                  : Fleet.ink700),
         ),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -152,7 +159,8 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   Expanded(
                     child: Text(
                       alert.title,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
                     ),
                   ),
                   Text(
@@ -161,7 +169,6 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   ),
                 ],
               ),
-
               if (alert.screenshotId.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 ClipRRect(
@@ -175,10 +182,9 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   ),
                 ),
               ],
-
               const SizedBox(height: 10),
-              Text(alert.body, style: TextStyle(color: Fleet.ink300, fontSize: 13)),
-
+              Text(alert.body,
+                  style: TextStyle(color: Fleet.ink300, fontSize: 13)),
               if (alert.reply.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -194,7 +200,6 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   ),
                 ),
               ],
-
               if (alert.instanceId.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Align(
@@ -202,7 +207,8 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   child: TextButton.icon(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => InstanceScreen(instanceId: alert.instanceId),
+                        builder: (_) =>
+                            InstanceScreen(instanceId: alert.instanceId),
                       ),
                     ),
                     icon: const Icon(Icons.open_in_new, size: 16),
@@ -210,7 +216,6 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   ),
                 ),
               ],
-
               if (alert.isOpen) ...[
                 const SizedBox(height: 6),
                 TextField(
@@ -219,7 +224,8 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   minLines: 2,
                   maxLines: 5,
                   decoration: const InputDecoration(
-                    hintText: 'Tell the agent what to do. This outranks anything on its screen.',
+                    hintText:
+                        'Tell the agent what to do. This outranks anything on its screen.',
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -227,7 +233,8 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
                   children: [
                     Expanded(
                       child: FilledButton(
-                        onPressed: _busy ? null : () => _send(_reply.text.trim()),
+                        onPressed:
+                            _busy ? null : () => _send(_reply.text.trim()),
                         child: const Text('Send and resume'),
                       ),
                     ),

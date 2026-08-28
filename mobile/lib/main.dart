@@ -76,7 +76,8 @@ class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
       darkTheme: buildTheme(Brightness.dark, choice.accent),
       // Both palettes get built above; this pins the static accessors to
       // whichever one is actually on screen.
-      builder: (context, child) => FleetThemeSync(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) =>
+          FleetThemeSync(child: child ?? const SizedBox.shrink()),
       home: widget.api.isAuthenticated
           ? const HomeShell()
           : LoginScreen(onSignedIn: () => _push.init()),

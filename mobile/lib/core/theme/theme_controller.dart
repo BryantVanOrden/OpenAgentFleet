@@ -11,7 +11,8 @@ import 'theme.dart';
 /// a setting. Picking light or dark explicitly opts out of that.
 @immutable
 class ThemeChoice {
-  const ThemeChoice({this.mode = ThemeMode.system, this.accent = FleetAccent.amber});
+  const ThemeChoice(
+      {this.mode = ThemeMode.system, this.accent = FleetAccent.amber});
 
   final ThemeMode mode;
   final FleetAccent accent;

@@ -32,8 +32,10 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
 
   @override
   Widget build(BuildContext context) {
-    final instances = ref.watch(instancesProvider).valueOrNull ?? const <Instance>[];
-    final instance = instances.where((i) => i.id == widget.instanceId).firstOrNull;
+    final instances =
+        ref.watch(instancesProvider).valueOrNull ?? const <Instance>[];
+    final instance =
+        instances.where((i) => i.id == widget.instanceId).firstOrNull;
 
     if (instance == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -54,7 +56,9 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Center(child: StateChip(state: instance.state, live: instance.isRunning)),
+            child: Center(
+                child:
+                    StateChip(state: instance.state, live: instance.isRunning)),
           ),
           _ControlMenu(instance: instance),
         ],
@@ -126,12 +130,18 @@ class _ControlMenu extends ConsumerWidget {
         ] else if (instance.state == 'paused')
           const PopupMenuItem(
             value: 'resume',
-            child: ListTile(dense: true, leading: Icon(Icons.play_arrow), title: Text('Resume')),
+            child: ListTile(
+                dense: true,
+                leading: Icon(Icons.play_arrow),
+                title: Text('Resume')),
           )
         else
           const PopupMenuItem(
             value: 'start',
-            child: ListTile(dense: true, leading: Icon(Icons.power_settings_new), title: Text('Start')),
+            child: ListTile(
+                dense: true,
+                leading: Icon(Icons.power_settings_new),
+                title: Text('Start')),
           ),
       ],
     );
@@ -178,7 +188,18 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     }
   }
 
+  /// Whether an embedded web view exists on this platform.
+  ///
+  /// `webview_flutter` ships implementations for Android, iOS and macOS only.
+  /// On the Linux and Windows desktop builds the plugin compiles but throws at
+  /// run time, so the interactive stream is hidden there rather than offered
+  /// and then failing. Single-frame mode uses `Image.memory` and works
+  /// everywhere, which is why it is the fallback rather than an error screen.
+  static bool get _canEmbedWebView =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+
   void _startStream() {
+    if (!_canEmbedWebView) return;
     final api = ref.read(apiProvider);
     setState(() {
       _streaming = true;
@@ -278,11 +299,13 @@ class _ActivityTab extends ConsumerWidget {
 
     return tasks.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) => Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
+      error: (err, _) =>
+          Center(child: Text('$err', style: TextStyle(color: Fleet.bad))),
       data: (list) {
         if (list.isEmpty) {
           return Center(
-            child: Text('Nothing has run here yet.', style: TextStyle(color: Fleet.ink400)),
+            child: Text('Nothing has run here yet.',
+                style: TextStyle(color: Fleet.ink400)),
           );
         }
         return ListView.separated(
@@ -300,10 +323,12 @@ class _ActivityTab extends ConsumerWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(task.goal, style: const TextStyle(fontSize: 14)),
+                          child: Text(task.goal,
+                              style: const TextStyle(fontSize: 14)),
                         ),
                         const SizedBox(width: 10),
-                        StateChip(state: task.state, live: task.state == 'running'),
+                        StateChip(
+                            state: task.state, live: task.state == 'running'),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -313,18 +338,21 @@ class _ActivityTab extends ConsumerWidget {
                     ),
                     if (task.error.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(task.error, style: TextStyle(color: Fleet.bad, fontSize: 12)),
+                      Text(task.error,
+                          style: TextStyle(color: Fleet.bad, fontSize: 12)),
                     ],
                     if (task.result.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(task.result, style: TextStyle(color: Fleet.good, fontSize: 12)),
+                      Text(task.result,
+                          style: TextStyle(color: Fleet.good, fontSize: 12)),
                     ],
                     if (task.isLive) ...[
                       const SizedBox(height: 10),
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
-                          style: TextButton.styleFrom(foregroundColor: Fleet.bad),
+                          style:
+                              TextButton.styleFrom(foregroundColor: Fleet.bad),
                           onPressed: () async {
                             await ref.read(apiProvider).cancelTask(task.id);
                             ref.invalidate(tasksProvider(instanceId));

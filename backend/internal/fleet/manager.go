@@ -138,8 +138,9 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		},
 		Env: m.sandboxEnv(inst, p),
 		ExposedPorts: map[string]struct{}{
-			portKey(PortNoVNC):  {},
-			portKey(PortAgentd): {},
+			portKey(PortNoVNC):     {},
+			portKey(PortNoVNCView): {},
+			portKey(PortAgentd):    {},
 		},
 		HostConfig: hostConfig{
 			Memory:      p.MemoryMB * 1024 * 1024,
@@ -214,6 +215,7 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	}
 	inst.AgentdURL = fmt.Sprintf("http://%s:%d", ip, PortAgentd)
 	inst.VNCURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNC)
+	inst.VNCViewURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNCView)
 	if m.cfg.PublishPorts {
 		if hp := ci.HostPort(portKey(PortNoVNC)); hp != "" {
 			inst.Labels = withLabel(inst.Labels, "published_vnc", "http://127.0.0.1:"+hp)
@@ -235,6 +237,7 @@ func (m *Manager) sandboxEnv(inst *protocol.Instance, p protocol.TierProfile) []
 		"AGENTFLEET_TIER=" + string(p.Name),
 		"DISPLAY=:1",
 		"VNC_PORT=" + strconv.Itoa(PortNoVNC),
+		"VNC_VIEW_PORT=" + strconv.Itoa(PortNoVNCView),
 		"AGENTD_PORT=" + strconv.Itoa(PortAgentd),
 		"ALLOW_SHELL=" + strconv.FormatBool(inst.ShellAccess),
 		"SCREEN_RESOLUTION=" + envOr("SCREEN_RESOLUTION", "1920x1080x24"),
@@ -326,6 +329,7 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	if ip := ci.IPOn(m.cfg.SandboxNetwork); ip != "" {
 		inst.AgentdURL = fmt.Sprintf("http://%s:%d", ip, PortAgentd)
 		inst.VNCURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNC)
+		inst.VNCViewURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNCView)
 	}
 	if err := m.waitHealthy(ctx, inst.AgentdURL, 60*time.Second); err != nil {
 		inst.State = protocol.InstanceError

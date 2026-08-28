@@ -353,7 +353,8 @@ class StateChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             state.replaceAll('_', ' '),
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                color: color, fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ],
       ),

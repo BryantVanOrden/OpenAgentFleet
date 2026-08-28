@@ -13,8 +13,12 @@ env: ## Create .env from the example and generate secrets
 	@if [ -f .env ]; then echo ".env already exists — not touching it"; exit 0; fi
 	@cp .env.example .env
 	@jwt=$$(openssl rand -base64 32); master=$$(openssl rand -base64 32); \
-	 gid=$$(stat -c %g /var/run/docker.sock 2>/dev/null || echo 999); \
-	 sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$$jwt|; s|^MASTER_KEY=.*|MASTER_KEY=$$master|; s|^DOCKER_GID=.*|DOCKER_GID=$$gid|" .env
+	 if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi 'docker desktop'; then \
+	   gid=0; \
+	 else \
+	   gid=$$(stat -c %g /var/run/docker.sock 2>/dev/null || echo 0); \
+	 fi; \
+	 sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=$$jwt|; s|^MASTER_KEY=.*|MASTER_KEY=$$master|; s|^DOCKER_GID=.*|DOCKER_GID=$$gid|" .env && rm -f .env.bak
 	@echo "Wrote .env with fresh secrets. Back up MASTER_KEY — losing it means losing every stored credential."
 
 .PHONY: doctor

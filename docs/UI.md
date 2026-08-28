@@ -22,7 +22,9 @@ what its agent is doing *right now* — the current action and the model's own
 reasoning, streamed from the event socket rather than polled. A machine waiting
 on a human turns amber and says so.
 
-![Fleet dashboard, dark theme](images/fleet-dark-amber.png)
+| Dark | Light |
+| --- | --- |
+| ![Fleet, dark](images/fleet-dark-amber.png) | ![Fleet, light](images/fleet-light-blue.png) |
 
 ### Launch an agent
 
@@ -31,14 +33,18 @@ come up, and starts the agent — one action. Templates carry sensible isolation
 defaults for the kind of work being done, and the machine and isolation settings
 stay available for anyone who wants them.
 
-![Launch an agent dialog](images/launch-dark-amber.png)
+| Dark | Light |
+| --- | --- |
+| ![Launch, dark](images/launch-dark-amber.png) | ![Launch, light](images/launch-light-blue.png) |
 
 ### Bot catalog
 
 Pre-configured archetypes with their own hardware profile, toolchain and
 domain-expert prompt.
 
-![Bot catalog](images/catalog-dark-amber.png)
+| Dark | Light |
+| --- | --- |
+| ![Catalog, dark](images/catalog-dark-amber.png) | ![Catalog, light](images/catalog-light-blue.png) |
 
 ### AI engines
 
@@ -56,7 +62,9 @@ demonstrate and marks the values that should vary between runs. Steps captured
 without an accessible label are flagged `coordinate-only`, because those are the
 ones that will break when the UI moves.
 
-![Skills timeline editor](images/skills-light-blue.png)
+| Dark | Light |
+| --- | --- |
+| ![Skills, dark](images/skills-dark-amber.png) | ![Skills, light](images/skills-light-blue.png) |
 
 ### Alerts
 
@@ -64,13 +72,17 @@ The resolution centre. Everything an agent is blocked on, with the screen at the
 moment it stopped. Whatever you write back is handed to the agent as
 authoritative — the one input it trusts above what is on its own screen.
 
-![Alerts](images/alerts-dark-amber.png)
+| Dark | Light |
+| --- | --- |
+| ![Alerts, dark](images/alerts-dark-amber.png) | ![Alerts, light](images/alerts-light-blue.png) |
 
 ### Settings
 
 Access control, the credential vault, and platform limits.
 
-![Settings](images/settings-light-blue.png)
+| Dark | Light |
+| --- | --- |
+| ![Settings, dark](images/settings-dark-amber.png) | ![Settings, light](images/settings-light-blue.png) |
 
 ### Sign-in
 

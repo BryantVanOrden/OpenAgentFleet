@@ -15,10 +15,12 @@ import Models from "./pages/Models";
 import Settings from "./pages/Settings";
 import MissionControl from "./pages/MissionControl";
 import Triggers from "./pages/Triggers";
+import Vault from "./pages/Vault";
 
 const NAV = [
   { to: "/fleet", label: "Fleet", icon: "▦" },
   { to: "/swarms", label: "Mission Control", icon: "🐝" },
+  { to: "/vault", label: "Fleet Vault", icon: "🔐" },
   { to: "/triggers", label: "Autopilot Sinks", icon: "⚡" },
   { to: "/skills", label: "Skills", icon: "⌥" },
   { to: "/alerts", label: "Alerts", icon: "!" },
@@ -188,6 +190,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/fleet" replace />} />
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/swarms" element={<MissionControl />} />
+          <Route path="/vault" element={<Vault />} />
           <Route path="/triggers" element={<Triggers />} />
           <Route path="/instances/:id" element={<InstanceDetail role={user.role} />} />
           <Route path="/skills" element={<Skills />} />

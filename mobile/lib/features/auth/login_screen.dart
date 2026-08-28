@@ -106,7 +106,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: TextStyle(color: Fleet.ink400),
                   ),
                   const SizedBox(height: 28),
-
                   TextField(
                     controller: _server,
                     keyboardType: TextInputType.url,
@@ -130,7 +129,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onSubmitted: (_) => _submit(),
                     decoration: const InputDecoration(labelText: 'Password'),
                   ),
-
                   if (_error != null) ...[
                     const SizedBox(height: 16),
                     Container(
@@ -138,12 +136,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       decoration: BoxDecoration(
                         color: Fleet.bad.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Fleet.bad.withValues(alpha: 0.25)),
+                        border: Border.all(
+                            color: Fleet.bad.withValues(alpha: 0.25)),
                       ),
                       child: Text(_error!, style: TextStyle(color: Fleet.bad)),
                     ),
                   ],
-
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: _busy ? null : _submit,

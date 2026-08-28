@@ -21,14 +21,14 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           const ThemeCard(),
           const SizedBox(height: 12),
-
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Connection', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('Connection',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   _Row(label: 'Orchestrator', value: api.baseUrl),
                   _Row(
@@ -41,35 +41,36 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
-
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Notifications', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('Notifications',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Text(
                     'This device is registered for push when the app has a Firebase '
                     'configuration. Critical alerts — an agent stuck on a CAPTCHA or an MFA '
                     'prompt — are sent time-sensitive so they surface through Focus and Do Not '
                     'Disturb.',
-                    style: TextStyle(color: Fleet.ink400, fontSize: 12, height: 1.4),
+                    style: TextStyle(
+                        color: Fleet.ink400, fontSize: 12, height: 1.4),
                   ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 12),
-
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('What this app can do', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('What this app can do',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Text(
                     'Watch instances, answer agents that are blocked, take over a desktop, and '
@@ -77,14 +78,14 @@ class SettingsScreen extends ConsumerWidget {
                     'Provisioning, recording skills, model configuration and access control live '
                     'in the web console — they are administration, not triage, and a phone is the '
                     'wrong place to do them.',
-                    style: TextStyle(color: Fleet.ink400, fontSize: 12, height: 1.4),
+                    style: TextStyle(
+                        color: Fleet.ink400, fontSize: 12, height: 1.4),
                   ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 20),
-
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: Fleet.bad,
@@ -123,12 +124,14 @@ class _Row extends StatelessWidget {
           children: [
             SizedBox(
               width: 110,
-              child: Text(label, style: TextStyle(color: Fleet.ink400, fontSize: 13)),
+              child: Text(label,
+                  style: TextStyle(color: Fleet.ink400, fontSize: 13)),
             ),
             Expanded(
               child: Text(
                 value.isEmpty ? '—' : value,
-                style: TextStyle(color: valueColor ?? Fleet.ink100, fontSize: 13),
+                style:
+                    TextStyle(color: valueColor ?? Fleet.ink100, fontSize: 13),
               ),
             ),
           ],

@@ -91,20 +91,24 @@ class ApiClient {
 
   Future<List<Instance>> instances() async {
     final data = await _get('/api/instances') as List;
-    return data.map((e) => Instance.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return data
+        .map((e) => Instance.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
-  Future<Instance> instance(String id) async =>
-      Instance.fromJson((await _get('/api/instances/$id') as Map).cast<String, dynamic>());
+  Future<Instance> instance(String id) async => Instance.fromJson(
+      (await _get('/api/instances/$id') as Map).cast<String, dynamic>());
 
-  Future<InstanceStats> stats(String id) async =>
-      InstanceStats.fromJson((await _get('/api/instances/$id/stats') as Map).cast<String, dynamic>());
+  Future<InstanceStats> stats(String id) async => InstanceStats.fromJson(
+      (await _get('/api/instances/$id/stats') as Map).cast<String, dynamic>());
 
-  Future<void> instanceAction(String id, String action) => _post('/api/instances/$id/$action');
+  Future<void> instanceAction(String id, String action) =>
+      _post('/api/instances/$id/$action');
 
   /// Single frame instead of a live stream — the right default on mobile data.
   Future<String?> observe(String id) async {
-    final data = await _get('/api/instances/$id/observe', query: {'a11y': false}) as Map;
+    final data =
+        await _get('/api/instances/$id/observe', query: {'a11y': false}) as Map;
     return data['screenshot_b64'] as String?;
   }
 
@@ -113,7 +117,9 @@ class ApiClient {
   Future<List<Task>> tasks({String? instanceId}) async {
     final data = await _get('/api/tasks',
         query: instanceId == null ? null : {'instance_id': instanceId}) as List;
-    return data.map((e) => Task.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return data
+        .map((e) => Task.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   Future<Task> createTask({
@@ -133,14 +139,18 @@ class ApiClient {
 
   Future<List<Skill>> skills() async {
     final data = await _get('/api/skills') as List;
-    return data.map((e) => Skill.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return data
+        .map((e) => Skill.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   // ---------------------------------------------------------------- alerts ---
 
   Future<List<Alert>> alerts({bool openOnly = false}) async {
     final data = await _get('/api/alerts', query: {'open': openOnly}) as List;
-    return data.map((e) => Alert.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return data
+        .map((e) => Alert.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   Future<void> replyAlert(String id, String reply) =>
@@ -150,17 +160,22 @@ class ApiClient {
 
   Future<List<ChatMessage>> chat(String instanceId) async {
     final data = await _get('/api/chat/$instanceId') as List;
-    return data.map((e) => ChatMessage.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return data
+        .map((e) => ChatMessage.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
-  Future<void> sendChat(String instanceId, String body, {bool asTask = false}) =>
+  Future<void> sendChat(String instanceId, String body,
+          {bool asTask = false}) =>
       _post('/api/chat/$instanceId', {'body': body, 'as_task': asTask});
 
   // --------------------------------------------------------------- swarms ---
 
   Future<List<SwarmTeam>> swarms() async {
     final data = await _get('/api/swarms') as List;
-    return data.map((e) => SwarmTeam.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return data
+        .map((e) => SwarmTeam.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   Future<SwarmTeam> swarm(String id) async {

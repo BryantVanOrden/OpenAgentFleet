@@ -36,7 +36,8 @@ class EventStream {
 
   void _connect() {
     try {
-      final channel = WebSocketChannel.connect(_api.eventsUri(instanceId: instanceId));
+      final channel =
+          WebSocketChannel.connect(_api.eventsUri(instanceId: instanceId));
       _channel = channel;
       _subscription = channel.stream.listen(
         (frame) {
@@ -66,7 +67,8 @@ class EventStream {
     if (_disposed) return;
 
     _attempt = (_attempt + 1).clamp(1, 6);
-    final delay = Duration(milliseconds: (500 * (1 << _attempt)).clamp(500, 20000));
+    final delay =
+        Duration(milliseconds: (500 * (1 << _attempt)).clamp(500, 20000));
     _retry?.cancel();
     _retry = Timer(delay, _connect);
   }

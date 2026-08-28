@@ -62,7 +62,8 @@ class Instance {
           (j['profile'] as Map?)?.cast<String, dynamic>() ?? const {},
         ),
         shellAccess: j['shell_access'] as bool? ?? false,
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
         lastError: j['last_error'] as String? ?? '',
       );
 }
@@ -111,7 +112,8 @@ class Task {
   final String error;
   final String result;
 
-  bool get isLive => state == 'running' || state == 'queued' || state == 'awaiting_human';
+  bool get isLive =>
+      state == 'running' || state == 'queued' || state == 'awaiting_human';
 
   factory Task.fromJson(Map<String, dynamic> j) => Task(
         id: j['id'] as String,
@@ -120,7 +122,8 @@ class Task {
         state: j['state'] as String? ?? 'queued',
         step: (j['step'] as num?)?.toInt() ?? 0,
         maxSteps: (j['max_steps'] as num?)?.toInt() ?? 0,
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
         error: j['error'] as String? ?? '',
         result: j['result'] as String? ?? '',
       );
@@ -164,7 +167,8 @@ class Alert {
         title: j['title'] as String? ?? '',
         body: j['body'] as String? ?? '',
         needsReply: j['needs_reply'] as bool? ?? false,
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
         instanceId: j['instance_id'] as String? ?? '',
         taskId: j['task_id'] as String? ?? '',
         screenshotId: j['screenshot_id'] as String? ?? '',
@@ -192,7 +196,8 @@ class ChatMessage {
         id: j['id'] as String? ?? '',
         role: j['role'] as String? ?? 'agent',
         body: j['body'] as String? ?? '',
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }
 
@@ -276,7 +281,8 @@ class SwarmMessage {
         toBot: j['to_bot'] as String? ?? '',
         phase: j['phase'] as String? ?? '',
         content: j['content'] as String? ?? '',
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }
 
@@ -303,7 +309,8 @@ class SwarmArtifact {
         author: j['author'] as String? ?? '',
         category: j['category'] as String? ?? '',
         content: j['content'] as String? ?? '',
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }
 
@@ -345,7 +352,8 @@ class SwarmTeam {
                 ?.map((a) => SwarmArtifact.fromJson(a as Map<String, dynamic>))
                 .toList() ??
             [],
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }
 

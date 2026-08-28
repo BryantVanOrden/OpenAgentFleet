@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/state.dart';
-
 class VoiceProfile {
   const VoiceProfile({
     required this.id,
@@ -66,7 +64,8 @@ class VoiceScreen extends ConsumerStatefulWidget {
   ConsumerState<VoiceScreen> createState() => _VoiceScreenState();
 }
 
-class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProviderStateMixin {
+class _VoiceScreenState extends ConsumerState<VoiceScreen>
+    with SingleTickerProviderStateMixin {
   String _selectedVoice = 'shadow';
   bool _isListening = false;
   bool _isSpeaking = false;
@@ -121,7 +120,8 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
         _isSpeaking = false;
         _dialogue.add({
           'sender': 'bot',
-          'text': 'Executing directive: "$text" with voice model $_selectedVoice.',
+          'text':
+              'Executing directive: "$text" with voice model $_selectedVoice.',
           'time': TimeOfDay.now().format(context),
         });
       });
@@ -141,15 +141,19 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
           // Voice Selector Card
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Voice Profile:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text('Voice Profile:',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 DropdownButton<String>(
                   value: _selectedVoice,
                   underline: const SizedBox(),
-                  onChanged: (val) => setState(() => _selectedVoice = val ?? 'shadow'),
+                  onChanged: (val) =>
+                      setState(() => _selectedVoice = val ?? 'shadow'),
                   items: curatedVoices.map((v) {
                     return DropdownMenuItem(
                       value: v.id,
@@ -172,7 +176,9 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ScaleTransition(
-                    scale: (_isListening || _isSpeaking) ? _pulseAnimation : const AlwaysStoppedAnimation(1.0),
+                    scale: (_isListening || _isSpeaking)
+                        ? _pulseAnimation
+                        : const AlwaysStoppedAnimation(1.0),
                     child: GestureDetector(
                       onTap: _toggleListening,
                       child: Container(
@@ -187,7 +193,8 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
                                   : theme.colorScheme.primaryContainer,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isListening ? Colors.green : Colors.blue).withOpacity(0.3),
+                              color: (_isListening ? Colors.green : Colors.blue)
+                                  .withValues(alpha: 0.3),
                               blurRadius: 24,
                               spreadRadius: 6,
                             ),
@@ -200,7 +207,9 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
                                   ? Icons.volume_up
                                   : Icons.mic_none,
                           size: 48,
-                          color: (_isListening || _isSpeaking) ? Colors.white : theme.colorScheme.onPrimaryContainer,
+                          color: (_isListening || _isSpeaking)
+                              ? Colors.white
+                              : theme.colorScheme.onPrimaryContainer,
                         ),
                       ),
                     ),
@@ -235,7 +244,8 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
                 final d = _dialogue[i];
                 final isUser = d['sender'] == 'user';
                 return Align(
-                  alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment:
+                      isUser ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(10),
@@ -244,7 +254,7 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
                     ),
                     decoration: BoxDecoration(
                       color: isUser
-                          ? theme.colorScheme.primary.withOpacity(0.15)
+                          ? theme.colorScheme.primary.withValues(alpha: 0.15)
                           : theme.colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -263,11 +273,14 @@ class _VoiceScreenState extends ConsumerState<VoiceScreen> with SingleTickerProv
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(d['time'] ?? '', style: const TextStyle(fontSize: 9, color: Colors.grey)),
+                            Text(d['time'] ?? '',
+                                style: const TextStyle(
+                                    fontSize: 9, color: Colors.grey)),
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Text(d['text'] ?? '', style: const TextStyle(fontSize: 12)),
+                        Text(d['text'] ?? '',
+                            style: const TextStyle(fontSize: 12)),
                       ],
                     ),
                   ),

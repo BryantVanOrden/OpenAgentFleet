@@ -15,6 +15,10 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime, timezone
+# Pydantic resolves annotations lazily under `from __future__ import
+# annotations`, so a missing name here does not fail at import — it fails when
+# the model is first validated, i.e. on every /act call, at run time.
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -247,6 +251,16 @@ def act(req: ActRequest) -> dict:
             return {"ok": False, "detail": "shell needs a command"}
         ok, out, code = inject.shell(req.text, ALLOW_SHELL, timeout=min(req.timeout or 600, 3600))
         return {"ok": True, "detail": f"exit {code}", "stdout": out, "exit_code": code}
+
+    # Second enforcement point for code execution. The orchestrator gates these
+    # too, but agentd is the component that actually holds the interpreter, so
+    # it refuses on its own authority rather than trusting its caller.
+    if kind in ("python", "mount_tool", "call_tool") and not ALLOW_SHELL:
+        return {
+            "ok": False,
+            "detail": f"{kind} is disabled for this instance (code execution is off)",
+            "exit_code": 126,
+        }
 
     if kind == "python":
         from repl import REPL

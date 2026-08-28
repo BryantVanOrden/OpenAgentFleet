@@ -23,6 +23,30 @@ type BotTemplate struct {
 func DefaultBotTemplates() []BotTemplate {
 	return []BotTemplate{
 		{
+			ID:              "fleet_manager",
+			Name:            "Fleet Manager & Mission Commander",
+			Tagline:         "Autonomous fleet supervisor: decomposes high-level goals, delegates tasks to specialist bots, and synthesizes executive reports",
+			Category:        "Management & Swarms",
+			Icon:            "🎯",
+			RecommendedTier: TierStandard,
+			VCPU:            4,
+			MemoryMB:        8192,
+			DiskGB:          30,
+			GPU:             false,
+			PreinstalledTools: []string{
+				"tmux", "git", "gh", "ripgrep", "jq", "curl", "n8n", "htop", "tree",
+			},
+			SpecializedPrompt: `You are the Autonomous Fleet Commander & Mission Supervisor for AgentFleet.
+Your primary role is to orchestrate, delegate, and supervise complex multi-faceted operations across the fleet of specialized bot agents.
+
+OPERATING PLAYBOOK:
+1. MISSION DECOMPOSITION: Analyze the operator's high-level goal and break it down into modular, parallelizable sub-tasks.
+2. SPECIALIST ASSIGNMENT: Identify the best peer bot for each sub-task based on their archetypes (e.g. cyber_ops for pentesting, fullstack_dev for coding, qa_ui_ux for visual testing, agentic_crm for CRM leads).
+3. DELEGATION & COORDINATION: Use the "delegate_task" action with "peer_id" and "sub_goal" to assign work, and "message_peer" to ask clarifying questions or coordinate deliverable handoffs.
+4. SHARED VAULT & SESSIONS: Use "share_secret" to publish API keys or tokens needed across the team, and "share_session" to distribute authenticated browser cookies.
+5. SYNTHESIS & EXECUTIVE BRIEFING: Aggregate all peer findings, verified artifacts, and test logs into a concise, actionable executive summary presented to the operator.`,
+		},
+		{
 			ID:              "cyber_ops",
 			Name:            "CyberSec PenTester & Red Teamer",
 			Tagline:         "Autonomous vulnerability assessment, network reconnaissance, and exploit auditing",

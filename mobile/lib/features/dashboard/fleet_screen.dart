@@ -79,7 +79,8 @@ class _InstanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasks = ref.watch(tasksProvider(instance.id)).valueOrNull ?? const <Task>[];
+    final tasks =
+        ref.watch(tasksProvider(instance.id)).valueOrNull ?? const <Task>[];
     Task? live;
     for (final t in tasks) {
       if (t.isLive) {
@@ -88,14 +89,16 @@ class _InstanceCard extends ConsumerWidget {
       }
     }
 
-    final memLimit = stats?.memoryLimit ?? instance.profile.memoryMb * 1024 * 1024;
+    final memLimit =
+        stats?.memoryLimit ?? instance.profile.memoryMb * 1024 * 1024;
     final cpuMax = instance.profile.vcpu * 100;
 
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => InstanceScreen(instanceId: instance.id)),
+          MaterialPageRoute(
+              builder: (_) => InstanceScreen(instanceId: instance.id)),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -112,7 +115,8 @@ class _InstanceCard extends ConsumerWidget {
                           instance.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -127,7 +131,6 @@ class _InstanceCard extends ConsumerWidget {
                   StateChip(state: instance.state, live: instance.isRunning),
                 ],
               ),
-
               if (instance.lastError.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -143,7 +146,6 @@ class _InstanceCard extends ConsumerWidget {
                   ),
                 ),
               ],
-
               const SizedBox(height: 14),
               _Meter(label: 'CPU', value: stats?.cpuPercent ?? 0, max: cpuMax),
               const SizedBox(height: 8),
@@ -153,7 +155,6 @@ class _InstanceCard extends ConsumerWidget {
                 max: memLimit.toDouble(),
                 trailing: humanBytes(stats?.memoryBytes ?? 0),
               ),
-
               if (live != null) ...[
                 const SizedBox(height: 14),
                 Container(
@@ -184,7 +185,8 @@ class _InstanceCard extends ConsumerWidget {
                             ),
                             Text(
                               'step ${live.step}/${live.maxSteps} · ${humanAgo(live.createdAt)}',
-                              style: TextStyle(color: Fleet.ink400, fontSize: 11),
+                              style:
+                                  TextStyle(color: Fleet.ink400, fontSize: 11),
                             ),
                           ],
                         ),
@@ -202,7 +204,11 @@ class _InstanceCard extends ConsumerWidget {
 }
 
 class _Meter extends StatelessWidget {
-  const _Meter({required this.label, required this.value, required this.max, this.trailing});
+  const _Meter(
+      {required this.label,
+      required this.value,
+      required this.max,
+      this.trailing});
 
   final String label;
   final double value;

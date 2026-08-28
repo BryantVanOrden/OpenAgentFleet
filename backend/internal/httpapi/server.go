@@ -111,6 +111,15 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/triggers/cron", auth(roleAdmin, s.handleCreateCronTrigger))
 	mux.Handle("DELETE /api/triggers/cron/{id}", auth(roleAdmin, s.handleDeleteCronTrigger))
 
+	// Shared Fleet Vault & Inter-Agent P2P Comms
+	mux.Handle("GET /api/vault/secrets", auth(roleAny, s.handleListSharedSecrets))
+	mux.Handle("POST /api/vault/secrets", auth(roleOperator, s.handlePutSharedSecret))
+	mux.Handle("DELETE /api/vault/secrets/{key}", auth(roleAdmin, s.handleDeleteSharedSecret))
+	mux.Handle("GET /api/vault/sessions", auth(roleAny, s.handleListSharedSessions))
+	mux.Handle("POST /api/vault/sessions", auth(roleOperator, s.handleSaveSharedSession))
+	mux.Handle("GET /api/vault/comms", auth(roleAny, s.handleListPeerMessages))
+	mux.Handle("POST /api/vault/comms", auth(roleOperator, s.handleSendPeerMessage))
+
 	mux.Handle("GET /api/alerts", auth(roleAny, s.handleListAlerts))
 	mux.Handle("POST /api/alerts/{id}/reply", auth(roleOperator, s.handleReplyAlert))
 

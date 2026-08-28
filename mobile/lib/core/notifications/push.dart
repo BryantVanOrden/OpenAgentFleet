@@ -54,7 +54,8 @@ class PushService {
     );
 
     await _local
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_channel);
 
     final messaging = FirebaseMessaging.instance;
@@ -108,9 +109,13 @@ class PushService {
           _channel.id,
           _channel.name,
           channelDescription: _channel.description,
-          importance: severity == 'info' ? Importance.defaultImportance : Importance.max,
-          priority: severity == 'info' ? Priority.defaultPriority : Priority.high,
-          category: severity == 'critical' ? AndroidNotificationCategory.call : null,
+          importance: severity == 'info'
+              ? Importance.defaultImportance
+              : Importance.max,
+          priority:
+              severity == 'info' ? Priority.defaultPriority : Priority.high,
+          category:
+              severity == 'critical' ? AndroidNotificationCategory.call : null,
         ),
         iOS: DarwinNotificationDetails(
           interruptionLevel: severity == 'critical'

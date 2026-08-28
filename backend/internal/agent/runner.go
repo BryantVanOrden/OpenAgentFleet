@@ -35,6 +35,9 @@ type Runner struct {
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
+	// Sub-agent budget bookkeeping; see spawn_budget.go.
+	depth    map[string]int
+	children map[string]int
 }
 
 func NewRunner(
@@ -48,9 +51,11 @@ func NewRunner(
 ) *Runner {
 	return &Runner{
 		cfg: cfg, db: db, models: models, bus: b, notify: notifier, art: art,
-		refiner: NewRefiner(db, models, b, log),
-		log:     log,
-		running: map[string]context.CancelFunc{},
+		refiner:  NewRefiner(db, models, b, log),
+		log:      log,
+		running:  map[string]context.CancelFunc{},
+		depth:    map[string]int{},
+		children: map[string]int{},
 	}
 }
 
@@ -81,6 +86,7 @@ func (r *Runner) Start(parent context.Context, task *protocol.Task) error {
 			r.mu.Lock()
 			delete(r.running, task.ID)
 			r.mu.Unlock()
+			r.forgetSpawn(task.ID)
 			cancel()
 		}()
 		r.loop(ctx, task)
@@ -337,15 +343,32 @@ func (r *Runner) execute(
 		}
 		return reply, terminalHumanReply
 
-	case protocol.ActShell:
+	// Every action that can execute operator-supplied or model-supplied code
+	// sits behind the same gate. `python` runs against a live interpreter that
+	// can import os and spawn processes, and `mount_tool`/`call_tool` define and
+	// then invoke a Python function body — all three are code execution by
+	// another name. Gating only `shell` made the instance-level toggle
+	// decorative: a model could be refused a shell and then get one via
+	// `python`. Enforced again in agentd, because one check is one bug away
+	// from a sandbox with an unexpected shell.
+	case protocol.ActShell, protocol.ActPython, protocol.ActMountTool, protocol.ActCallTool:
 		if !inst.ShellAccess {
-			return "refused: shell is disabled for this instance", terminalNone
+			return "refused: code execution (" + string(a.Action) +
+				") is disabled for this instance", terminalNone
 		}
 
 	case protocol.ActSpawnAgent:
 		subGoal := firstNonEmpty(a.SubGoal, a.Text, a.Question)
 		if subGoal == "" {
 			return "failed: spawn_agent requires a sub-goal", terminalNone
+		}
+		// Recursion has to be bounded, and not for tidiness: every level is a
+		// fan-out of paid model calls, so an unbounded tree is a
+		// cost-exhaustion attack that a single poisoned web page can trigger.
+		// Async children also bypass the one-task-per-instance guard, so
+		// without a cap they pile onto the same desktop and fight for focus.
+		if refused := r.checkSpawnBudget(task); refused != "" {
+			return refused, terminalNone
 		}
 		child := &protocol.Task{
 			ID:           store.NewID(),
@@ -363,6 +386,7 @@ func (r *Runner) execute(
 		if err := r.db.CreateTask(ctx, child); err != nil {
 			return "failed to spawn child agent: " + err.Error(), terminalNone
 		}
+		r.recordSpawn(task, child)
 		r.bus.Emit("task.spawned", task.InstanceID, task.ID, map[string]any{
 			"parent_id": task.ID, "child_id": child.ID, "goal": child.Goal,
 		})

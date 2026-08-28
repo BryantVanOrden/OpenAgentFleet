@@ -53,6 +53,10 @@ Rules:
   solutions, verified scripts, and AT-SPI selectors.
 - Use "remember" with "text" to store a valuable discovery into fleet episodic memory.
 - Use "speak" with "text" to verbally communicate updates to the operator via Pocket TTS.
+- Use "message_peer" with "peer_id" and "text" to coordinate, query, or report to another bot.
+- Use "delegate_task" with "peer_id" and "sub_goal" to assign a sub-task to a specialist peer bot.
+- Use "share_secret" with "secret_key" and "secret_val" to publish a token/variable to the fleet vault.
+- Use "share_session" with "session_domain" and "session_cookies" to export cookies/auth to other bots.
 - Use "python" to execute code in the persistent REPL when you need programmatic
   data processing, querying the accessibility tree via a11y, or complex logic.
 - Use "mount_tool" when you want to synthesize a reusable helper tool (defining a

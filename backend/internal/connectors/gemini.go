@@ -106,17 +106,23 @@ func (c *gemini) Complete(ctx context.Context, req Request) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s",
-		c.base, url.PathEscape(c.p.Model), url.QueryEscape(c.key))
+	// The key goes in a header, never the query string. Go wraps transport
+	// failures in *url.Error, which stringifies the full URL — and that error
+	// travels into the orchestrator log, the task's persisted `error` column,
+	// the WebSocket event bus, and a push notification on someone's phone. A key
+	// in the URL is a key in all four.
+	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent",
+		c.base, url.PathEscape(c.p.Model))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-goog-api-key", c.key)
 
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", c.p.Name, err)
+		return nil, fmt.Errorf("%s: %w", c.p.Name, redactKey(err, c.key))
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))

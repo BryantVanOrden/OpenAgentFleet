@@ -304,6 +304,36 @@ export interface CronTriggerRecord {
   created_at: string;
 }
 
+export interface SharedSecret {
+  key: string;
+  value: string;
+  scope: string;
+  note?: string;
+  created_by?: string;
+  updated_at: string;
+}
+
+export interface SharedSession {
+  id: string;
+  domain: string;
+  title: string;
+  cookies_json: string;
+  local_storage_json?: string;
+  created_by_instance?: string;
+  created_at: string;
+}
+
+export interface PeerMessage {
+  id: string;
+  from_instance_id: string;
+  from_instance_name: string;
+  to_instance_id: string;
+  kind: string;
+  content: string;
+  data?: Record<string, unknown>;
+  created_at: string;
+}
+
 export const api = {
   // Authentication
   login: (email: string, password: string) =>
@@ -374,6 +404,31 @@ export const api = {
     id: string,
     body: { from_bot: string; to_bot: string; phase: string; content: string; artifacts?: string[] },
   ) => post<SwarmMessage>(`/api/swarms/${id}/messages`, body),
+
+  // Shared Fleet Vault & Inter-Agent Comms
+  sharedSecrets: () => get<SharedSecret[]>("/api/vault/secrets"),
+  putSharedSecret: (body: { key: string; value: string; scope?: string; note?: string }) =>
+    post<SharedSecret>("/api/vault/secrets", body),
+  deleteSharedSecret: (key: string) => del<void>(`/api/vault/secrets/${encodeURIComponent(key)}`),
+  sharedSessions: (domain?: string) =>
+    get<SharedSession[]>(`/api/vault/sessions${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`),
+  saveSharedSession: (body: {
+    domain: string;
+    title: string;
+    cookies_json: string;
+    local_storage_json?: string;
+    created_by?: string;
+  }) => post<SharedSession>("/api/vault/sessions", body),
+  peerMessages: (instanceId?: string) =>
+    get<PeerMessage[]>(`/api/vault/comms${instanceId ? `?instance_id=${instanceId}` : ""}`),
+  sendPeerMessage: (body: {
+    from_instance_id?: string;
+    from_instance_name?: string;
+    to_instance_id?: string;
+    kind?: string;
+    content: string;
+    data?: Record<string, unknown>;
+  }) => post<PeerMessage>("/api/vault/comms", body),
 
   // Webhooks & Triggers
   webhooks: () => get<WebhookRecord[]>("/api/webhooks"),

@@ -43,10 +43,11 @@
 
 ## Pre-Configured Bot Archetypes
 
-AgentFleet includes 10 out-of-the-box, role-specialized agent personas equipped with domain tools, curated repositories, and structured Domain Operating Playbooks:
+AgentFleet includes 11 out-of-the-box, role-specialized agent personas equipped with domain tools, curated repositories, and structured Domain Operating Playbooks:
 
 | Archetype | Icon | Category | Recommended Hardware | Pre-installed Tooling & Curated Repos |
 | :--- | :---: | :--- | :--- | :--- |
+| **Fleet Manager & Commander** | 🎯 | Management | `standard` (4 vCPU, 8 GB) | `tmux`, `git`, `gh`, `ripgrep`, `jq`, `curl`, `n8n`, `htop`, `tree` — decomposes goals & delegates to specialists |
 | **CyberSec PenTester** | 🛡️ | Security | `standard` (4 vCPU, 8 GB) | `nmap`, `wireshark`, `ffuf`, `metasploit`, `ghidra`, `semgrep`, `sqlmap`, `burpsuite`, `nuclei`, `subfinder`, `SecLists` |
 | **Full-Stack Architect** | 💻 | Engineering | `developer-heavy` (8 vCPU, 16 GB) | VS Code, Node/Bun/pnpm, Go, Python, Rust, Docker CLI, PostgreSQL, Redis, Playwright, `gh`, `lazygit`, `ripgrep` |
 | **DevOps & Cloud SRE** | ⚙️ | DevOps | `developer-heavy` (8 vCPU, 16 GB) | `kubectl`, `helm`, `terraform`, `ansible`, `k9s`, `docker`, `aws-cli`, `gcloud`, `promql-cli`, `grafana-cli`, `trivy` |
@@ -111,10 +112,20 @@ AgentFleet ships with four pre-configured hardware tiers:
 
 | Tier | vCPU | Memory | Disk | GPU | Primary Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `micro` | 1.0 | 1 GB | 10 GB | No | Headless CLI, file processing, light terminal scripts |
-| `standard` | 2.0 | 4 GB | 25 GB | No | Web browsing, form entry, SaaS navigation, documentation |
-| `power-user` | 4.0 | 8 GB | 50 GB | No | Multi-window desktop workflows, heavy browser automation |
-| `developer-heavy` | 8.0 | 16 GB | 100 GB | Optional | Compiling large codebases, game engines, SWE-bench tasks |
+| `micro` | 1.0 | 2 GB | 15 GB | No | Headless CLI, file processing, light terminal scripts |
+| `standard` | 2.0 | 4 GB | 30 GB | No | Web browsing, form entry, SaaS navigation, documentation |
+| `power-user` | 4.0 | 8 GB | 60 GB | No | Multi-window desktop workflows, heavy browser automation |
+| `developer-heavy` | 8.0 | 16 GB | 150 GB | Requested | Compiling large codebases, game engines, SWE-bench tasks |
+
+These are the values in [`backend/internal/fleet/tiers.go`](backend/internal/fleet/tiers.go); every field can be
+overridden per instance. Two caveats worth stating rather than discovering:
+
+- **GPU is "requested", not guaranteed.** `developer-heavy` asks Docker for an
+  NVIDIA device. On a host without the container toolkit — including Docker
+  Desktop on macOS and Windows — the request is ignored and you get a CPU-only
+  sandbox.
+- **Disk limits need overlay2 on XFS with pquota.** Anywhere else Docker rejects
+  the quota and the orchestrator provisions without it, logging that it did.
 
 ---
 
@@ -170,7 +181,7 @@ More in the [interface gallery](docs/UI.md).
 ## Quick Start
 
 ### Prerequisites
-* **Docker & Docker Compose** (v24+)
+* **Docker & Docker Compose** (v24+) — Linux, macOS or Windows (WSL 2). See the [platform guide](docs/PLATFORMS.md).
 * **Ollama** with a vision model pulled (e.g. `ollama pull qwen2.5vl:7b`) OR a cloud API key (OpenAI, Anthropic, Gemini).
 
 ```bash
@@ -249,6 +260,9 @@ make test             # Run Go test suites and React production build
 
 ## In-Depth Documentation
 
+* 🛡️ [**Security Review**](docs/SECURITY-REVIEW.md) — An adversarial audit of the agent capabilities, with severities and fixes.
+* ♿ [**Accessibility & Contrast**](docs/ACCESSIBILITY.md) — WCAG 2.1 AA contrast ratios measured across all ten themes.
+* 💻 [**Platform Guide**](docs/PLATFORMS.md) — Running on Linux, macOS and Windows, and what is genuinely not portable.
 * 🖼️ [**Interface Gallery**](docs/UI.md) — Every screen, all ten themes, and how the theming is built.
 * 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) — Detailed component design, data flow, schema, and networking model.
 * 🔌 [**REST & WebSocket API Reference**](docs/API.md) — Complete endpoint specifications, request/response schemas, and real-time events.

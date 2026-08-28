@@ -31,6 +31,11 @@ mobile/**/*.jks
 mobile/**/*.keystore
 mobile/**/google-services.json
 mobile/**/GoogleService-Info.plist
+mobile/macos/Pods/
+mobile/macos/Flutter/ephemeral/
+mobile/linux/flutter/ephemeral/
+mobile/windows/flutter/ephemeral/
+mobile/lib/firebase_options.dart
 
 # credentials — never commit these
 deploy/*.json

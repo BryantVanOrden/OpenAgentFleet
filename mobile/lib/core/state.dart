@@ -5,7 +5,8 @@ import 'network/api_client.dart';
 import 'network/events.dart';
 
 /// Set once at startup in main().
-final apiProvider = Provider<ApiClient>((_) => throw UnimplementedError('override in main'));
+final apiProvider =
+    Provider<ApiClient>((_) => throw UnimplementedError('override in main'));
 
 /// Bumped whenever the operator signs in or out, so dependent providers rebuild.
 final sessionProvider = StateProvider<int>((_) => 0);
@@ -70,7 +71,8 @@ final blockingAlertCountProvider = Provider<int>((ref) {
   return alerts.where((a) => a.isOpen).length;
 });
 
-final tasksProvider = StreamProvider.family<List<Task>, String>((ref, instanceId) async* {
+final tasksProvider =
+    StreamProvider.family<List<Task>, String>((ref, instanceId) async* {
   final api = ref.watch(apiProvider);
   yield await api.tasks(instanceId: instanceId);
 
@@ -81,7 +83,8 @@ final tasksProvider = StreamProvider.family<List<Task>, String>((ref, instanceId
   }
 });
 
-final chatProvider = StreamProvider.family<List<ChatMessage>, String>((ref, instanceId) async* {
+final chatProvider =
+    StreamProvider.family<List<ChatMessage>, String>((ref, instanceId) async* {
   final api = ref.watch(apiProvider);
   yield await api.chat(instanceId);
 

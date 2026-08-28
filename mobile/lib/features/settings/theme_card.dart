@@ -32,9 +32,9 @@ class ThemeCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('Appearance',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
-
             SegmentedButton<ThemeMode>(
               segments: const [
                 ButtonSegment(
@@ -58,14 +58,13 @@ class ThemeCard extends ConsumerWidget {
               onSelectionChanged: (s) => controller.setMode(s.first),
               style: ButtonStyle(
                 visualDensity: VisualDensity.compact,
-                textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12)),
+                textStyle:
+                    WidgetStateProperty.all(const TextStyle(fontSize: 12)),
               ),
             ),
-
             const SizedBox(height: 18),
             Text('Accent', style: TextStyle(color: c.ink300, fontSize: 12)),
             const SizedBox(height: 10),
-
             Row(
               children: [
                 for (final accent in FleetAccent.values)
@@ -80,7 +79,6 @@ class ThemeCard extends ConsumerWidget {
                   ),
               ],
             ),
-
             const SizedBox(height: 12),
             Text(
               'Auto follows your device. Accent is handy for telling one '
@@ -133,7 +131,8 @@ class _Swatch extends StatelessWidget {
               // tick has to read on deep blue and on bright amber.
               ? Icon(Icons.check,
                   size: 18,
-                  color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                  color: ThemeData.estimateBrightnessForColor(color) ==
+                          Brightness.dark
                       ? Colors.white
                       : Colors.black)
               : null,

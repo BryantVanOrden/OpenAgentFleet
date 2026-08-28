@@ -12,6 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:1 \
     SCREEN_RESOLUTION=1920x1080x24 \
     VNC_PORT=6901 \
+    VNC_VIEW_PORT=6902 \
     AGENTD_PORT=7900 \
     HOME=/home/agent \
     # Defaults so supervisord can expand these even when the image is run
@@ -85,14 +86,43 @@ COPY egress.sh /usr/local/bin/egress.sh
 COPY init-archetype.sh /usr/local/bin/init-archetype.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/egress.sh /usr/local/bin/init-archetype.sh
 
-# The agent runs unprivileged with passwordless sudo so it can install packages on the fly
-RUN useradd -m -s /bin/bash -u 1000 agent \
-    && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
+# The agent runs unprivileged, with a restricted passwordless sudo so it can
+# still install packages on the fly.
+# Ubuntu 24.04 ships a default `ubuntu` user already holding UID 1000, so a
+# plain useradd -u 1000 fails with "UID already in use" (exit 4). Reclaim it:
+# pinning the agent to 1000 keeps bind-mounted files owned sanely on Linux hosts.
+#
+# The sudo grant is deliberately not `NOPASSWD:ALL` any more. The dev archetypes
+# genuinely need on-the-fly `apt-get install`, so sudo stays usable — but the
+# commands that dismantle the platform's own controls are denied. The one that
+# matters is `nft`: an instance carrying an egress policy also carries
+# CAP_NET_ADMIN, so a single `sudo nft flush ruleset` used to delete the whole
+# allow-list, the RFC1918 block and all, from inside the container the policy
+# exists to contain.
+#
+# Be clear about what this is worth. A sudoers deny-list is a guardrail, not a
+# boundary: sudo matches on the resolved binary path, so `sudo cp /usr/sbin/nft
+# /tmp/n && sudo /tmp/n flush ruleset` — or simply `sudo bash` — still gets
+# there. It stops the direct, obvious command an agent (or a page instructing
+# one) would actually reach for. The real control is `no-new-privileges` on the
+# container (backend/internal/fleet/manager.go), which makes the kernel ignore
+# sudo's setuid bit so sudo fails outright for orchestrator-provisioned
+# instances; this deny-list is what is left when someone runs the image directly
+# with `docker run`, which is how a developer will first test it.
+RUN (userdel -r ubuntu 2>/dev/null || true) \
+    && useradd -m -s /bin/bash -u 1000 agent \
+    && printf '%s\n' \
+        '# Platform state, not the agent to edit: egress policy, the mount' \
+        '# table, kernel modules, sysctls, namespaces.' \
+        'Cmnd_Alias AGENTFLEET_DENIED = /usr/sbin/nft, /usr/sbin/iptables, /usr/sbin/ip6tables, /usr/sbin/iptables-legacy, /usr/sbin/iptables-nft, /usr/sbin/ip6tables-nft, /usr/sbin/xtables-nft-multi, /usr/sbin/ip, /usr/bin/ip, /usr/sbin/tc, /usr/bin/mount, /usr/bin/umount, /usr/sbin/mount, /usr/sbin/umount, /usr/sbin/insmod, /usr/sbin/rmmod, /usr/sbin/modprobe, /usr/sbin/depmod, /usr/sbin/sysctl, /usr/bin/sysctl, /usr/bin/unshare, /usr/bin/nsenter' \
+        'agent ALL=(ALL) NOPASSWD: ALL, !AGENTFLEET_DENIED' \
+        > /etc/sudoers.d/agent \
     && chmod 0440 /etc/sudoers.d/agent \
+    && visudo -cf /etc/sudoers.d/agent \
     && mkdir -p /home/agent/work /var/log/agentfleet /var/run/agentfleet \
     && chown -R agent:agent /home/agent /var/log/agentfleet /var/run/agentfleet
 
-EXPOSE 6901 7900
+EXPOSE 6901 6902 7900
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=45s --retries=6 \
     CMD curl -fsS http://localhost:${AGENTD_PORT}/health || exit 1

@@ -75,14 +75,18 @@ type Instance struct {
 	Profile           TierProfile       `json:"profile"`
 	Override          *ResourceOverride `json:"override,omitempty"`
 	VNCURL            string            `json:"vnc_url,omitempty"`
-	StreamURL         string            `json:"stream_url,omitempty"` // WebRTC signalling
-	AgentdURL         string            `json:"agentd_url,omitempty"` // internal only
-	Egress            EgressPolicy      `json:"egress"`
-	ShellAccess       bool              `json:"shell_access"`
-	Labels            map[string]string `json:"labels,omitempty"`
-	LastError         string            `json:"last_error,omitempty"`
-	CreatedAt         time.Time         `json:"created_at"`
-	UpdatedAt         time.Time         `json:"updated_at"`
+	// VNCViewURL is the same desktop served by a -viewonly VNC server. The
+	// auditor role is proxied here, so "may watch, may not touch" is enforced by
+	// the server rather than by a client-side flag anyone could edit away.
+	VNCViewURL  string            `json:"vnc_view_url,omitempty"`
+	StreamURL   string            `json:"stream_url,omitempty"` // WebRTC signalling
+	AgentdURL   string            `json:"agentd_url,omitempty"` // internal only
+	Egress      EgressPolicy      `json:"egress"`
+	ShellAccess bool              `json:"shell_access"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	LastError   string            `json:"last_error,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // EgressPolicy constrains what the sandbox may talk to. An empty Allow list
@@ -140,18 +144,8 @@ type Task struct {
 
 // ------------------------------------------------------- perception/action ---
 
-// Observation is what the daemon reports about the current desktop.
-//
-// Coordinate spaces, because getting these confused is how clicks land in the
-// wrong place:
-//
-//   - Width/Height are the dimensions of the captured frame BEFORE encoding —
-//     the full desktop, or the crop region when zoomed.
-//   - Scale is encoded-image width / frame width. The model sees the encoded
-//     image and answers in ITS pixel space.
-//   - OriginX/OriginY locate the frame on the desktop; non-zero only for crops.
-//
-// So: desktop = origin + (model coordinate / scale). ToDesktop does this.
+// MarkItem is one numbered element in a Set-of-Marks overlay: the box drawn on
+// the screenshot and the accessible identity behind it.
 type MarkItem struct {
 	ID     int    `json:"id"`
 	Role   string `json:"role,omitempty"`
@@ -164,6 +158,18 @@ type MarkItem struct {
 	CY     int    `json:"cy"`
 }
 
+// Observation is what the daemon reports about the current desktop.
+//
+// Coordinate spaces, because getting these confused is how clicks land in the
+// wrong place:
+//
+//   - Width/Height are the dimensions of the captured frame BEFORE encoding —
+//     the full desktop, or the crop region when zoomed.
+//   - Scale is encoded-image width / frame width. The model sees the encoded
+//     image and answers in ITS pixel space.
+//   - OriginX/OriginY locate the frame on the desktop; non-zero only for crops.
+//
+// So: desktop = origin + (model coordinate / scale). ToDesktop does this.
 type Observation struct {
 	ScreenshotB64 string     `json:"screenshot_b64,omitempty"` // WebP, base64
 	Width         int        `json:"width"`
@@ -249,14 +255,61 @@ const (
 	ActUnmountTool ActionKind = "unmount_tool" // dispose of a mounted custom tool
 	ActCallTool    ActionKind = "call_tool"    // execute a dynamically mounted custom tool
 	ActDeepSearch  ActionKind = "deep_search"  // live web search and intelligence synthesis
-	ActRemember    ActionKind = "remember"     // store long-term episodic memory across the fleet
-	ActRecall      ActionKind = "recall"       // semantically search fleet episodic memory
-	ActSpeak       ActionKind = "speak"        // spoken voice output via Pocket TTS
-	ActAssert      ActionKind = "assert"       // file exists / size / exit code
-	ActAskHuman    ActionKind = "ask_human"    // hand control back to the operator
-	ActDone        ActionKind = "done"
-	ActFail        ActionKind = "fail"
+	ActRemember     ActionKind = "remember"      // store long-term episodic memory across the fleet
+	ActRecall       ActionKind = "recall"        // semantically search fleet episodic memory
+	ActSpeak        ActionKind = "speak"         // spoken voice output via Pocket TTS
+	ActMsgPeer      ActionKind = "message_peer"  // send message/question to a peer bot in the fleet
+	ActDelegateTask ActionKind = "delegate_task" // manager bot delegates sub-task to a peer bot
+	ActShareSecret  ActionKind = "share_secret"  // publish a variable/secret to the shared fleet vault
+	ActShareSession ActionKind = "share_session" // share cookies/auth session with peer bots
+	ActAssert       ActionKind = "assert"        // file exists / size / exit code
+	ActAskHuman     ActionKind = "ask_human"     // hand control back to the operator
+	ActDone         ActionKind = "done"
+	ActFail         ActionKind = "fail"
 )
+
+// PeerInfo represents a live peer bot running in the fleet.
+type PeerInfo struct {
+	InstanceID   string   `json:"instance_id"`
+	Name         string   `json:"name"`
+	ArchetypeID  string   `json:"archetype_id"`
+	State        string   `json:"state"`
+	CurrentTask  string   `json:"current_task,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+// PeerMessage represents an inter-bot message or delegation.
+type PeerMessage struct {
+	ID               string         `json:"id"`
+	FromInstanceID   string         `json:"from_instance_id"`
+	FromInstanceName string         `json:"from_instance_name"`
+	ToInstanceID     string         `json:"to_instance_id"` // Target instance or "broadcast"
+	Kind             string         `json:"kind"`           // "message", "question", "report", "delegation"
+	Content          string         `json:"content"`
+	Data             map[string]any `json:"data,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+}
+
+// SharedSecret represents a variable or secret accessible across the fleet.
+type SharedSecret struct {
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	Scope     string    `json:"scope"` // "fleet", "instance:<id>", "swarm:<id>"
+	Note      string    `json:"note,omitempty"`
+	CreatedBy string    `json:"created_by,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SharedSession represents browser cookies and session storage exported by an agent.
+type SharedSession struct {
+	ID                string    `json:"id"`
+	Domain            string    `json:"domain"`
+	Title             string    `json:"title"`
+	CookiesJSON       string    `json:"cookies_json"`
+	LocalStorageJSON  string    `json:"local_storage_json,omitempty"`
+	CreatedByInstance string    `json:"created_by_instance,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+}
 
 // MemoryRecord represents a long-term cross-fleet semantic memory item.
 type MemoryRecord struct {
@@ -299,6 +352,11 @@ type Action struct {
 	ToolDescription string            `json:"tool_description,omitempty"` // for mount_tool
 	ToolParameters  map[string]any    `json:"tool_parameters,omitempty"`  // for mount_tool/call_tool
 	ToolHandler     string            `json:"tool_handler,omitempty"`     // for mount_tool Python code
+	PeerID          string            `json:"peer_id,omitempty"`          // target peer bot instance ID for message_peer/delegate_task
+	SecretKey       string            `json:"secret_key,omitempty"`       // key for share_secret
+	SecretVal       string            `json:"secret_val,omitempty"`       // value for share_secret
+	SessionDomain   string            `json:"session_domain,omitempty"`   // domain for share_session
+	SessionCookies  string            `json:"session_cookies,omitempty"`  // cookies JSON for share_session
 	Amount          int               `json:"amount,omitempty"`           // scroll clicks / wait seconds
 	Timeout         int               `json:"timeout,omitempty"`          // seconds, for wait_for
 	Question        string            `json:"question,omitempty"`

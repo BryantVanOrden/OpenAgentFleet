@@ -479,8 +479,15 @@ func TestGeminiRequestShape(t *testing.T) {
 	if cp.ready().path != "/v1beta/models/gemini-2.0-flash:generateContent" {
 		t.Errorf("path = %q", cp.ready().path)
 	}
-	if got := cp.ready().query.Get("key"); got != "sk-test-key" {
-		t.Errorf("key query param = %q", got)
+	// The key goes in a header, and must NOT be in the query string. Go wraps
+	// transport failures in *url.Error, which stringifies the whole URL — and
+	// that error is persisted to the task's error column and pushed to the
+	// operator's phone. A key in the URL is a key in the audit trail.
+	if got := cp.ready().header.Get("x-goog-api-key"); got != "sk-test-key" {
+		t.Errorf("x-goog-api-key header = %q, want the api key", got)
+	}
+	if got := cp.ready().query.Get("key"); got != "" {
+		t.Errorf("api key leaked into the query string: %q", got)
 	}
 
 	// The system prompt goes to systemInstruction, never to contents.

@@ -117,8 +117,26 @@ func (c *SandboxClient) StopRecording(ctx context.Context) (*RecordingResult, er
 	return &out, nil
 }
 
-// Inject writes a secret into the sandbox keyring for the duration of a run. The
-// value is never echoed back and never enters the prompt history.
+// Inject and ClearKeyring wrap agentd's `/keyring` endpoints.
+//
+// NOT WIRED UP. Nothing in the task lifecycle calls either method today: no run
+// injects a vault secret into a sandbox, and no run clears one. They exist
+// because the agentd endpoints exist, and are the client an operator tool or a
+// future run-scoped credential feature would use. Until something calls them,
+// treat "secrets are injected into the sandbox at runtime" as a plan, not a
+// feature — docs/SECURITY.md says so plainly, and it must keep saying so until
+// this changes.
+//
+// Two things to fix before wiring it up:
+//   - agentd's KEYRING_DIR (/var/run/agentfleet/keyring) is an ordinary
+//     directory on the container's writable layer, not tmpfs. Only /tmp is a
+//     tmpfs mount (see fleet.Manager's HostConfig). A secret written there hits
+//     the overlay filesystem.
+//   - There is no ClearKeyring on the failure path, so a crashed orchestrator
+//     would leave the value behind for the life of the container.
+//
+// Inject writes a secret into the sandbox keyring. The value is never echoed
+// back and never enters the prompt history.
 func (c *SandboxClient) Inject(ctx context.Context, name, value string) error {
 	return c.call(ctx, http.MethodPost, "/keyring",
 		map[string]string{"name": name, "value": value}, nil)

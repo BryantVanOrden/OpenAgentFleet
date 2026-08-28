@@ -66,7 +66,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(apiProvider).sendChat(widget.instanceId, text, asTask: asTask);
+      await ref
+          .read(apiProvider)
+          .sendChat(widget.instanceId, text, asTask: asTask);
       _controller.clear();
       ref.invalidate(chatProvider(widget.instanceId));
     } catch (err) {
@@ -119,7 +121,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             },
           ),
         ),
-
         SafeArea(
           top: false,
           child: Container(
@@ -147,7 +148,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: widget.enabled && !_busy ? () => _send(asTask: false) : null,
+                        onPressed: widget.enabled && !_busy
+                            ? () => _send(asTask: false)
+                            : null,
                         icon: const Icon(Icons.visibility_outlined, size: 18),
                         label: const Text('Ask'),
                       ),
@@ -155,7 +158,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: widget.enabled && !_busy ? () => _send(asTask: true) : null,
+                        onPressed: widget.enabled && !_busy
+                            ? () => _send(asTask: true)
+                            : null,
                         icon: const Icon(Icons.play_arrow_rounded, size: 20),
                         label: const Text('Run'),
                       ),
@@ -181,7 +186,8 @@ class _Bubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            mine ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           Flexible(
             child: Container(
@@ -201,7 +207,8 @@ class _Bubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(message.body, style: const TextStyle(fontSize: 14, height: 1.35)),
+                  Text(message.body,
+                      style: const TextStyle(fontSize: 14, height: 1.35)),
                   const SizedBox(height: 4),
                   Text(
                     humanAgo(message.createdAt),

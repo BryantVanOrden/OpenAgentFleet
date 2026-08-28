@@ -127,7 +127,13 @@ export default function InstanceDetail({ role }: { role: string }) {
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 p-6">
           {tab === "desktop" && (
-            <DesktopPane instance={instance} readOnly={readOnly} onError={setError} />
+            <DesktopPane
+              instance={instance}
+              readOnly={readOnly}
+              recording={recording}
+              setRecording={setRecording}
+              onError={setError}
+            />
           )}
           {tab === "activity" && <ActivityPane task={activeTask} steps={steps} />}
           {tab === "chat" && <ChatPane instanceId={id} disabled={readOnly} />}
@@ -198,10 +204,14 @@ export default function InstanceDetail({ role }: { role: string }) {
 function DesktopPane({
   instance,
   readOnly,
+  recording,
+  setRecording,
   onError,
 }: {
   instance: Instance;
   readOnly: boolean;
+  recording: boolean;
+  setRecording: (r: boolean) => void;
   onError: (m: string) => void;
 }) {
   const [mode, setMode] = useState<"stream" | "frame">("stream");
@@ -226,27 +236,68 @@ function DesktopPane({
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1 rounded-lg bg-ink-900 p-1 ring-1 ring-ink-700">
-          {(["stream", "frame"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={cx(
-                "rounded-md px-3 py-1 text-xs transition-colors",
-                mode === m ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100",
-              )}
-            >
-              {m === "stream" ? "Live stream" : "Single frame"}
-            </button>
-          ))}
+      {/* Demonstration Recording HUD */}
+      <div className="flex items-center justify-between gap-3 rounded-xl bg-ink-900 px-4 py-2.5 border border-ink-800">
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1 rounded-lg bg-ink-950 p-1 ring-1 ring-ink-800">
+            {(["stream", "frame"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={cx(
+                  "rounded-md px-3 py-1 text-xs transition-colors",
+                  mode === m ? "bg-ink-700 text-ink-100 font-medium" : "text-ink-400 hover:text-ink-100",
+                )}
+              >
+                {m === "stream" ? "🖥️ Live Desktop Stream" : "📸 Single Frame"}
+              </button>
+            ))}
+          </div>
+
+          {recording ? (
+            <div className="flex items-center gap-2 rounded-lg bg-bad-500/15 px-3 py-1 text-xs text-bad-400 border border-bad-500/30 animate-pulse font-mono font-semibold">
+              <span className="size-2 rounded-full bg-bad-500" />
+              Recording Demonstration (Interactions & A11y Elements)...
+            </div>
+          ) : (
+            <span className="text-xs text-ink-400 hidden sm:inline">
+              Interactive Mode: Click desktop to take over controls & record demonstrations.
+            </span>
+          )}
         </div>
-        {readOnly && <span className="text-xs text-ink-400">view only — auditor role</span>}
-        {mode === "frame" && (
-          <Button size="sm" onClick={refreshFrame}>
-            Refresh
-          </Button>
-        )}
+
+        <div className="flex items-center gap-2">
+          {!readOnly && (
+            <Button
+              size="sm"
+              variant={recording ? "danger" : "primary"}
+              onClick={async () => {
+                try {
+                  if (recording) {
+                    const skill = await api.stopRecording(instance.id);
+                    setRecording(false);
+                    alert(`✅ Successfully compiled demonstration into skill: "${skill.name}" (${skill.steps.length} steps)!`);
+                  } else {
+                    const name = prompt("What workflow/task is this demonstration teaching the agent?") ?? "";
+                    if (!name.trim()) return;
+                    await api.startRecording(instance.id, name.trim());
+                    setRecording(true);
+                  }
+                } catch (err) {
+                  onError(err instanceof Error ? err.message : String(err));
+                }
+              }}
+            >
+              {recording ? "⏹️ Stop & Compile to Skill" : "🎬 Teach Bot (Record Demonstration)"}
+            </Button>
+          )}
+
+          {mode === "frame" && (
+            <Button size="sm" onClick={refreshFrame}>
+              Refresh
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-black ring-1 ring-ink-700">
@@ -256,7 +307,6 @@ function DesktopPane({
             title="desktop"
             src={vncUrl(instance.id, readOnly)}
             className="size-full border-0"
-            // The desktop is untrusted content; keep it from reaching the console.
             sandbox="allow-scripts allow-same-origin allow-forms"
           />
         ) : frame ? (

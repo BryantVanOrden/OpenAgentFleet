@@ -25,11 +25,16 @@ func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	// Auditors may watch; only operators and admins get input.
 	if !roleAllows(claims.Role, roleAny) {
 		fail(w, http.StatusForbidden, "insufficient role")
 		return
 	}
+	// Auditors may watch; only operators and admins get input. This is decided
+	// here and enforced by which SERVER we splice them to — the sandbox runs a
+	// second, `-viewonly` x11vnc for exactly this. noVNC's own `view_only`
+	// parameter is client-side and survives only until someone edits the URL,
+	// so it would not make the claim in docs/SECURITY.md true.
+	readOnly := !roleAllows(claims.Role, roleOperator)
 
 	id := r.PathValue("id")
 	inst, err := s.db.Instance(r.Context(), id)
@@ -41,7 +46,20 @@ func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, "instance is "+string(inst.State))
 		return
 	}
-	target, err := url.Parse(inst.VNCURL)
+	upstream := inst.VNCURL
+	if readOnly {
+		if inst.VNCViewURL == "" {
+			// Fail closed. An instance provisioned before the view-only server
+			// existed has no read-only endpoint, and silently falling back to
+			// the interactive one would hand an auditor a keyboard.
+			fail(w, http.StatusConflict,
+				"this instance predates the read-only desktop; recreate it to grant auditor access")
+			return
+		}
+		upstream = inst.VNCViewURL
+	}
+
+	target, err := url.Parse(upstream)
 	if err != nil || target.Host == "" {
 		fail(w, http.StatusBadGateway, "instance has no desktop endpoint")
 		return

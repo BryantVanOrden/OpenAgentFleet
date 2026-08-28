@@ -17,7 +17,16 @@ if [[ -n "${EGRESS_ALLOW:-}${EGRESS_DENY:-}${EGRESS_BLOCK_LOCAL:-}" ]]; then
     fi
 fi
 
-# Secrets are injected at run time through agentd, never baked into the image.
+# Keyring directory for agentd's /keyring endpoint. Nothing baked into the image
+# and, today, nothing put here either: the orchestrator has a client for that
+# endpoint but no code path calls it, so this directory stays empty unless
+# someone POSTs to /keyring by hand.
+#
+# It is an ordinary directory on the container's writable layer, NOT tmpfs, and
+# it cannot be made one from here: mounting tmpfs needs CAP_SYS_ADMIN, which the
+# sandbox deliberately does not have. Making it tmpfs means adding it to the
+# container's Tmpfs map in backend/internal/fleet/manager.go, alongside /tmp.
+# Do that before anything starts writing secrets here.
 install -d -m 0700 -o agent -g agent /var/run/agentfleet/keyring
 
 # Initialize archetype workspace and clone preinstalled repositories

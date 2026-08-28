@@ -6,9 +6,12 @@ import (
 
 // Ports exposed by every sandbox image.
 const (
-	PortNoVNC  = 6901 // websockified HTML5 desktop
-	PortAgentd = 7900 // observe/act/record control plane
-	PortSignal = 8090 // WebRTC signalling (selkies), when built in
+	PortNoVNC = 6901 // websockified HTML5 desktop
+	// Same desktop, served by a -viewonly x11vnc. Auditors are routed here;
+	// enforcing read-only in the client would not survive an edited URL.
+	PortNoVNCView = 6902
+	PortAgentd    = 7900 // observe/act/record control plane
+	PortSignal    = 8090 // WebRTC signalling (selkies), when built in
 )
 
 // DefaultTiers are the shipped hardware profiles. They are advisory: the admin

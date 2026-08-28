@@ -15,7 +15,9 @@ var validActions = map[protocol.ActionKind]bool{
 	protocol.ActFocus: true, protocol.ActShell: true, protocol.ActPython: true,
 	protocol.ActSpawnAgent: true, protocol.ActMountTool: true,
 	protocol.ActUnmountTool: true, protocol.ActCallTool: true,
-	protocol.ActDeepSearch: true, protocol.ActAssert: true,
+	protocol.ActDeepSearch: true, protocol.ActRemember: true,
+	protocol.ActRecall: true, protocol.ActSpeak: true,
+	protocol.ActAssert:   true,
 	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,
 }
 
@@ -121,6 +123,22 @@ func ParseAction(raw string) (protocol.Action, error) {
 		}
 		if strings.TrimSpace(a.Query) == "" {
 			return a, fmt.Errorf("deep_search needs query in query or text")
+		}
+	case protocol.ActRemember, protocol.ActSpeak:
+		// The prompt tells the model to put the memory content / utterance in
+		// "text"; accept "summary" as the near-miss models actually produce.
+		if a.Text == "" && a.Summary != "" {
+			a.Text = a.Summary
+		}
+		if strings.TrimSpace(a.Text) == "" {
+			return a, fmt.Errorf("%s needs text", a.Action)
+		}
+	case protocol.ActRecall:
+		if a.Query == "" && a.Text != "" {
+			a.Query = a.Text
+		}
+		if strings.TrimSpace(a.Query) == "" {
+			return a, fmt.Errorf("recall needs query in query or text")
 		}
 	case protocol.ActAskHuman:
 		if a.Question == "" {

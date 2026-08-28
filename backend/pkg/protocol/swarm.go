@@ -15,11 +15,11 @@ const (
 
 // SwarmMember represents an individual bot instance assigned to a role in the swarm.
 type SwarmMember struct {
-	InstanceID  string `json:"instance_id"`
+	InstanceID   string `json:"instance_id"`
 	InstanceName string `json:"instance_name"`
-	Role        string `json:"role"`         // e.g. "Lead Architect", "QA Auditor", "Red Teamer", "CRM Analyst"
-	ArchetypeID string `json:"archetype_id"` // e.g. "fullstack_dev", "qa_ui_ux", "cyber_ops"
-	Status      string `json:"status"`       // "idle", "working", "done", "error"
+	Role         string `json:"role"`         // e.g. "Lead Architect", "QA Auditor", "Red Teamer", "CRM Analyst"
+	ArchetypeID  string `json:"archetype_id"` // e.g. "fullstack_dev", "qa_ui_ux", "cyber_ops"
+	Status       string `json:"status"`       // "idle", "working", "done", "error"
 }
 
 // SwarmMessage is an inter-bot communication exchanged across the shared blackboard.
@@ -36,25 +36,25 @@ type SwarmMessage struct {
 
 // SwarmArtifact represents a verified deliverable produced by a swarm member.
 type SwarmArtifact struct {
-	ID          string    `json:"id"`
-	SwarmID     string    `json:"swarm_id"`
-	Title       string    `json:"title"`
-	Author      string    `json:"author"`
-	Category    string    `json:"category"` // "code_patch", "test_report", "security_audit", "crm_memo"
-	Content     string    `json:"content"`
-	ApprovedBy  []string  `json:"approved_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	SwarmID    string    `json:"swarm_id"`
+	Title      string    `json:"title"`
+	Author     string    `json:"author"`
+	Category   string    `json:"category"` // "code_patch", "test_report", "security_audit", "crm_memo"
+	Content    string    `json:"content"`
+	ApprovedBy []string  `json:"approved_by,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // SwarmTeam defines a multi-agent collaborative mission.
 type SwarmTeam struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Mission     string          `json:"mission"`
-	Status      SwarmStatus     `json:"status"`
-	Members     []SwarmMember   `json:"members"`
-	Messages    []SwarmMessage  `json:"messages"`
-	Artifacts   []SwarmArtifact `json:"artifacts"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Mission   string          `json:"mission"`
+	Status    SwarmStatus     `json:"status"`
+	Members   []SwarmMember   `json:"members"`
+	Messages  []SwarmMessage  `json:"messages"`
+	Artifacts []SwarmArtifact `json:"artifacts"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }

@@ -128,6 +128,16 @@ func Load() (*Config, error) {
 		}
 		master = "dev-insecure-master-key-0123456789abcdef"
 	}
+	// In production the key must be a real 32-byte value, base64 or hex. A
+	// passphrase is stretched with a single SHA-256 pass, which is fine for a
+	// laptop but is not a key — it is brute-forceable, and it seals every stored
+	// credential. Development still accepts one so `make up` works with no
+	// ceremony.
+	if c.Production() && !isFullStrengthKey(master) {
+		return nil, errors.New(
+			"MASTER_KEY must be exactly 32 bytes encoded as base64 or hex in production; " +
+				"generate one with: openssl rand -base64 32")
+	}
 	key, err := normaliseKey(master)
 	if err != nil {
 		return nil, fmt.Errorf("MASTER_KEY: %w", err)
