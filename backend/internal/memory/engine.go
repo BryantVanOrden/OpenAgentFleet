@@ -329,3 +329,42 @@ func (e *Engine) Forget(ctx context.Context, id string) bool {
 	}
 	return existed
 }
+
+// AboutUser returns what this agent has noted about one person.
+//
+// Not a Search: this is "who is this", not "what is relevant to a query", and
+// ranking notes about a person by similarity to nothing would return them in
+// an arbitrary order. Newest first, because a preference someone stated
+// recently supersedes one they stated a year ago.
+func (e *Engine) AboutUser(ctx context.Context, namespace, userID string, limit int) []protocol.MemoryRecord {
+	if userID == "" {
+		return nil
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 5
+	}
+	out := make([]protocol.MemoryRecord, 0, limit)
+	for _, m := range e.memories {
+		if m.AboutUserID != userID {
+			continue
+		}
+		// A note about a person is still scoped to the agent that made it —
+		// what one bot learned about a colleague is not every bot's to know —
+		// but shared namespaces stay readable, as they are for recall.
+		if namespace != "" && m.Namespace != namespace &&
+			m.Namespace != "global" && m.Namespace != "fleet" {
+			continue
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}

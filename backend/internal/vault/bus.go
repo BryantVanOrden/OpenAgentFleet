@@ -227,6 +227,17 @@ func (b *Bus) SendMessage(ctx context.Context, fromID, fromName, toID, kind, con
 // makes agents talking to each other appear in their own thread without the
 // agents themselves knowing conversations exist.
 func (b *Bus) SendMessageIn(ctx context.Context, conversationID, fromID, fromName, toID, kind, content string, data map[string]any) protocol.PeerMessage {
+	return b.sendFrom(ctx, conversationID, fromID, fromName, "", toID, kind, content, data)
+}
+
+// SendMessageAs is SendMessageIn with the person behind the message recorded,
+// for the human turns. An agent replying to "the operator" cannot tell two
+// colleagues apart without it.
+func (b *Bus) SendMessageAs(ctx context.Context, conversationID, fromID, fromName, fromUserID, toID, kind, content string, data map[string]any) protocol.PeerMessage {
+	return b.sendFrom(ctx, conversationID, fromID, fromName, fromUserID, toID, kind, content, data)
+}
+
+func (b *Bus) sendFrom(ctx context.Context, conversationID, fromID, fromName, fromUserID, toID, kind, content string, data map[string]any) protocol.PeerMessage {
 	b.mu.Lock()
 	b.seq++
 	msg := protocol.PeerMessage{
@@ -234,6 +245,7 @@ func (b *Bus) SendMessageIn(ctx context.Context, conversationID, fromID, fromNam
 		ConversationID:   conversationID,
 		FromInstanceID:   fromID,
 		FromInstanceName: fromName,
+		FromUserID:       fromUserID,
 		ToInstanceID:     toID,
 		Kind:             kind,
 		Content:          content,

@@ -671,7 +671,11 @@ type ChatMessage struct {
 	PlanState string `json:"plan_state,omitempty"`
 	// SessionID is which chat with this bot the message belongs to. Empty means
 	// the original chat, from before chats could be separated.
-	SessionID string    `json:"session_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// UserID and UserName attribute a message to the person who sent it, so an
+	// agent can tell colleagues apart rather than seeing one anonymous voice.
+	UserID    string    `json:"user_id,omitempty"`
+	UserName  string    `json:"user_name,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -686,10 +690,10 @@ func (s *Store) AppendChat(ctx context.Context, m *ChatMessage) error {
 		m.Kind = "message"
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO chat_messages(id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,session_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		`INSERT INTO chat_messages(id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,session_id,user_id,user_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		m.ID, m.InstanceID, m.TaskID, m.Role, m.Body, m.ImageKey, m.Kind, m.PlanState, m.CreatedAt,
-		nullIfEmpty(m.SessionID))
+		nullIfEmpty(m.SessionID), nullIfEmpty(m.UserID), nullIfEmpty(m.UserName))
 	return norm(err)
 }
 
@@ -703,10 +707,10 @@ func (s *Store) SetPlanState(ctx context.Context, id, state string) error {
 func (s *Store) ChatMessageByID(ctx context.Context, id string) (ChatMessage, error) {
 	var m ChatMessage
 	err := s.pool.QueryRow(ctx,
-		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,COALESCE(session_id,'')
+		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,COALESCE(session_id,''),COALESCE(user_id,''),COALESCE(user_name,'')
          FROM chat_messages WHERE id=$1`, id).
 		Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body,
-			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt, &m.SessionID)
+			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt, &m.SessionID, &m.UserID, &m.UserName)
 	return m, norm(err)
 }
 
@@ -724,7 +728,7 @@ func (s *Store) ListChatSession(ctx context.Context, instanceID, sessionID strin
 	if limit <= 0 {
 		limit = 200
 	}
-	q := `SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,COALESCE(session_id,'')
+	q := `SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,COALESCE(session_id,''),COALESCE(user_id,''),COALESCE(user_name,'')
           FROM chat_messages
           WHERE instance_id=$1 AND `
 	if sessionID == "" || sessionID == DefaultChatSessionID {
@@ -748,7 +752,7 @@ func (s *Store) ListChatSession(ctx context.Context, instanceID, sessionID strin
 	for rows.Next() {
 		var m ChatMessage
 		if err := rows.Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body,
-			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt, &m.SessionID); err != nil {
+			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt, &m.SessionID, &m.UserID, &m.UserName); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

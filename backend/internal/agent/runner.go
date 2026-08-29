@@ -389,8 +389,16 @@ func (r *Runner) execute(
 			return "failed: remember needs the text to store", terminalNone
 		}
 		title := firstNonEmpty(a.Target, clip(content, 60))
+		// A note the agent marked as being about the person who asked is
+		// attributed to them, so it surfaces when they next turn up rather
+		// than to whoever happens to be talking.
+		aboutUser := ""
+		if a.AboutUser {
+			aboutUser = task.OwnerID
+		}
 		if err := memory.GlobalEngine.StoreMemory(ctx, protocol.MemoryRecord{
 			Namespace:        memory.BotNamespace(inst.ID),
+			AboutUserID:      aboutUser,
 			Title:            title,
 			Content:          content,
 			Tags:             []string{"agent", inst.Name},

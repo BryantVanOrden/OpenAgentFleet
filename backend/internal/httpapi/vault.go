@@ -202,8 +202,15 @@ func (s *Server) handleSendPeerMessage(w http.ResponseWriter, r *http.Request) {
 	if req.FromInstanceName == "" {
 		req.FromInstanceName = "Operator"
 	}
-	msg := vault.GlobalBus.SendMessageIn(r.Context(), req.ConversationID, req.FromInstanceID,
-		req.FromInstanceName, req.ToInstanceID, req.Kind, req.Content, req.Data)
+	// A human message carries the person who sent it. Agents answering in a
+	// shared channel otherwise see one anonymous "Operator" however many
+	// colleagues are in the room.
+	sp := s.speakerOf(r)
+	if req.FromInstanceID == "" && req.FromInstanceName == "Operator" && sp.Name != "" {
+		req.FromInstanceName = sp.Name
+	}
+	msg := vault.GlobalBus.SendMessageAs(r.Context(), req.ConversationID, req.FromInstanceID,
+		req.FromInstanceName, sp.ID, req.ToInstanceID, req.Kind, req.Content, req.Data)
 	writeJSON(w, http.StatusCreated, msg)
 }
 

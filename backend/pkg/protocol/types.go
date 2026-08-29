@@ -313,14 +313,17 @@ type PeerMessage struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 	// Compacted marks a message that a summary has replaced. It stays in the
 	// database and stops being shown or replayed.
-	Compacted        bool           `json:"compacted,omitempty"`
-	FromInstanceID   string         `json:"from_instance_id"`
-	FromInstanceName string         `json:"from_instance_name"`
-	ToInstanceID     string         `json:"to_instance_id"` // Target instance or "broadcast"
-	Kind             string         `json:"kind"`           // "message", "question", "report", "delegation"
-	Content          string         `json:"content"`
-	Data             map[string]any `json:"data,omitempty"`
-	CreatedAt        time.Time      `json:"created_at"`
+	Compacted        bool   `json:"compacted,omitempty"`
+	FromInstanceID   string `json:"from_instance_id"`
+	FromInstanceName string `json:"from_instance_name"`
+	// FromUserID identifies the person, for messages a human sent. Empty when
+	// the sender is a bot.
+	FromUserID   string         `json:"from_user_id,omitempty"`
+	ToInstanceID string         `json:"to_instance_id"` // Target instance or "broadcast"
+	Kind         string         `json:"kind"`           // "message", "question", "report", "delegation"
+	Content      string         `json:"content"`
+	Data         map[string]any `json:"data,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
 }
 
 // Model roles. What a model is being asked to do, so a combination can send
@@ -537,7 +540,10 @@ type MemoryRecord struct {
 	Embedding        []float32 `json:"embedding,omitempty"`
 	SourceTaskID     string    `json:"source_task_id,omitempty"`
 	SourceInstanceID string    `json:"source_instance_id,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	// AboutUserID attributes a memory to a person rather than to the world, so
+	// "prefers terse answers" is kept against whoever it is true of.
+	AboutUserID string    `json:"about_user_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // MountedTool describes an ephemeral custom tool synthesized by the agent.
@@ -569,19 +575,23 @@ type Action struct {
 	ToolParameters  map[string]any    `json:"tool_parameters,omitempty"`  // for mount_tool/call_tool
 	ToolHandler     string            `json:"tool_handler,omitempty"`     // for mount_tool Python code
 	PeerID          string            `json:"peer_id,omitempty"`          // target peer bot instance ID for message_peer/delegate_task
-	SecretKey       string            `json:"secret_key,omitempty"`       // key for share_secret
-	SecretVal       string            `json:"secret_val,omitempty"`       // value for share_secret
-	SessionDomain   string            `json:"session_domain,omitempty"`   // domain for share_session
-	SessionCookies  string            `json:"session_cookies,omitempty"`  // cookies JSON for share_session
-	SnapshotName    string            `json:"snapshot_name,omitempty"`    // for snapshot action
-	RollbackID      string            `json:"rollback_id,omitempty"`      // for rollback action
-	MCPServerID     string            `json:"mcp_server_id,omitempty"`    // for call_mcp action
-	MCPToolName     string            `json:"mcp_tool_name,omitempty"`    // for call_mcp action
-	MCPParams       map[string]any    `json:"mcp_params,omitempty"`       // for call_mcp action
-	Amount          int               `json:"amount,omitempty"`           // scroll clicks / wait seconds
-	Timeout         int               `json:"timeout,omitempty"`          // seconds, for wait_for
-	Question        string            `json:"question,omitempty"`
-	Summary         string            `json:"summary,omitempty"` // filled on done/fail
+	// AboutUser marks a remember action as a note about the person who asked
+	// rather than about the machine or the task, so it comes back when that
+	// person turns up and not when anyone does.
+	AboutUser      bool           `json:"about_user,omitempty"`
+	SecretKey      string         `json:"secret_key,omitempty"`      // key for share_secret
+	SecretVal      string         `json:"secret_val,omitempty"`      // value for share_secret
+	SessionDomain  string         `json:"session_domain,omitempty"`  // domain for share_session
+	SessionCookies string         `json:"session_cookies,omitempty"` // cookies JSON for share_session
+	SnapshotName   string         `json:"snapshot_name,omitempty"`   // for snapshot action
+	RollbackID     string         `json:"rollback_id,omitempty"`     // for rollback action
+	MCPServerID    string         `json:"mcp_server_id,omitempty"`   // for call_mcp action
+	MCPToolName    string         `json:"mcp_tool_name,omitempty"`   // for call_mcp action
+	MCPParams      map[string]any `json:"mcp_params,omitempty"`      // for call_mcp action
+	Amount         int            `json:"amount,omitempty"`          // scroll clicks / wait seconds
+	Timeout        int            `json:"timeout,omitempty"`         // seconds, for wait_for
+	Question       string         `json:"question,omitempty"`
+	Summary        string         `json:"summary,omitempty"` // filled on done/fail
 }
 
 // StepRecord is one persisted turn of the agent loop, used for audit replay.

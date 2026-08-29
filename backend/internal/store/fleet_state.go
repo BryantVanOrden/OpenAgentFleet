@@ -29,11 +29,11 @@ func (s *Store) InsertPeerMessage(ctx context.Context, m protocol.PeerMessage) e
 		m.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO peer_messages(id,from_instance_id,from_instance_name,to_instance_id,kind,content,data_json,created_at,conversation_id,compacted)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		`INSERT INTO peer_messages(id,from_instance_id,from_instance_name,to_instance_id,kind,content,data_json,created_at,conversation_id,compacted,from_user_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (id) DO NOTHING`,
 		m.ID, m.FromInstanceID, m.FromInstanceName, m.ToInstanceID, m.Kind, m.Content, data, m.CreatedAt,
-		nullIfEmpty(m.ConversationID), m.Compacted)
+		nullIfEmpty(m.ConversationID), m.Compacted, nullIfEmpty(m.FromUserID))
 	return norm(err)
 }
 
@@ -47,7 +47,7 @@ func (s *Store) ListPeerMessages(ctx context.Context, instanceID string, limit i
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT id,from_instance_id,from_instance_name,to_instance_id,kind,content,COALESCE(data_json,''),created_at,COALESCE(conversation_id,''),compacted
+	q := `SELECT id,from_instance_id,from_instance_name,to_instance_id,kind,content,COALESCE(data_json,''),created_at,COALESCE(conversation_id,''),compacted,COALESCE(from_user_id,'')
           FROM peer_messages`
 	args := []any{limit}
 	if instanceID != "" {
@@ -66,7 +66,7 @@ func (s *Store) ListPeerMessages(ctx context.Context, instanceID string, limit i
 		var m protocol.PeerMessage
 		var data string
 		if err := rows.Scan(&m.ID, &m.FromInstanceID, &m.FromInstanceName, &m.ToInstanceID,
-			&m.Kind, &m.Content, &data, &m.CreatedAt, &m.ConversationID, &m.Compacted); err != nil {
+			&m.Kind, &m.Content, &data, &m.CreatedAt, &m.ConversationID, &m.Compacted, &m.FromUserID); err != nil {
 			return nil, err
 		}
 		if data != "" {
@@ -98,12 +98,12 @@ func (s *Store) UpsertMemory(ctx context.Context, m protocol.MemoryRecord) error
 		m.CreatedAt = time.Now().UTC()
 	}
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO episodic_memories(id,namespace,title,content,tags,embedding,source_task_id,source_instance_id,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		`INSERT INTO episodic_memories(id,namespace,title,content,tags,embedding,source_task_id,source_instance_id,created_at,about_user_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (id) DO UPDATE SET namespace=$2,title=$3,content=$4,tags=$5,embedding=$6,
-             source_task_id=$7,source_instance_id=$8`,
+             source_task_id=$7,source_instance_id=$8,about_user_id=$10`,
 		m.ID, m.Namespace, m.Title, m.Content, string(tags), string(embedding),
-		m.SourceTaskID, m.SourceInstanceID, m.CreatedAt)
+		m.SourceTaskID, m.SourceInstanceID, m.CreatedAt, nullIfEmpty(m.AboutUserID))
 	return norm(err)
 }
 
@@ -114,7 +114,8 @@ func (s *Store) ListMemories(ctx context.Context, namespace string, limit int) (
 		limit = 200
 	}
 	q := `SELECT id,namespace,title,content,COALESCE(tags,''),COALESCE(embedding,''),
-             COALESCE(source_task_id,''),COALESCE(source_instance_id,''),created_at
+             COALESCE(source_task_id,''),COALESCE(source_instance_id,''),created_at,
+             COALESCE(about_user_id,'')
           FROM episodic_memories`
 	args := []any{limit}
 	if namespace != "" {
@@ -133,7 +134,7 @@ func (s *Store) ListMemories(ctx context.Context, namespace string, limit int) (
 		var m protocol.MemoryRecord
 		var tags, embedding string
 		if err := rows.Scan(&m.ID, &m.Namespace, &m.Title, &m.Content, &tags, &embedding,
-			&m.SourceTaskID, &m.SourceInstanceID, &m.CreatedAt); err != nil {
+			&m.SourceTaskID, &m.SourceInstanceID, &m.CreatedAt, &m.AboutUserID); err != nil {
 			return nil, err
 		}
 		if tags != "" {

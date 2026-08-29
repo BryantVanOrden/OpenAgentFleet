@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
@@ -101,4 +102,32 @@ func (s *Server) requirePerm(w http.ResponseWriter, r *http.Request, instanceID 
 		return nil, false
 	}
 	return inst, true
+}
+
+// speaker is the person behind a request.
+type speaker struct {
+	ID   string
+	Name string
+}
+
+// speakerOf identifies who is making this request, for attribution on anything
+// an agent will later read back.
+//
+// The display name is the local part of the email rather than the whole
+// address: an agent addressing someone by name should say "alex", and the full
+// address is an identifier, not a name. The ID is what memories are keyed on,
+// so a rename does not orphan them.
+func (s *Server) speakerOf(r *http.Request) speaker {
+	c := userFrom(r.Context())
+	if c == nil {
+		return speaker{Name: "Operator"}
+	}
+	name := c.Email
+	if at := strings.IndexByte(name, '@'); at > 0 {
+		name = name[:at]
+	}
+	if name == "" {
+		name = "Operator"
+	}
+	return speaker{ID: c.Subject, Name: name}
 }
