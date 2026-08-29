@@ -42,6 +42,22 @@ func fellBack(models []ModelDescriptor, format string, args ...any) ([]ModelDesc
 	return models, &CatalogueFallback{Reason: fmt.Sprintf(format, args...)}
 }
 
+// readAndClose reads a discovery response and releases its connection, taking
+// the result of an http.Do call directly so neither can be forgotten.
+//
+// It returns a status of zero when the request itself failed. The body used to
+// be closed only on the 200 path, which leaks a connection on every other
+// answer -- and the commonest answer of all is 401 from a key that has expired,
+// on a call the model picker makes every time it is opened.
+func readAndClose(resp *http.Response, err error) (int, []byte) {
+	if err != nil {
+		return 0, nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, body
+}
+
 // ListDynamicModels discovers and lists models for any configured provider kind.
 //
 // Every kind queries the provider's real model endpoint. When that cannot be
@@ -139,14 +155,13 @@ func listOpenAIDynamic(ctx context.Context, hc *http.Client, base, key string, k
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err == nil {
 			req.Header.Set("Authorization", "Bearer "+key)
-			if resp, err := hc.Do(req); err == nil && resp.StatusCode == http.StatusOK {
-				defer resp.Body.Close()
+			if status, raw := readAndClose(hc.Do(req)); status == http.StatusOK {
 				var out struct {
 					Data []struct {
 						ID string `json:"id"`
 					} `json:"data"`
 				}
-				if err := json.NewDecoder(resp.Body).Decode(&out); err == nil && len(out.Data) > 0 {
+				if err := json.Unmarshal(raw, &out); err == nil && len(out.Data) > 0 {
 					var list []ModelDescriptor
 					for _, d := range out.Data {
 						id := d.ID
@@ -193,15 +208,14 @@ func listAnthropicDynamic(ctx context.Context, hc *http.Client, base, key string
 		if err == nil {
 			req.Header.Set("x-api-key", key)
 			req.Header.Set("anthropic-version", "2023-06-01")
-			if resp, err := hc.Do(req); err == nil && resp.StatusCode == http.StatusOK {
-				defer resp.Body.Close()
+			if status, raw := readAndClose(hc.Do(req)); status == http.StatusOK {
 				var out struct {
 					Data []struct {
 						ID          string `json:"id"`
 						DisplayName string `json:"display_name"`
 					} `json:"data"`
 				}
-				if err := json.NewDecoder(resp.Body).Decode(&out); err == nil && len(out.Data) > 0 {
+				if err := json.Unmarshal(raw, &out); err == nil && len(out.Data) > 0 {
 					var list []ModelDescriptor
 					for _, d := range out.Data {
 						name := d.DisplayName
@@ -244,9 +258,7 @@ func listGeminiDynamic(ctx context.Context, hc *http.Client, base, key string) (
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1beta/models", nil)
 		if err == nil {
 			req.Header.Set("x-goog-api-key", key)
-			if resp, err := hc.Do(req); err == nil && resp.StatusCode == http.StatusOK {
-				defer resp.Body.Close()
-				raw, _ := io.ReadAll(resp.Body)
+			if status, raw := readAndClose(hc.Do(req)); status == http.StatusOK {
 				var out struct {
 					Models []struct {
 						Name                       string   `json:"name"`

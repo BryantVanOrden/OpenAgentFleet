@@ -3,10 +3,13 @@ package connectors
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
@@ -143,5 +146,85 @@ func TestDiscoveryRejectsAnUnknownKind(t *testing.T) {
 	}
 	if len(models) != 0 {
 		t.Errorf("returned %d models for an unknown kind", len(models))
+	}
+}
+
+// countingServer reports how many separate TCP connections it accepted, which
+// is how a leaked response body shows up from the outside: an unclosed body is
+// never returned to the pool, so every call has to dial again.
+type countingServer struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	conns  int
+}
+
+func newCountingServer(t *testing.T, status int, body string) *countingServer {
+	t.Helper()
+	cs := &countingServer{}
+	cs.server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	cs.server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			cs.mu.Lock()
+			cs.conns++
+			cs.mu.Unlock()
+		}
+	}
+	cs.server.Start()
+	t.Cleanup(cs.server.Close)
+	return cs
+}
+
+func (cs *countingServer) count() int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.conns
+}
+
+// A provider that answers anything other than 200 is the ordinary case — an
+// expired key answers 401 — and discovery runs whenever the model picker is
+// opened. The body was closed only on the success path, so each of those calls
+// stranded a connection that the pool could never hand back.
+func TestDiscoveryReleasesTheConnectionWhenAProviderRejectsTheKey(t *testing.T) {
+	const calls = 5
+
+	for _, tc := range []struct {
+		name string
+		list func(ctx context.Context, hc *http.Client, base string) ([]ModelDescriptor, error)
+	}{
+		{"openai", func(ctx context.Context, hc *http.Client, base string) ([]ModelDescriptor, error) {
+			return listOpenAIDynamic(ctx, hc, base, testKey, protocol.ProviderOpenAI)
+		}},
+		{"anthropic", func(ctx context.Context, hc *http.Client, base string) ([]ModelDescriptor, error) {
+			return listAnthropicDynamic(ctx, hc, base, testKey)
+		}},
+		{"gemini", func(ctx context.Context, hc *http.Client, base string) ([]ModelDescriptor, error) {
+			return listGeminiDynamic(ctx, hc, base, testKey)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newCountingServer(t, http.StatusUnauthorized, `{"error":"invalid api key"}`)
+			hc := &http.Client{Transport: &http.Transport{}, Timeout: 5 * time.Second}
+			defer hc.CloseIdleConnections()
+
+			for i := 0; i < calls; i++ {
+				models, err := tc.list(context.Background(), hc, srv.server.URL)
+				var fallback *CatalogueFallback
+				if !errors.As(err, &fallback) {
+					t.Fatalf("a rejected key should report a catalogue fallback, got %v", err)
+				}
+				if len(models) == 0 {
+					t.Fatal("the curated catalogue should still be returned")
+				}
+			}
+
+			if got := srv.count(); got != 1 {
+				t.Fatalf("%d connections opened for %d calls; a rejected response leaves its "+
+					"body unclosed so the connection is never reused", got, calls)
+			}
+		})
 	}
 }
