@@ -25,12 +25,11 @@ dependencies:
   webview_flutter_android: ^4.3.2
   webview_flutter_wkwebview: ^3.17.0
 
-  # The desktop viewer on Linux and Windows. webview_flutter has no
-  # implementation there, so the app carries its own WebKitGTK/WebView2 window
-  # rather than depending on whatever browser the machine happens to have —
-  # which on this one turned out to be a Chromium stuck behind a first-run
-  # terms dialog, opening nothing.
-  desktop_webview_window: ^0.3.0
+  # The desktop viewer on Linux and Windows, embedded in the page rather than
+  # in a window of its own. webview_flutter has no implementation there, so
+  # this carries CEF; it is the only option that renders into the widget tree
+  # on Linux, which is what makes the desktop tab behave the same everywhere.
+  webview_cef: ^0.6.2
 
   # Last-resort fallback, and for any other outbound link.
   url_launcher: ^6.3.1

@@ -7,8 +7,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_cef/webview_cef.dart' as cef;
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/models.dart';
@@ -215,8 +215,9 @@ class _ControlMenu extends ConsumerWidget {
               instance.shellAccess ? Icons.terminal : Icons.terminal_outlined,
               color: instance.shellAccess ? Fleet.warn : null,
             ),
-            title: Text(
-                instance.shellAccess ? 'Revoke shell access' : 'Allow shell access'),
+            title: Text(instance.shellAccess
+                ? 'Revoke shell access'
+                : 'Allow shell access'),
             subtitle: Text(
               instance.shellAccess
                   ? 'Takes effect on the next step'
@@ -228,8 +229,8 @@ class _ControlMenu extends ConsumerWidget {
           enabled: false,
           child: ListTile(
             dense: true,
-            leading: Icon(Icons.admin_panel_settings_outlined,
-                color: Fleet.ink500),
+            leading:
+                Icon(Icons.admin_panel_settings_outlined, color: Fleet.ink500),
             title: Text('Sudo: ${instance.sudoAccess ? "on" : "off"}',
                 style: TextStyle(color: Fleet.ink400)),
             // Not a toggle, and saying so beats a switch that does nothing:
@@ -280,6 +281,12 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   String? _error;
   bool _recording = false;
   WebViewController? _webView;
+  cef.WebViewController? _cef;
+
+  /// Desktop filling the window, with the controls out of the way. A remote
+  /// 1920x1080 desktop letterboxed into a third of a phone screen is not
+  /// usable; this is what makes takeover practical rather than a preview.
+  bool _fullscreen = false;
 
   @override
   void initState() {
@@ -337,11 +344,12 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   static bool get _canEmbedWebView =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
-  /// Linux and Windows get their own webview window instead — WebKitGTK and
-  /// WebView2 respectively, carried by the app. Depending on the system
-  /// browser turned out to be fragile: on this machine the default handler
-  /// pointed at a Chromium sitting behind a first-run terms dialog, so the
-  /// desktop opened nothing at all and gave no clue why.
+  /// Linux and Windows embed CEF instead, in the page rather than a window of
+  /// their own, so the desktop tab behaves the same on every platform.
+  /// Depending on the system browser was fragile besides: on this machine the
+  /// default handler pointed at a Chromium sitting behind an unaccepted
+  /// first-run terms dialog, so the desktop opened nothing and explained
+  /// nothing.
   static bool get _canUseDesktopWebView =>
       !kIsWeb && (Platform.isLinux || Platform.isWindows);
 
@@ -350,30 +358,52 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   bool get _canTakeOver =>
       _canEmbedWebView || _canUseDesktopWebView || _canOpenExternally;
 
-  /// Open the desktop in the app's own webview window.
-  Future<void> _openDesktopWindow() async {
-    final api = ref.read(apiProvider);
-    final url = api.desktopUrl(widget.instance.id);
+  /// The live desktop, whichever engine this platform embeds.
+  Widget _streamView() {
+    final web = _webView;
+    if (web != null) {
+      return WebViewWidget(
+        controller: web,
+        // Without this the enclosing TabBarView wins the gesture arena for
+        // every horizontal drag, so dragging on the desktop swipes to the next
+        // tab instead of moving the mouse. Eager recognition hands all touch
+        // straight to noVNC, which does its own touch-to-mouse translation.
+        gestureRecognizers: {
+          Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+        },
+      );
+    }
+    final c = _cef;
+    if (c != null) return c.webviewWidget;
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  /// Start the embedded CEF view used on Linux and Windows.
+  Future<void> _startCefStream() async {
+    final url = ref.read(apiProvider).desktopUrl(widget.instance.id);
     final messenger = ScaffoldMessenger.of(context);
+    _refresh?.cancel();
     try {
-      final web = await WebviewWindow.create(
-        configuration: CreateConfiguration(
-          title: '${widget.instance.name} — desktop',
-          windowWidth: 1280,
-          windowHeight: 800,
-          // Keep each instance's session separate, so switching agents does
-          // not inherit the previous one's auth cookie.
-          userDataFolderWindows: 'agentfleet_${widget.instance.id}',
-        ),
-      );
-      web.launch(url);
+      await cef.WebviewManager().initialize();
+      final c = cef.WebviewManager().createWebView();
+      // The controller takes the first URL; there is no separate load step.
+      await c.initialize(url);
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      setState(() {
+        _cef = c;
+        _streaming = true;
+      });
     } catch (err) {
-      // A machine without WebKitGTK falls back to the system browser rather
-      // than losing takeover entirely.
-      if (mounted) await _openInBrowser();
-      messenger.showSnackBar(
-        SnackBar(content: Text('Built-in viewer unavailable, used the browser: $err')),
-      );
+      // A machine without CEF still gets takeover, just in a browser.
+      if (mounted) {
+        await _openInBrowser();
+        messenger.showSnackBar(SnackBar(
+          content: Text('Embedded viewer unavailable, opened a browser: $err'),
+        ));
+      }
     }
   }
 
@@ -382,8 +412,8 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     final url = ref.read(apiProvider).desktopUrl(widget.instance.id);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final ok = await launchUrl(Uri.parse(url),
-          mode: LaunchMode.externalApplication);
+      final ok =
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       if (!ok && mounted) await _offerUrl(url);
     } catch (err) {
       // A desktop whose default browser is missing or misconfigured should not
@@ -479,7 +509,8 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ Compiled demonstration into skill: "${skill.name}" (${skill.stepCount} steps)!'),
+              content: Text(
+                  '✅ Compiled demonstration into skill: "${skill.name}" (${skill.stepCount} steps)!'),
               backgroundColor: Fleet.live,
             ),
           );
@@ -525,13 +556,16 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
           if (!_streaming && _canEmbedWebView) _startStream();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('🔴 Recording started. Interact with desktop now.')),
+              const SnackBar(
+                  content:
+                      Text('🔴 Recording started. Interact with desktop now.')),
             );
           }
         } catch (err) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error: $err'), backgroundColor: Fleet.bad),
+              SnackBar(
+                  content: Text('Error: $err'), backgroundColor: Fleet.bad),
             );
           }
         }
@@ -552,7 +586,7 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
 
     return Column(
       children: [
-        if (_recording)
+        if (_recording && !_fullscreen)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             color: Fleet.bad.withValues(alpha: 0.2),
@@ -576,10 +610,12 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                 TextButton.icon(
                   onPressed: _toggleRecording,
                   icon: const Icon(Icons.stop, size: 16, color: Colors.white),
-                  label: const Text('Stop & Compile', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  label: const Text('Stop & Compile',
+                      style: TextStyle(color: Colors.white, fontSize: 12)),
                   style: TextButton.styleFrom(
                     backgroundColor: Fleet.bad,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   ),
                 ),
               ],
@@ -589,18 +625,34 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
           child: Container(
             color: Colors.black,
             width: double.infinity,
-            child: _streaming && _webView != null
-                ? WebViewWidget(
-                    controller: _webView!,
-                    // Without this the enclosing TabBarView wins the arena for
-                    // every horizontal drag, so dragging on the desktop swipes
-                    // to the next tab instead of moving the mouse. Eager
-                    // recognition hands all touch straight to noVNC, which
-                    // does its own touch-to-mouse translation.
-                    gestureRecognizers: {
-                      Factory<OneSequenceGestureRecognizer>(
-                          EagerGestureRecognizer.new),
-                    },
+            child: _streaming
+                ? Stack(
+                    children: [
+                      Positioned.fill(child: _streamView()),
+                      // Floating so it does not steal space from the desktop,
+                      // and low-contrast so it does not sit on top of the
+                      // content you are trying to read.
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Material(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            tooltip: _fullscreen
+                                ? 'Exit full screen'
+                                : 'Full screen',
+                            iconSize: 20,
+                            color: Colors.white,
+                            icon: Icon(_fullscreen
+                                ? Icons.fullscreen_exit
+                                : Icons.fullscreen),
+                            onPressed: () =>
+                                setState(() => _fullscreen = !_fullscreen),
+                          ),
+                        ),
+                      ),
+                    ],
                   )
                 : _error != null
                     ? Center(
@@ -625,94 +677,98 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                         : const Center(child: CircularProgressIndicator()),
           ),
         ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        // Live by default so the tab shows what is happening
-                        // now; switchable off for a still on metered data.
-                        onPressed: () {
-                          setState(() => _streaming = false);
-                          _setLive(!_live);
-                        },
-                        icon: Icon(
-                          _live && !_streaming
-                              ? Icons.pause_circle_outline
-                              : Icons.play_circle_outline,
-                          size: 18,
-                        ),
-                        label: Text(
-                          _live && !_streaming ? 'Pause live' : 'Go live',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Tooltip(
-                        message: _canEmbedWebView
-                            ? 'Drive the desktop directly'
-                            : _canUseDesktopWebView
-                                ? 'Opens the desktop in its own window'
-                                : _canOpenExternally
-                                    ? 'Opens the desktop in your browser'
-                                    : 'Takeover is unavailable on this platform',
-                        child: FilledButton.icon(
-                          onPressed: !_canTakeOver || (_streaming && _canEmbedWebView)
-                              ? null
-                              : _canEmbedWebView
-                                  ? _startStream
-                                  : _canUseDesktopWebView
-                                      ? _openDesktopWindow
-                                      : _openInBrowser,
+        if (!_fullscreen)
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          // Live by default so the tab shows what is happening
+                          // now; switchable off for a still on metered data.
+                          onPressed: () {
+                            setState(() => _streaming = false);
+                            _setLive(!_live);
+                          },
                           icon: Icon(
-                            _canEmbedWebView
-                                ? Icons.cast_connected
-                                : _canUseDesktopWebView
-                                    ? Icons.open_in_browser
-                                    : _canOpenExternally
-                                        ? Icons.open_in_new
-                                        : Icons.desktop_access_disabled_outlined,
+                            _live && !_streaming
+                                ? Icons.pause_circle_outline
+                                : Icons.play_circle_outline,
                             size: 18,
                           ),
-                          label: Text(_canTakeOver ? 'Take over' : 'Unavailable'),
+                          label: Text(
+                            _live && !_streaming ? 'Pause live' : 'Go live',
+                          ),
                         ),
                       ),
-                    ),
-                    // Only useful once the stream is up, and only reachable
-                    // there — noVNC's own keyboard button lives in a control
-                    // bar that collapses to a thin handle on a phone.
-                    if (_streaming) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: _toggleRemoteKeyboard,
-                        tooltip: 'Keyboard',
-                        icon: const Icon(Icons.keyboard_alt_outlined),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Tooltip(
+                          message: _canEmbedWebView || _canUseDesktopWebView
+                              ? 'Drive the desktop directly'
+                              : _canOpenExternally
+                                  ? 'Opens the desktop in your browser'
+                                  : 'Takeover is unavailable on this platform',
+                          child: FilledButton.icon(
+                            onPressed: !_canTakeOver || _streaming
+                                ? null
+                                : _canEmbedWebView
+                                    ? _startStream
+                                    : _canUseDesktopWebView
+                                        ? _startCefStream
+                                        : _openInBrowser,
+                            icon: Icon(
+                              _canEmbedWebView || _canUseDesktopWebView
+                                  ? Icons.cast_connected
+                                  : _canOpenExternally
+                                      ? Icons.open_in_new
+                                      : Icons.desktop_access_disabled_outlined,
+                              size: 18,
+                            ),
+                            label: Text(
+                                _canTakeOver ? 'Take over' : 'Unavailable'),
+                          ),
+                        ),
                       ),
+                      // Only useful once the stream is up, and only reachable
+                      // there — noVNC's own keyboard button lives in a control
+                      // bar that collapses to a thin handle on a phone.
+                      if (_streaming) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _toggleRemoteKeyboard,
+                          tooltip: 'Keyboard',
+                          icon: const Icon(Icons.keyboard_alt_outlined),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _toggleRecording,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _recording ? Fleet.bad : Fleet.ink800,
-                    ),
-                    icon: Icon(_recording ? Icons.stop_circle : Icons.fiber_manual_record, size: 18),
-                    label: Text(_recording ? 'Stop & Compile Demonstration' : '🎬 Teach Bot (Record Demonstration)'),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _toggleRecording,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _recording ? Fleet.bad : Fleet.ink800,
+                      ),
+                      icon: Icon(
+                          _recording
+                              ? Icons.stop_circle
+                              : Icons.fiber_manual_record,
+                          size: 18),
+                      label: Text(_recording
+                          ? 'Stop & Compile Demonstration'
+                          : '🎬 Teach Bot (Record Demonstration)'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }

@@ -137,14 +137,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.15"
-  desktop_webview_window:
-    dependency: "direct main"
-    description:
-      name: desktop_webview_window
-      sha256: b6fdae2cbf9571879b1761c12f27facaf82e22d0bdc74d049907c2a09a432957
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.0"
   dio:
     dependency: "direct main"
     description:
@@ -917,6 +909,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.3"
+  webview_cef:
+    dependency: "direct main"
+    description:
+      name: webview_cef
+      sha256: "1e028859e6fe4f52a82349a0acaa6594c1bd8317738df5764fd4365d6aebf6cc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.2"
   webview_flutter:
     dependency: "direct main"
     description:
