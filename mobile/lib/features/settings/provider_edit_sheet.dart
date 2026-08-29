@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
@@ -323,6 +324,34 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                     setState(() => _authMode = v.first),
                 showSelectedIcon: false,
               ),
+              const SizedBox(height: 8),
+              // Which to pick is not obvious, and picking the harder one by
+              // mistake sends you through a console detour you did not need.
+              Text(
+                _authMode == 'oauth'
+                    ? 'Signing in needs an OAuth client you register yourself, '
+                        'because a self-hosted app has no identity registered '
+                        'with Google. Worth it only for Vertex or an '
+                        'organisation account. It does NOT use a Gemini or '
+                        'Antigravity subscription — those bind to their own '
+                        'apps.'
+                    : 'Simplest: a free key from Google AI Studio. Two clicks, '
+                        'no console, no OAuth client to register.',
+                style:
+                    TextStyle(color: Fleet.ink400, fontSize: 11, height: 1.45),
+              ),
+              if (_authMode == 'api_key' &&
+                  (_kind == 'gemini' || _kind == 'antigravity')) ...[
+                const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  onPressed: () => launchUrl(
+                      Uri.parse('https://aistudio.google.com/apikey'),
+                      mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.open_in_new, size: 14),
+                  label: const Text('Get a key from AI Studio',
+                      style: TextStyle(fontSize: 11.5)),
+                ),
+              ],
               if (_authMode == 'oauth') ...[
                 const SizedBox(height: 12),
                 if (widget.existing?.signedIn ?? false)
