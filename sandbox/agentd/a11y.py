@@ -191,6 +191,28 @@ def flatten_text() -> str:
     return "\n".join(chunks)
 
 
+def nodes() -> list[Node]:
+    """Every node on the desktop as one flat list, deepest last.
+
+    tree() returns one root per application with the rest nested inside it.
+    Set-of-Marks needs the individual widgets rather than the windows holding
+    them, and it does its own filtering of containers and degenerate boxes, so
+    what it wants is the whole tree laid out flat.
+    """
+    if not AVAILABLE:
+        return []
+    out: list[Node] = []
+
+    def collect(n: Node) -> None:
+        out.append(n)
+        for c in n.children:
+            collect(c)
+
+    for root in tree():
+        collect(root)
+    return out[:MAX_NODES]
+
+
 def find(label: str, role: str | None = None) -> Node | None:
     """Locate a node by accessible name.
 
