@@ -107,7 +107,11 @@ install_tools() {
         [[ -z "${t}" ]] && continue
         command -v "${t}" >/dev/null 2>&1 && continue
 
-        local spec; spec="$(recipe_for "${t}")"
+        # recipe_for reports "no recipe" by exit status, which under `set -e`
+        # took the whole initializer with it -- so the apt fallback below was
+        # unreachable, and so were the README, the repo clones and the
+        # .tools-ready marker the orchestrator waits on.
+        local spec; spec="$(recipe_for "${t}")" || spec=""
         [[ -z "${spec}" ]] && spec="apt:${t}"
 
         if [[ "${spec}" == "skip" ]]; then
