@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -316,5 +317,50 @@ func TestUserFromWithoutClaims(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/x", nil)
 	if c := userFrom(r.Context()); c != nil {
 		t.Errorf("userFrom(empty context) = %v, want nil", c)
+	}
+}
+
+// ------------------------------------------------------------ handleSetRole ---
+
+// Changing someone's role accepted any string at all, while creating a user
+// with the same role name was validated. An unrecognised role ranks below
+// every gate, so the write locked the account out of the entire API and still
+// answered 204.
+func TestSetRoleRejectsARoleTheSystemCannotInterpret(t *testing.T) {
+	// A bare server has no database, so reaching it would panic. Answering 400
+	// is therefore also proof the request was refused before it was stored.
+	s := testServer("secret", time.Hour)
+
+	for _, role := range []string{"", "root", "superuser", "Admin", "admin ", "viewer", "owner"} {
+		t.Run("role="+role, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/users/u-1/role",
+				strings.NewReader(`{"role":`+quote(role)+`}`))
+			rec := httptest.NewRecorder()
+
+			s.handleSetRole(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("role %q was accepted with %d, want 400", role, rec.Code)
+			}
+		})
+	}
+}
+
+func quote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// Every role the deployment actually uses stays acceptable.
+func TestValidRoleAcceptsExactlyTheDeploymentRoles(t *testing.T) {
+	for _, r := range []protocol.Role{protocol.RoleAdmin, protocol.RoleOperator, protocol.RoleAuditor} {
+		if !protocol.ValidRole(r) {
+			t.Errorf("%q should be a valid role", r)
+		}
+	}
+	for _, r := range []protocol.Role{"", "root", "Admin", "owner", "member"} {
+		if protocol.ValidRole(r) {
+			t.Errorf("%q should not be a valid role", r)
+		}
 	}
 }

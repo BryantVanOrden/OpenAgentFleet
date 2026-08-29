@@ -78,8 +78,16 @@ func (s *Store) ListUsers(ctx context.Context) ([]protocol.User, error) {
 }
 
 func (s *Store) SetUserRole(ctx context.Context, id string, role protocol.Role) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, id, string(role))
-	return norm(err)
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, id, string(role))
+	if err != nil {
+		return norm(err)
+	}
+	// An UPDATE that matches nothing is not an error to the driver, so a role
+	// change aimed at a user id that does not exist reported success.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ----------------------------------------------------------------- secrets ---
