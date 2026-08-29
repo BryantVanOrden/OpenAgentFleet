@@ -5,6 +5,7 @@ import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'host_usage_card.dart';
 import 'providers_screen.dart';
+import '../admin/orgs_screen.dart';
 import '../auth/login_screen.dart';
 import 'theme_card.dart';
 
@@ -102,6 +103,22 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const ProvidersScreen(),
+              )),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Card(
+            color: Fleet.ink850,
+            child: ListTile(
+              leading: Icon(Icons.apartment_outlined, color: Fleet.ink300),
+              title: const Text('Departments and access'),
+              subtitle: Text(
+                'Who can see and drive which bots, and use which secrets',
+                style: TextStyle(color: Fleet.ink400, fontSize: 11),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const OrgsScreen(),
               )),
             ),
           ),

@@ -40,6 +40,7 @@ class Instance {
     required this.shellAccess,
     this.sudoAccess = false,
     this.providerIds = const [],
+    this.orgId = '',
     this.voice = '',
     required this.createdAt,
     this.lastError = '',
@@ -58,6 +59,10 @@ class Instance {
   /// This bot's own model fallback chain, most preferred first. Empty means
   /// the fleet-wide order.
   final List<String> providerIds;
+
+  /// The department this bot belongs to. Empty is unassigned, which only a
+  /// deployment administrator can see.
+  final String orgId;
 
   /// Voice this agent speaks in. Empty uses the app-wide default. Per agent so
   /// a fleet is legible by ear rather than every bot sounding identical.
@@ -80,6 +85,7 @@ class Instance {
         providerIds: ((j['provider_ids'] as List?) ?? const [])
             .map((e) => '$e')
             .toList(growable: false),
+        orgId: j['org_id'] as String? ?? '',
         voice: j['voice'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
@@ -524,6 +530,40 @@ class ChatSession {
         pinned: j['pinned'] as bool? ?? false,
         messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
         lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
+      );
+}
+
+/// A tool the operator added by hand, with how to fetch it.
+///
+/// The archetype catalogue cannot know about a company's internal CLI.
+class CustomTool {
+  const CustomTool({
+    required this.name,
+    required this.method,
+    required this.spec,
+  });
+
+  /// How to fetch it. `github` clones into the workspace rather than putting
+  /// anything on PATH, which is right for wordlists and template collections.
+  static const methods = ['apt', 'pip', 'npm', 'go', 'url', 'github'];
+
+  static const methodHints = {
+    'apt': 'Debian package name',
+    'pip': 'Python package name',
+    'npm': 'npm package name',
+    'go': 'module path, e.g. github.com/x/y/cmd/z@latest',
+    'url': 'direct download URL of a single binary',
+    'github': 'owner/repo — cloned into the workspace',
+  };
+
+  final String name;
+  final String method;
+  final String spec;
+
+  factory CustomTool.fromJson(Map<String, dynamic> j) => CustomTool(
+        name: j['name'] as String? ?? '',
+        method: j['method'] as String? ?? 'apt',
+        spec: j['spec'] as String? ?? '',
       );
 }
 
@@ -1068,6 +1108,9 @@ class BotTemplate {
     this.tagline = '',
     this.category = '',
     this.recommendedTier = '',
+    this.tools = const [],
+    this.defaultVoice = '',
+    this.defaultShellAccess = false,
   });
 
   final String id;
@@ -1076,12 +1119,24 @@ class BotTemplate {
   final String category;
   final String recommendedTier;
 
+  /// What this archetype asks for. Not everything here can be installed — the
+  /// server verifies after provisioning and only keeps what answered.
+  final List<String> tools;
+
+  final String defaultVoice;
+  final bool defaultShellAccess;
+
   factory BotTemplate.fromJson(Map<String, dynamic> j) => BotTemplate(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
         tagline: j['tagline'] as String? ?? '',
         category: j['category'] as String? ?? '',
         recommendedTier: j['recommended_tier'] as String? ?? '',
+        tools: ((j['preinstalled_tools'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(),
+        defaultVoice: j['default_voice'] as String? ?? '',
+        defaultShellAccess: j['default_shell_access'] as bool? ?? false,
       );
 }
 

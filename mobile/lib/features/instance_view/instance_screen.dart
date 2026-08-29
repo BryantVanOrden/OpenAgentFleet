@@ -16,6 +16,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../agent_chat/chat_screen.dart';
+import '../admin/bot_access_sheet.dart';
 import 'memory_screen.dart';
 import 'model_chain_sheet.dart';
 import 'voice_picker.dart';
@@ -216,6 +217,11 @@ class _ControlMenu extends ConsumerWidget {
         return;
       }
 
+      if (action == 'access') {
+        await BotAccessSheet.show(context, instance);
+        return;
+      }
+
       if (action == 'models') {
         await ModelChainSheet.show(context, instance);
         return;
@@ -303,6 +309,15 @@ class _ControlMenu extends ConsumerWidget {
             subtitle: Text(
               instance.voice.isEmpty ? 'App default' : instance.voice,
             ),
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'access',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.key_outlined),
+            title: Text('Access'),
+            subtitle: Text('Who may see and drive this bot'),
           ),
         ),
         PopupMenuItem(

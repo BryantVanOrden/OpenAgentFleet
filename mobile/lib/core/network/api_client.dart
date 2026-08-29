@@ -149,6 +149,12 @@ class ApiClient {
     required String tier,
     String? archetypeId,
     bool shellAccess = false,
+    String orgId = '',
+    /// The archetype's tools, minus any unticked. Null leaves the archetype's
+    /// own list alone; an explicit list replaces it.
+    List<String>? tools,
+    /// Tools the operator added, with how to fetch each one.
+    List<CustomTool> customTools = const [],
   }) async {
     final data = await _post('/api/instances', {
       'name': name,
@@ -156,6 +162,13 @@ class ApiClient {
       if (archetypeId != null && archetypeId.isNotEmpty)
         'archetype_id': archetypeId,
       'shell_access': shellAccess,
+      if (orgId.isNotEmpty) 'org_id': orgId,
+      if (tools != null) 'preinstalled_tools': tools,
+      if (customTools.isNotEmpty)
+        'custom_tools': [
+          for (final c in customTools)
+            {'name': c.name, 'method': c.method, 'spec': c.spec},
+        ],
     }) as Map;
     return Instance.fromJson(data.cast<String, dynamic>());
   }
@@ -299,6 +312,79 @@ class ApiClient {
       if (conversationId != null) 'conversation_id': conversationId,
     }) as Map;
     return PeerMessage.fromJson(data.cast<String, dynamic>());
+  }
+
+  // ------------------------------------------------- orgs and permissions ---
+
+  Future<List<Org>> orgs() async {
+    final data = await _get('/api/orgs') as List? ?? const [];
+    return data
+        .map((e) => Org.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<Org> saveOrg({String id = '', required String name, String description = ''}) async {
+    final body = {'name': name, 'description': description};
+    final data = id.isEmpty
+        ? await _post('/api/orgs', body) as Map
+        : await _put('/api/orgs/$id', body) as Map;
+    return Org.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteOrg(String id) => _delete('/api/orgs/$id');
+
+  Future<List<OrgMember>> orgMembers(String orgId) async {
+    final data = await _get('/api/orgs/$orgId/members') as List? ?? const [];
+    return data
+        .map((e) => OrgMember.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<void> setOrgMember(String orgId, String userId, String role) =>
+      _post('/api/orgs/$orgId/members', {'user_id': userId, 'org_role': role});
+
+  Future<void> removeOrgMember(String orgId, String userId) =>
+      _delete('/api/orgs/$orgId/members/$userId');
+
+  Future<List<FleetUser>> users() async {
+    final data = await _get('/api/users') as List? ?? const [];
+    return data
+        .map((e) => FleetUser.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<List<BotGrant>> botGrants(String instanceId) async {
+    final data =
+        await _get('/api/instances/$instanceId/grants') as List? ?? const [];
+    return data
+        .map((e) => BotGrant.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Set a per-bot exception. A null [permissions] removes the grant so the
+  /// org default applies again; an empty list explicitly allows nothing, which
+  /// is how one bot is hidden from someone who can see the rest of their org.
+  Future<void> setBotGrant(String instanceId, String userId,
+          List<String>? permissions) =>
+      _put('/api/instances/$instanceId/grants',
+          {'user_id': userId, 'permissions': permissions});
+
+  Future<Instance> setInstanceOrg(String instanceId, String orgId) async {
+    final data =
+        await _put('/api/instances/$instanceId/org', {'org_id': orgId}) as Map;
+    return Instance.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// What the signed-in user may do, so the UI can hide what it must rather
+  /// than offering actions the server will refuse.
+  Future<({bool globalAdmin, Map<String, List<String>> bots})>
+      myPermissions() async {
+    final data = await _get('/api/me/permissions') as Map? ?? {};
+    final bots = <String, List<String>>{};
+    ((data['bots'] as Map?) ?? {}).forEach((k, v) {
+      bots['$k'] = ((v as List?) ?? const []).map((e) => '$e').toList();
+    });
+    return (globalAdmin: data['global_admin'] as bool? ?? false, bots: bots);
   }
 
   // ------------------------------------------------------ model combinations ---

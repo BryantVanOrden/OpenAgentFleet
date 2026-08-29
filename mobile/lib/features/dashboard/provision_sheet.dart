@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 
@@ -36,6 +37,14 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
   final _name = TextEditingController();
   String? _tier;
   String? _archetype;
+
+  /// The archetype's tools, with the ones to actually install ticked. Rebuilt
+  /// whenever the archetype changes, since it belongs to that choice.
+  final Set<String> _tools = {};
+  List<String> _offered = const [];
+
+  /// Tools the operator added by hand.
+  final List<CustomTool> _custom = [];
   bool _shell = false;
   bool _busy = false;
   String? _error;
@@ -60,6 +69,12 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
             name: name,
             tier: tier,
             archetypeId: _archetype,
+            // Only sent when the archetype's list was actually changed —
+            // otherwise the server applies the template's own list.
+            tools: _offered.isEmpty || _tools.length == _offered.length
+                ? null
+                : _tools.toList(),
+            customTools: _custom,
             shellAccess: _shell,
           );
       if (mounted) Navigator.pop(context, true);
@@ -71,6 +86,117 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Tools the archetype does not know about.
+  ///
+  /// Asks for the install method explicitly rather than guessing from the
+  /// string: "pandas" is a pip package and "pandoc" is an apt one, and getting
+  /// that wrong is a bot that silently lacks the tool.
+  Widget _customToolsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('YOUR OWN TOOLS',
+                  style: TextStyle(
+                      color: Fleet.ink400,
+                      fontSize: 10,
+                      letterSpacing: 0.6,
+                      fontWeight: FontWeight.w700)),
+            ),
+            TextButton.icon(
+              onPressed: _addCustomTool,
+              icon: const Icon(Icons.add, size: 15),
+              label: const Text('Add', style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ),
+        if (_custom.isEmpty)
+          Text('An apt package, a pip or npm package, a Go module, a binary '
+              'URL, or a GitHub repository to clone.',
+              style: TextStyle(
+                  color: Fleet.ink500, fontSize: 10.5, height: 1.35))
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final c in _custom)
+                InputChip(
+                  label: Text('${c.name} · ${c.method}',
+                      style: const TextStyle(fontSize: 11)),
+                  onDeleted: () => setState(() => _custom.remove(c)),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Future<void> _addCustomTool() async {
+    final name = TextEditingController();
+    final spec = TextEditingController();
+    String method = 'apt';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Add a tool'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: name,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Command name',
+                  hintText: 'what you type to run it',
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Install with'),
+                dropdownColor: Fleet.ink850,
+                items: [
+                  for (final m in CustomTool.methods)
+                    DropdownMenuItem(value: m, child: Text(m)),
+                ],
+                onChanged: (v) => setLocal(() => method = v ?? 'apt'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: spec,
+                decoration: InputDecoration(
+                  labelText: 'Where from',
+                  helperText: CustomTool.methodHints[method],
+                  helperMaxLines: 2,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Add')),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true) return;
+    final n = name.text.trim();
+    final sp = spec.text.trim();
+    if (n.isEmpty || sp.isEmpty) return;
+    setState(() => _custom.add(CustomTool(name: n, method: method, spec: sp)));
   }
 
   @override
@@ -152,9 +278,73 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
                             child: Text(t.name, overflow: TextOverflow.ellipsis),
                           ),
                       ],
-                      onChanged: (v) => setState(() => _archetype = v),
+                      onChanged: (v) => setState(() {
+                        _archetype = v;
+                        // The tool list belongs to the archetype, so picking a
+                        // different one starts from its list rather than
+                        // carrying the last one's ticks across.
+                        final t = list.where((e) => e.id == v).firstOrNull;
+                        _offered = t?.tools ?? const [];
+                        _tools
+                          ..clear()
+                          ..addAll(_offered);
+                        if (t != null && t.defaultShellAccess) _shell = true;
+                      }),
                     ),
             ),
+            if (_offered.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('TOOLS',
+                        style: TextStyle(
+                            color: Fleet.ink400,
+                            fontSize: 10,
+                            letterSpacing: 0.6,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _tools
+                      ..clear()
+                      ..addAll(_offered)),
+                    child: const Text('All', style: TextStyle(fontSize: 11)),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(_tools.clear),
+                    child: const Text('None', style: TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+              Text(
+                'Anything that cannot be installed is dropped after '
+                'provisioning, so the agent is never told it has a tool it '
+                'does not.',
+                style:
+                    TextStyle(color: Fleet.ink500, fontSize: 10.5, height: 1.35),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final t in _offered)
+                    FilterChip(
+                      label: Text(t, style: const TextStyle(fontSize: 11)),
+                      selected: _tools.contains(t),
+                      onSelected: (on) => setState(() {
+                        if (on) {
+                          _tools.add(t);
+                        } else {
+                          _tools.remove(t);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 10),
+            _customToolsSection(),
             const SizedBox(height: 6),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
