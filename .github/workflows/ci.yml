@@ -187,3 +187,66 @@ jobs:
         with:
           name: agentfleet-windows-exe
           path: mobile/build/windows/x64/runner/Release/
+
+  # ---------------------------------------------------------------------------
+  # 5. Publish GitHub Release with Binary Bundles
+  # ---------------------------------------------------------------------------
+  publish-release:
+    name: Publish Release Assets
+    needs: [build-flutter-apk, build-linux-desktop, build-windows-exe]
+    if: always() && (needs.build-flutter-apk.result == 'success' || needs.build-linux-desktop.result == 'success' || needs.build-windows-exe.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download APK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: agentfleet-companion-apk
+          path: release-assets/apk
+        continue-on-error: true
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: agentfleet-linux-desktop
+          path: release-assets/linux
+        continue-on-error: true
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: agentfleet-windows-exe
+          path: release-assets/windows
+        continue-on-error: true
+
+      - name: Package Release Archives
+        run: |
+          mkdir -p dist
+          # Package APK
+          if [ -d release-assets/apk ]; then
+            cp release-assets/apk/*.apk dist/ || true
+          fi
+          # Package Linux Tarball
+          if [ -d release-assets/linux ]; then
+            tar -czvf dist/agentfleet-linux-x64.tar.gz -C release-assets/linux .
+          fi
+          # Package Windows Zip
+          if [ -d release-assets/windows ]; then
+            cd release-assets/windows && zip -r ../../dist/agentfleet-windows-x64.zip . && cd ../..
+          fi
+
+      - name: Create or Update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v1.0.0"
+          TITLE="AgentFleet v1.0.0 — Production Release"
+          gh release create "$TAG" dist/* \
+            --title "$TITLE" \
+            --notes "🚀 **AgentFleet v1.0.0** includes cross-platform desktop runners for Windows and Linux, along with the Android Companion APK for mobile in-the-loop triage." \
+            --generate-notes || gh release upload "$TAG" dist/* --clobber
+
