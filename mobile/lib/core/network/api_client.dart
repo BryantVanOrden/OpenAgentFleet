@@ -591,6 +591,16 @@ class ApiClient {
     );
   }
 
+  /// The exact redirect URI to register on an OAuth client.
+  ///
+  /// Asked of the server rather than built here: it has to match what the
+  /// server actually sends character for character, and a mismatch is the
+  /// commonest way an OAuth setup fails.
+  Future<String> oauthRedirectUri() async {
+    final data = await _get('/api/providers/oauth/redirect') as Map;
+    return '${data['redirect_uri'] ?? ''}';
+  }
+
   /// Begin an in-app sign-in. Returns the consent page to load in a webview
   /// and the redirect the provider will come back to.
   Future<({String authorizeUrl, String state, String redirectUri})>

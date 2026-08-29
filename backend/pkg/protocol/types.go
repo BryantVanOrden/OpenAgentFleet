@@ -598,12 +598,8 @@ const (
 	ProviderOllama      ProviderKind = "ollama"
 	ProviderAnthropic   ProviderKind = "anthropic"
 	ProviderGemini      ProviderKind = "gemini"
-	ProviderAntigravity ProviderKind = "antigravity" // Google Antigravity & Gemini Subscription Gateway
-	// ProviderAnthropicVertex is Claude served through Google Vertex AI. Same
-	// models, Google's envelope and Google's auth — which means an account
-	// sign-in rather than a pasted key.
-	ProviderAnthropicVertex ProviderKind = "anthropic-vertex"
-	ProviderCompatible      ProviderKind = "openai-compatible" // vLLM, LocalAI, LiteLLM, ...
+	ProviderAntigravity ProviderKind = "antigravity"       // Google Antigravity & Gemini Subscription Gateway
+	ProviderCompatible  ProviderKind = "openai-compatible" // vLLM, LocalAI, LiteLLM, ...
 )
 
 // Provider is a configured model endpoint.

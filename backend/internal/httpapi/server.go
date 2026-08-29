@@ -178,6 +178,7 @@ func (s *Server) Routes() http.Handler {
 	// provider redirects back here.
 	mux.Handle("POST /api/providers/{id}/signin/url", auth(roleAdmin, s.handleStartAuthCodeSignIn))
 	mux.Handle("GET /api/providers/signin/status", auth(roleAdmin, s.handleAuthCodeStatus))
+	mux.Handle("GET /api/providers/oauth/redirect", auth(roleAdmin, s.handleOAuthRedirectURI))
 	// Unauthenticated: this receives the provider's redirect, which carries no
 	// operator session. The unguessable single-use state is what authorises it.
 	mux.HandleFunc("GET "+oauthCallbackPath, s.handleOAuthCallback)

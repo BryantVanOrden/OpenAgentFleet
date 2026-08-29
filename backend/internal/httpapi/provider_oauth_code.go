@@ -42,6 +42,19 @@ var (
 // to match exactly, and one URI for every connection means registering it once.
 const oauthCallbackPath = "/api/providers/oauth/callback"
 
+// handleOAuthRedirectURI reports the exact URI providers must be told to
+// redirect to.
+//
+// The app could build this from its own server address, but a redirect URI has
+// to match what the server actually sends character for character, and a
+// mismatch is the single most common way an OAuth setup fails. Better to state
+// it than to have two places derive it and hope they agree.
+func (s *Server) handleOAuthRedirectURI(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"redirect_uri": s.cfg.PublicURL + oauthCallbackPath,
+	})
+}
+
 type startAuthCodeReq struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`

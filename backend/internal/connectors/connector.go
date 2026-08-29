@@ -95,19 +95,11 @@ func Build(p protocol.Provider, apiKey string, hc *http.Client) (Connector, erro
 		}
 		return &ollama{p: p, base: base, hc: hc}, nil
 
-	case protocol.ProviderAnthropic, protocol.ProviderAnthropicVertex:
+	case protocol.ProviderAnthropic:
 		if base == "" {
-			if p.Kind == protocol.ProviderAnthropicVertex {
-				// There is no sensible default: the URL carries the operator's
-				// own project and region, and guessing one produces a 404 that
-				// reads like the model does not exist.
-				return nil, fmt.Errorf("%s: Vertex needs its address, e.g. "+
-					"https://us-east5-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT/locations/us-east5", p.Name)
-			}
 			base = "https://api.anthropic.com"
 		}
-		a := &anthropic{p: p, base: base, key: apiKey, hc: hc,
-			vertex: p.Kind == protocol.ProviderAnthropicVertex}
+		a := &anthropic{p: p, base: base, key: apiKey, hc: hc}
 		if p.AuthMode == "oauth" {
 			ts, err := tokenSourceFor(p, apiKey, hc)
 			if err != nil {

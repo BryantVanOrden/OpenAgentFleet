@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,11 +14,6 @@ import (
 )
 
 const anthropicVersion = "2023-06-01"
-
-// vertexAnthropicVersion is what Vertex expects in the body. It is a distinct
-// constant from anthropicVersion on purpose: they are versions of different
-// things and have moved independently.
-const vertexAnthropicVersion = "vertex-2023-10-16"
 
 // anthropic talks to the Messages API. Note the two shape differences from
 // OpenAI that trip people up: the system prompt is a top-level field rather than
@@ -32,8 +26,6 @@ type anthropic struct {
 	// tokens is set when the provider is signed in with an account rather than
 	// carrying an API key.
 	tokens *GoogleTokenSource
-	// vertex switches to Google's envelope for the same models.
-	vertex bool
 }
 
 func (c *anthropic) ID() string   { return c.p.ID }
@@ -56,14 +48,11 @@ type anMessage struct {
 }
 
 type anRequest struct {
-	Model string `json:"model,omitempty"`
-	// AnthropicVersion is required by Vertex and must not be sent to
-	// Anthropic's own API, where the version travels as a header instead.
-	AnthropicVersion string      `json:"anthropic_version,omitempty"`
-	System           string      `json:"system,omitempty"`
-	Messages         []anMessage `json:"messages"`
-	MaxTokens        int         `json:"max_tokens"`
-	Temperature      float64     `json:"temperature,omitempty"`
+	Model       string      `json:"model"`
+	System      string      `json:"system,omitempty"`
+	Messages    []anMessage `json:"messages"`
+	MaxTokens   int         `json:"max_tokens"`
+	Temperature float64     `json:"temperature,omitempty"`
 }
 
 type anResponse struct {
@@ -111,32 +100,17 @@ func (c *anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		body.Messages = append(body.Messages, msg)
 	}
 
-	// Vertex serves the same models behind a different envelope: the model is
-	// named in the path rather than the body, and the API version travels in
-	// the body rather than a header. Sending either in the wrong place is
-	// rejected, so the two shapes are built explicitly rather than hoping one
-	// request works for both.
-	endpoint := c.base + "/v1/messages"
-	if c.vertex {
-		body.AnthropicVersion = vertexAnthropicVersion
-		body.Model = ""
-		endpoint = fmt.Sprintf("%s/publishers/anthropic/models/%s:rawPredict",
-			strings.TrimSuffix(c.base, "/"), url.PathEscape(c.p.Model))
-	}
-
 	start := time.Now()
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(buf))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/v1/messages", bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if !c.vertex {
-		httpReq.Header.Set("anthropic-version", anthropicVersion)
-	}
+	httpReq.Header.Set("anthropic-version", anthropicVersion)
 
 	// A sign-in and a key are alternatives, not a fallback pair: sending both
 	// lets a stale key mask a working sign-in.

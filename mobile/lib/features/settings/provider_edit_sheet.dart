@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'provider_signin_sheet.dart';
 
 /// Add or configure one AI connection.
 ///
@@ -33,7 +34,6 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
     'anthropic',
     'gemini',
     'antigravity',
-    'anthropic-vertex',
     'openai-compatible',
   ];
 
@@ -49,11 +49,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
 
   /// Engines that can be signed into with an account instead. Offered only
   /// where it actually works, so the choice is never a dead end.
-  static const _canSignIn = {'gemini', 'antigravity', 'anthropic-vertex'};
-
-  /// Vertex serves Claude through Google, so it is the one way to run Claude
-  /// on an account sign-in rather than a pasted key.
-  static const _vertexKind = 'anthropic-vertex';
+  static const _canSignIn = {'gemini', 'antigravity'};
 
   late final _name =
       TextEditingController(text: widget.existing?.name ?? '');
@@ -175,6 +171,59 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
     }
   }
 
+  /// Save the connection, then sign in to it.
+  ///
+  /// A sign-in needs somewhere to store its result, so a brand-new connection
+  /// has to exist first. Doing that here rather than making the operator save,
+  /// reopen and hunt through a menu is the whole difference between an
+  /// authenticate button and an instruction to go find one.
+  Future<void> _saveAndSignIn() async {
+    if (_model.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a model first')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final saved = await ref.read(apiProvider).saveProvider(AIProvider(
+            id: widget.existing?.id ?? '',
+            name: _name.text.trim().isEmpty
+                ? '$_kind · ${_model.text.trim()}'
+                : _name.text.trim(),
+            kind: _kind,
+            model: _model.text.trim(),
+            baseUrl: _baseUrl.text.trim(),
+            vision: _vision,
+            priority: widget.existing?.priority ?? 100,
+            enabled: _enabled,
+            apiKeyRef: widget.existing?.apiKeyRef ?? '',
+            authMode: 'oauth',
+            oauthClientId: widget.existing?.oauthClientId ?? '',
+            signedIn: widget.existing?.signedIn ?? false,
+          ));
+      if (!mounted) return;
+      setState(() => _busy = false);
+
+      final ok = await ProviderSignInSheet.show(context, saved);
+      if (!mounted) return;
+      // The connection is saved either way; only the sign-in may have been
+      // abandoned, and closing the sheet keeps what was entered.
+      navigator.pop(true);
+      if (ok != true) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Connection saved. Sign in from its menu when ready.'),
+        ));
+      }
+    } catch (err) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isOllama = _kind == 'ollama';
@@ -215,9 +264,6 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                   } else if (next == 'ollama' && _baseUrl.text.isEmpty) {
                     _baseUrl.text = 'http://host.docker.internal:11434';
                   }
-                  // Running Claude on a Google sign-in is the only reason to
-                  // pick Vertex over the direct API, so start there.
-                  if (next == _vertexKind) _authMode = 'oauth';
                   _kind = next;
                 });
                 _loadModels();
@@ -235,16 +281,10 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
             TextField(
               controller: _baseUrl,
               decoration: InputDecoration(
-                labelText: isOllama || _kind == _vertexKind
-                    ? 'Address'
-                    : 'Address (optional)',
+                labelText: isOllama ? 'Address' : 'Address (optional)',
                 helperText: isOllama
                     ? 'Where ollama is listening'
-                    : _kind == _vertexKind
-                        ? 'https://REGION-aiplatform.googleapis.com/v1/'
-                            'projects/YOUR_PROJECT/locations/REGION'
-                        : 'Leave empty for the official endpoint',
-                helperMaxLines: 2,
+                    : 'Leave empty for the official endpoint',
               ),
               onEditingComplete: _loadModels,
             ),
@@ -269,14 +309,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               ),
               if (_authMode == 'oauth') ...[
                 const SizedBox(height: 12),
-                if (widget.existing == null)
-                  Text(
-                    'Save the connection first, then sign in to it from the '
-                    'list. Signing in needs somewhere to store the result.',
-                    style: TextStyle(
-                        color: Fleet.ink400, fontSize: 11.5, height: 1.45),
-                  )
-                else if (widget.existing!.signedIn)
+                if (widget.existing?.signedIn ?? false)
                   Row(
                     children: [
                       Icon(Icons.verified_user_outlined,
@@ -284,16 +317,27 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text('Signed in with a Google account.',
-                            style: TextStyle(
-                                color: Fleet.ink300, fontSize: 12)),
+                            style:
+                                TextStyle(color: Fleet.ink300, fontSize: 12)),
+                      ),
+                      TextButton(
+                        onPressed: _busy ? null : _saveAndSignIn,
+                        child: const Text('Sign in again',
+                            style: TextStyle(fontSize: 12)),
                       ),
                     ],
                   )
                 else
-                  Text(
-                    'Not signed in yet — use "Sign in" from the connection\'s '
-                    'menu in the list.',
-                    style: TextStyle(color: Fleet.warn, fontSize: 11.5),
+                  // The button is here rather than only in the list's menu:
+                  // telling someone to save, close, find the row and open a
+                  // menu is not offering a sign-in, it is describing one.
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : _saveAndSignIn,
+                      icon: const Icon(Icons.login, size: 18),
+                      label: const Text('Sign in with Google'),
+                    ),
                   ),
               ],
             ],
@@ -374,11 +418,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               controller: _model,
               decoration: InputDecoration(
                 labelText: 'Model',
-                hintText: isOllama
-                    ? 'e.g. qwen3.5:4b'
-                    : _kind == _vertexKind
-                        ? 'e.g. claude-opus-4-5@20251101'
-                        : 'e.g. claude-opus-5',
+                hintText: isOllama ? 'e.g. qwen3.5:4b' : 'e.g. claude-opus-5',
                 helperText: !_liveModels
                     ? (_modelsReason.isEmpty
                         ? 'Could not reach the engine to list models — you can '

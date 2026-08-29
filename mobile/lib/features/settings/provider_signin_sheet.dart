@@ -48,6 +48,26 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
   Timer? _poll;
 
   @override
+  void initState() {
+    super.initState();
+    _loadRedirectUri();
+  }
+
+  Future<void> _loadRedirectUri() async {
+    try {
+      final uri = await ref.read(apiProvider).oauthRedirectUri();
+      if (mounted) setState(() => _redirectUri = uri);
+    } catch (_) {
+      // Falls back to the app's own address below, which is right whenever the
+      // server is not behind a different public URL.
+      if (mounted) {
+        setState(() => _redirectUri =
+            '${ref.read(apiProvider).baseUrl}/api/providers/oauth/callback');
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _poll?.cancel();
     _clientId.dispose();
@@ -146,6 +166,34 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
     }
   }
 
+  Widget _step(int n, String text) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Fleet.ink800,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text('$n',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Fleet.ink300)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Text(text,
+                  style: TextStyle(color: Fleet.ink300, fontSize: 12)),
+            ),
+          ),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -186,15 +234,68 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
     );
   }
 
+  /// Where Google must send the browser back, as the server itself reports it.
+  /// It has to be registered on the OAuth client exactly, so it is shown here
+  /// to copy rather than described.
+  String _redirectUri = '';
+
   List<Widget> _setupFields() => [
         Text(
-          'Uses your own OAuth client, created in Google Cloud Console as a '
-          'Desktop or TV/limited-input app. Your own client is the supported '
-          'way to do this — borrowing another product\'s credentials to inherit '
-          'its subscription breaks whenever they rotate.',
+          'Uses your own OAuth client, created in Google Cloud Console. Your '
+          'own client is the supported way to do this — borrowing another '
+          'product\'s credentials to inherit its subscription breaks whenever '
+          'they rotate.',
           style: TextStyle(color: Fleet.ink400, fontSize: 11.5, height: 1.45),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
+        // Three steps, in order, with the two values that are easy to get
+        // wrong made copyable rather than described.
+        _step(1, 'Create a Web application OAuth client'),
+        Padding(
+          padding: const EdgeInsets.only(left: 26, top: 2, bottom: 8),
+          child: OutlinedButton.icon(
+            onPressed: () => launchUrl(
+                Uri.parse('https://console.cloud.google.com/apis/credentials'),
+                mode: LaunchMode.externalApplication),
+            icon: const Icon(Icons.open_in_new, size: 14),
+            label: const Text('Open Google Cloud credentials',
+                style: TextStyle(fontSize: 11.5)),
+          ),
+        ),
+        _step(2, 'Add this as an authorised redirect URI'),
+        Padding(
+          padding: const EdgeInsets.only(left: 26, top: 4, bottom: 8),
+          child: InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: _redirectUri));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Redirect URI copied')),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Fleet.ink900,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: Fleet.ink800),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(_redirectUri,
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            fontFamily: 'monospace',
+                            color: Fleet.ink200)),
+                  ),
+                  Icon(Icons.copy, size: 14, color: Fleet.ink400),
+                ],
+              ),
+            ),
+          ),
+        ),
+        _step(3, 'Paste the client ID and secret below'),
+        const SizedBox(height: 12),
         TextField(
           controller: _clientId,
           autocorrect: false,
@@ -234,12 +335,6 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
             child: const Text('Use a code on another device instead',
                 style: TextStyle(fontSize: 11.5)),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Redirect URI to register: your server\'s address followed by '
-          '/api/providers/oauth/callback',
-          style: TextStyle(color: Fleet.ink500, fontSize: 10.5, height: 1.4),
         ),
       ];
 

@@ -20,6 +20,9 @@ class ProvidersScreen extends ConsumerStatefulWidget {
   ConsumerState<ProvidersScreen> createState() => _ProvidersScreenState();
 }
 
+/// Engines that can be signed into with an account.
+const _canSignIn = {'gemini', 'antigravity'};
+
 class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
   List<AIProvider> _providers = const [];
   bool _loading = true;
@@ -286,7 +289,10 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
             _ => _delete(p),
           },
           itemBuilder: (_) => [
-            if (p.usesOAuth)
+            // Offered by engine rather than by stored auth mode: a connection
+            // saved with a key can still be signed into, and hiding the option
+            // until it was already OAuth meant it never appeared at all.
+            if (_canSignIn.contains(p.kind))
               PopupMenuItem(
                 value: p.signedIn ? 'signout' : 'signin',
                 child: ListTile(
