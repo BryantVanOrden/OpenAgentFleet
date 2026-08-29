@@ -280,6 +280,7 @@ make test             # Run Go test suites and React production build
 * 📱 [**Flutter Companion Guide**](docs/FLUTTER_CROSS_PLATFORM_GUIDE.md) — Step-by-step instructions for Linux, Windows, Apple macOS/iOS, and Android runners.
 * 💻 [**Platform Guide**](docs/PLATFORMS.md) — Running on Linux, macOS and Windows, and what is genuinely not portable.
 * 🖼️ [**Interface Gallery**](docs/UI.md) — Every screen, all ten themes, and how the theming is built.
+* 🧠 [**Agent Philosophy (Prime & DeepSeek Harness)**](docs/AGENT_PHILOSOPHY.md) — The bicameral agent architecture, System 1 perception vs System 2 reasoning, and continual self-refinement.
 * 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) — Detailed component design, data flow, schema, and networking model.
 * 🔌 [**REST & WebSocket API Reference**](docs/API.md) — Complete endpoint specifications, request/response schemas, and real-time events.
 * 🎓 [**Skills & Continual Refinement**](docs/SKILLS_AND_REFINEMENT.md) — Learn-by-demonstration recorder, AT-SPI compilation, and AI self-healing workflows.
