@@ -383,6 +383,18 @@ func (c *DockerClient) ExecAs(ctx context.Context, id, user string, cmd []string
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		// Without this the engine's own error body was demultiplexed and
+		// returned as though it were the command's stdout, with a nil error. A
+		// caller probing a paused container was told the probe had run and
+		// printed something.
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", &DockerError{
+			Status: resp.StatusCode,
+			Body:   strings.TrimSpace(string(msg)),
+			Path:   "/exec/" + created.ID + "/start",
+		}
+	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", err

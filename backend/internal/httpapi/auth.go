@@ -225,7 +225,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := protocol.Role(req.Role)
-	if role != protocol.RoleAdmin && role != protocol.RoleOperator && role != protocol.RoleAuditor {
+	if !protocol.ValidRole(role) {
 		fail(w, http.StatusBadRequest, "role must be admin, operator or auditor")
 		return
 	}
@@ -250,7 +250,12 @@ func (s *Server) handleSetRole(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.db.SetUserRole(r.Context(), r.PathValue("id"), protocol.Role(req.Role)); err != nil {
+	role := protocol.Role(req.Role)
+	if !protocol.ValidRole(role) {
+		fail(w, http.StatusBadRequest, "role must be admin, operator or auditor")
+		return
+	}
+	if err := s.db.SetUserRole(r.Context(), r.PathValue("id"), role); err != nil {
 		failErr(w, err)
 		return
 	}

@@ -272,46 +272,44 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
           '${c.messageCount == 1 ? '' : 's'}',
           style: TextStyle(color: Fleet.ink400, fontSize: 11),
         ),
-        trailing: c.isBroadcast
-            // The broadcast channel is where an unaddressed message lands, so
-            // there is nowhere for its traffic to go if it were removed.
-            ? Icon(Icons.lock_outline, size: 15, color: Fleet.ink600)
-            : PopupMenuButton<String>(
-                color: Fleet.ink850,
-                icon: Icon(Icons.more_vert, size: 19, color: Fleet.ink400),
-                onSelected: (a) => switch (a) {
-                  'rename' => _rename(c),
-                  'pin' => _togglePin(c),
-                  _ => _delete(c),
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'rename',
-                    child: ListTile(
-                        dense: true,
-                        leading: Icon(Icons.edit_outlined),
-                        title: Text('Rename')),
-                  ),
-                  PopupMenuItem(
-                    value: 'pin',
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(
-                          c.pinned ? Icons.push_pin_outlined : Icons.push_pin),
-                      title: Text(c.pinned ? 'Unpin' : 'Pin to top'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(Icons.delete_outline, color: Fleet.bad),
-                      title:
-                          Text('Delete', style: TextStyle(color: Fleet.bad)),
-                    ),
-                  ),
-                ],
+        trailing: PopupMenuButton<String>(
+          color: Fleet.ink850,
+          icon: Icon(Icons.more_vert, size: 19, color: Fleet.ink400),
+          onSelected: (a) => switch (a) {
+            'rename' => _rename(c),
+            'pin' => _togglePin(c),
+            _ => _delete(c),
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(
+              value: 'rename',
+              child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.edit_outlined),
+                  title: Text('Rename')),
+            ),
+            PopupMenuItem(
+              value: 'pin',
+              child: ListTile(
+                dense: true,
+                leading:
+                    Icon(c.pinned ? Icons.push_pin_outlined : Icons.push_pin),
+                title: Text(c.pinned ? 'Unpin' : 'Pin to top'),
               ),
+            ),
+            // Everything else can go; this one cannot, because an unaddressed
+            // message would have nowhere to land.
+            if (!c.isBroadcast)
+              PopupMenuItem(
+                value: 'delete',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.delete_outline, color: Fleet.bad),
+                  title: Text('Delete', style: TextStyle(color: Fleet.bad)),
+                ),
+              ),
+          ],
+        ),
         onTap: () => _open(c),
       ),
     );

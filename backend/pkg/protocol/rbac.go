@@ -232,6 +232,19 @@ func ValidPermission(p Permission) bool {
 	return false
 }
 
+// ValidRole reports whether a deployment role name is known.
+//
+// The role is a bare string on the wire, and an unrecognised one ranks below
+// every gate -- so storing one locks the account out of the whole API while
+// the write that did it reports success.
+func ValidRole(r Role) bool {
+	switch r {
+	case RoleAdmin, RoleOperator, RoleAuditor:
+		return true
+	}
+	return false
+}
+
 // ValidOrgRole reports whether a role name is known.
 func ValidOrgRole(r OrgRole) bool {
 	for _, known := range OrgRoles {
