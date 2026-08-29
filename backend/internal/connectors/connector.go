@@ -41,6 +41,11 @@ type Request struct {
 	MaxTokens   int
 	// JSONOnly asks the provider for strict JSON output where it supports it.
 	JSONOnly bool
+	// DisableThinking suppresses a reasoning model's separate thinking pass.
+	// Only set it where the reasoning is genuinely unwanted — a health ping
+	// with a tiny token budget, say. Leave it off for agent turns: the
+	// reasoning is what produces a well-formed action.
+	DisableThinking bool
 }
 
 type Response struct {

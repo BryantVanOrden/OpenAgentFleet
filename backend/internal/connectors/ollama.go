@@ -32,12 +32,25 @@ type olMessage struct {
 	Images  []string `json:"images,omitempty"` // raw base64, no data: prefix
 }
 
+// thinkDisabled is addressable so it can be sent as an explicit `false` rather
+// than being dropped by omitempty.
+var thinkDisabled = false
+
 type olRequest struct {
 	Model    string      `json:"model"`
 	Messages []olMessage `json:"messages"`
 	Stream   bool        `json:"stream"`
 	Format   string      `json:"format,omitempty"`
-	Options  struct {
+	// Thinking models (qwen3, deepseek-r1, ornith, ...) emit their reasoning
+	// into a separate `thinking` field and only then start `content`. With a
+	// tiny token budget the whole budget goes to reasoning and `content` comes
+	// back empty, which the caller below correctly treats as a failure — that
+	// is why Probe's 8-token ping left the health dot red for a model that was
+	// working fine. Only send the flag when the caller asks for it: for a real
+	// agent turn the reasoning is what produces a well-formed action, so
+	// disabling it globally to fix a health check would be a bad trade.
+	Think   *bool `json:"think,omitempty"`
+	Options struct {
 		Temperature float64 `json:"temperature,omitempty"`
 		NumPredict  int     `json:"num_predict,omitempty"`
 	} `json:"options"`
@@ -56,6 +69,9 @@ type olResponse struct {
 
 func (c *ollama) Complete(ctx context.Context, req Request) (*Response, error) {
 	body := olRequest{Model: c.p.Model, Stream: false}
+	if req.DisableThinking {
+		body.Think = &thinkDisabled
+	}
 	body.Options.Temperature = pick(req.Temperature, c.p.Temperature)
 	body.Options.NumPredict = pickInt(req.MaxTokens, c.p.MaxTokens)
 	if req.JSONOnly {

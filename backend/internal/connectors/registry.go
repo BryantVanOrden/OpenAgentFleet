@@ -186,9 +186,12 @@ func (r *Registry) Probe(ctx context.Context, id string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	_, err = c.Complete(ctx, Request{
-		System:    "Reply with the single word: ok",
-		Messages:  []Message{{Role: RoleUser, Text: "ping"}},
-		MaxTokens: 8,
+		System:   "Reply with the single word: ok",
+		Messages: []Message{{Role: RoleUser, Text: "ping"}},
+		// A reasoning model would spend this whole budget thinking and return
+		// empty content, which reads as an unhealthy provider.
+		MaxTokens:       8,
+		DisableThinking: true,
 	})
 	return err
 }
