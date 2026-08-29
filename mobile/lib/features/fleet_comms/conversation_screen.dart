@@ -19,10 +19,16 @@ class ConversationScreen extends ConsumerStatefulWidget {
     super.key,
     required this.conversation,
     required this.title,
+    this.siblings = const [],
   });
 
   final Conversation conversation;
   final String title;
+
+  /// Every thread with the same participants, most recent first. More than one
+  /// is ordinary — the same way you can have several chats with a colleague —
+  /// so the screen opens the newest and offers the rest.
+  final List<Conversation> siblings;
 
   @override
   ConsumerState<ConversationScreen> createState() => _ConversationScreenState();
@@ -46,6 +52,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   late bool _pinned = widget.conversation.pinned;
   late String _title = widget.title;
+  late Conversation _current = widget.conversation;
+  late List<Conversation> _siblings = widget.siblings.isEmpty
+      ? [widget.conversation]
+      : [...widget.siblings];
   String _lastSpokenId = '';
   String _speakingId = '';
 
@@ -69,7 +79,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     try {
       final list = await ref
           .read(apiProvider)
-          .conversationMessages(widget.conversation.id);
+          .conversationMessages(_current.id);
       if (!mounted) return;
       final atBottom = !_scroll.hasClients ||
           _scroll.position.pixels >= _scroll.position.maxScrollExtent - 40;
@@ -127,7 +137,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     try {
       await ref.read(apiProvider).sendPeerMessage(
             content: text,
-            conversationId: widget.conversation.id,
+            conversationId: _current.id,
             // A pair thread is between two agents; the server addresses the
             // message to the other member so it does not escape to the fleet.
             toInstanceId: _defaultRecipient(),
@@ -144,7 +154,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   /// Who a message typed here is addressed to.
   String _defaultRecipient() {
-    final agents = widget.conversation.members
+    final agents = _current.members
         .where((m) => m != Conversation.operatorId)
         .toList();
     // One agent: address it. Anything else — a group, or a pair you are only
@@ -178,7 +188,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     setState(() => _compacting = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(apiProvider).compactConversation(widget.conversation.id);
+      await ref.read(apiProvider).compactConversation(_current.id);
       await _refresh();
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
@@ -188,7 +198,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   Future<void> _rename() async {
-    final controller = TextEditingController(text: widget.conversation.title);
+    final controller = TextEditingController(text: _current.title);
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -216,7 +226,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     try {
       final updated = await ref
           .read(apiProvider)
-          .updateConversation(widget.conversation.id, title: name.trim());
+          .updateConversation(_current.id, title: name.trim());
       if (mounted) setState(() => _title = updated.title);
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
@@ -228,7 +238,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     try {
       final updated = await ref
           .read(apiProvider)
-          .updateConversation(widget.conversation.id, pinned: !_pinned);
+          .updateConversation(_current.id, pinned: !_pinned);
       if (mounted) setState(() => _pinned = updated.pinned);
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
@@ -262,7 +272,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     try {
-      await ref.read(apiProvider).deleteConversation(widget.conversation.id);
+      await ref.read(apiProvider).deleteConversation(_current.id);
       navigator.pop();
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
@@ -290,7 +300,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               ],
             ),
             Text(
-              widget.conversation.isPair
+              _current.isPair
                   ? 'Two agents talking — you are watching'
                   : '${_messages.length} message'
                       '${_messages.length == 1 ? '' : 's'}',
@@ -327,7 +337,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               _ => _delete(),
             },
             itemBuilder: (_) => [
-              if (!widget.conversation.isBroadcast) ...[
+              if (!_current.isBroadcast) ...[
                 const PopupMenuItem(
                   value: 'rename',
                   child: ListTile(
@@ -371,11 +381,156 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
       body: Column(
         children: [
+          if (_siblings.length > 1 || !_current.isBroadcast) _threadBar(),
           Expanded(child: _buildList()),
           _buildComposer(),
         ],
       ),
     );
+  }
+
+  /// Which of these people's threads is open, and how to reach the others.
+  ///
+  /// On screen rather than in a menu for the same reason the per-bot chat
+  /// switcher is: which thread you are in decides who reads what you type.
+  Widget _threadBar() {
+    return InkWell(
+      onTap: _switchThread,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: Fleet.ink900,
+          border: Border(bottom: BorderSide(color: Fleet.ink800)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.forum_outlined, size: 15, color: Fleet.ink400),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _siblings.length > 1
+                    ? '$_title  ·  ${_siblings.length} chats'
+                    : _title,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+            IconButton(
+              tooltip: 'New chat with the same people',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.add_comment_outlined,
+                  size: 18, color: Fleet.ink300),
+              onPressed: _newSiblingThread,
+            ),
+            if (_siblings.length > 1)
+              Icon(Icons.expand_more, size: 18, color: Fleet.ink400),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _switchThread() async {
+    if (_siblings.length < 2) return;
+    final picked = await showModalBottomSheet<Conversation>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final t in _siblings)
+              ListTile(
+                dense: true,
+                selected: t.id == _current.id,
+                leading: Icon(
+                    t.id == _current.id
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: t.id == _current.id ? Fleet.live : Fleet.ink500),
+                title: Text(t.title.isEmpty ? 'Untitled chat' : t.title,
+                    style: const TextStyle(fontSize: 13)),
+                subtitle: Text(
+                    '${t.messageCount} message${t.messageCount == 1 ? '' : 's'}',
+                    style: TextStyle(color: Fleet.ink400, fontSize: 11)),
+                onTap: () => Navigator.pop(context, t),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted || picked.id == _current.id) return;
+    setState(() {
+      _current = picked;
+      _title = picked.title.isEmpty ? _title : picked.title;
+      _pinned = picked.pinned;
+      _messages = const [];
+      _loading = true;
+      _lastSpokenId = '';
+    });
+    await _refresh();
+  }
+
+  Future<void> _newSiblingThread() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final c = TextEditingController();
+        return AlertDialog(
+          title: const Text('New chat'),
+          content: TextField(
+            controller: c,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'e.g. Release checks',
+            ),
+            onSubmitted: (v) => Navigator.pop(ctx, v),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, c.text),
+                child: const Text('Create')),
+          ],
+        );
+      },
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      // The broadcast channel has no member list of its own, so a new chat
+      // alongside it is one with every bot in it — which is what an
+      // everyone-channel is.
+      final members = _current.isBroadcast
+          ? (ref.read(instancesProvider).valueOrNull ?? const [])
+              .map((i) => i.id)
+              .toList()
+          : _current.members;
+
+      final created = await ref.read(apiProvider).createConversation(
+            title: name.trim(),
+            members: members,
+          );
+      if (!mounted) return;
+      setState(() {
+        _siblings = [created, ..._siblings];
+        _current = created;
+        _title = created.title;
+        _pinned = false;
+        _messages = const [];
+        _loading = true;
+        _lastSpokenId = '';
+      });
+      await _refresh();
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
   }
 
   Widget _buildList() {
@@ -395,7 +550,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Text(
-            widget.conversation.isPair
+            _current.isPair
                 ? 'Nothing said yet.\n\nThese two can talk here. Send something '
                     'to start them off, or leave them to it.'
                 : 'Nothing said yet.',
@@ -433,7 +588,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               maxLines: 3,
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
-                hintText: widget.conversation.isPair
+                hintText: _current.isPair
                     ? 'Say something to both'
                     : 'Message',
                 contentPadding:

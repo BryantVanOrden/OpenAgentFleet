@@ -812,6 +812,19 @@ class Conversation {
 
   bool get isBroadcast => id == broadcastId;
 
+  /// Identifies the set of people a thread is between, so several threads with
+  /// the same participants collapse to one row in the comms list.
+  ///
+  /// The broadcast channel is its own group: it is the everyone-channel, and
+  /// grouping it with operator-created everyone-chats would hide the one
+  /// thread that cannot be deleted behind ones that can.
+  String get participantKey {
+    if (isBroadcast) return broadcastId;
+    if (members.isEmpty) return 'everyone';
+    final sorted = [...members]..sort();
+    return sorted.join('|');
+  }
+
   /// A pair thread is two agents talking with you watching, which is worth
   /// showing differently from a thread you are in.
   bool get isPair => kind == 'pair';

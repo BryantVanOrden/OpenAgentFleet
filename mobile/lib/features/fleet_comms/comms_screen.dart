@@ -65,6 +65,35 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     }
   }
 
+  /// One row per set of participants, newest activity first.
+  ///
+  /// Several threads can exist with the same people — the same way you can
+  /// have more than one chat with a colleague — so the list shows who, and
+  /// opening it goes to whichever of their threads was last used.
+  List<List<Conversation>> _grouped() {
+    final byKey = <String, List<Conversation>>{};
+    for (final c in _conversations) {
+      (byKey[c.participantKey] ??= []).add(c);
+    }
+    for (final group in byKey.values) {
+      group.sort((a, b) => _lastActivity(b).compareTo(_lastActivity(a)));
+    }
+    final out = byKey.values.toList();
+    out.sort((a, b) {
+      // The everyone-channel stays at the top; it is always there and is where
+      // an unaddressed message lands.
+      if (a.first.isBroadcast != b.first.isBroadcast) {
+        return a.first.isBroadcast ? -1 : 1;
+      }
+      if (a.first.pinned != b.first.pinned) return a.first.pinned ? -1 : 1;
+      return _lastActivity(b.first).compareTo(_lastActivity(a.first));
+    });
+    return out;
+  }
+
+  DateTime _lastActivity(Conversation c) =>
+      c.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+
   /// A readable name for a thread, falling back to who is in it.
   String _titleOf(Conversation c, List<Instance> instances) {
     if (c.title.isNotEmpty) return c.title;
@@ -87,16 +116,20 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     if (created == null || !mounted) return;
     await _refresh();
     if (!mounted) return;
-    _open(created);
+    _open([created]);
   }
 
-  void _open(Conversation c) {
+  void _open(List<Conversation> group) {
     final instances = ref.read(instancesProvider).valueOrNull ?? const [];
+    // The most recently used one, which is what you almost always want when
+    // you tap a name. The others are reachable from inside.
+    final c = group.first;
     Navigator.of(context)
         .push(MaterialPageRoute(
           builder: (_) => ConversationScreen(
             conversation: c,
             title: _titleOf(c, instances),
+            siblings: group,
           ),
         ))
         .then((_) => _refresh());
@@ -225,17 +258,22 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
       );
     }
 
+    final groups = _grouped();
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-        itemCount: _conversations.length,
-        itemBuilder: (_, i) => _tile(_conversations[i], instances),
+        itemCount: groups.length,
+        itemBuilder: (_, i) => _tile(groups[i], instances),
       ),
     );
   }
 
-  Widget _tile(Conversation c, List<Instance> instances) {
+
+  Widget _tile(List<Conversation> group, List<Instance> instances) {
+    final c = group.first;
+    final threads = group.length;
+    final messages = group.fold<int>(0, (n, t) => n + t.messageCount);
     final icon = switch (c.kind) {
       'direct' => Icons.person_outline,
       'pair' => Icons.swap_horiz_rounded,
@@ -268,8 +306,9 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
           ],
         ),
         subtitle: Text(
-          '$subtitle · ${c.messageCount} message'
-          '${c.messageCount == 1 ? '' : 's'}',
+          threads == 1
+              ? '$subtitle · $messages message${messages == 1 ? '' : 's'}'
+              : '$subtitle · $threads chats · $messages messages',
           style: TextStyle(color: Fleet.ink400, fontSize: 11),
         ),
         trailing: PopupMenuButton<String>(
@@ -310,7 +349,7 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
               ),
           ],
         ),
-        onTap: () => _open(c),
+        onTap: () => _open(group),
       ),
     );
   }
