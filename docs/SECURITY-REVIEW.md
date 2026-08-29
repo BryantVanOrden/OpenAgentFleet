@@ -1,10 +1,48 @@
 # Security review — new agent capabilities
 
+> **Status: historical snapshot, superseded in part.** This is a point-in-time
+> review, kept as a record of what was found and why. Several of its findings
+> have since been addressed and its description of the code is no longer current
+> in those places. Read the "What has changed since" section below before acting
+> on anything here. For the current model, see [SECURITY.md](SECURITY.md).
+
 Scope: the `python` / `spawn_agent` / `mount_tool` / `unmount_tool` / `call_tool` /
 `deep_search` / set-of-marks additions, the sandbox-side REPL, the new HTTP routes
 (swarms, webhooks, cron triggers, templates), sandbox privileges, and secret
 handling. Read against the tree as of this review; no files were modified except
 this one.
+
+## What has changed since
+
+Verified against the tree at v1.1.0. Findings not listed here were not re-checked
+and should be assumed to still stand.
+
+- **The headline finding — `python` / `mount_tool` / `call_tool` bypassing the
+  shell toggle — is closed at the sandbox.** `sandbox/agentd/main.py` now refuses
+  all three unless `ALLOW_SHELL` is set, in the same gate that covers `shell`.
+  The orchestrator still does not check `Instance.ShellAccess` for them, so the
+  sandbox-side check is the one doing the work; the ungated actions that remain
+  are `snapshot` and `rollback`, which are a tar of `/home/agent/work` rather
+  than code execution, and `backend/internal/agent/runner.go` says so explicitly.
+- **F10 (passwordless sudo, disarmed by one flag) is superseded rather than
+  fixed, and the trade was made in the other direction.** `no-new-privileges` is
+  now deliberately *not* set. Sudo is gated by the setuid bit on `/usr/bin/sudo`,
+  cleared at provision unless granted and changeable at runtime through
+  `Manager.SetSudo`. The reasoning, and what is lost, are in `securityOpts` in
+  `backend/internal/fleet/tiers.go` and in the "Sudo in the sandbox" section of
+  SECURITY.md. F10's recommendation to "keep `no-new-privileges`" was not taken.
+  Its request to drop the "sudo enabled (NOPASSWD)" line from the archetype
+  README was: `sandbox/init-archetype.sh` now tells the model to check with
+  `sudo -n true` first.
+- **F11 (the prompt advertising three actions the parser rejects) is fixed.**
+  `remember`, `recall` and `speak` are all in `validActions` in
+  `backend/internal/agent/parse.go`, along with the peer-messaging, sharing and
+  snapshot actions that had the same problem.
+- **F9 (webhooks held only in memory) is fixed.** Webhooks and cron triggers are
+  persisted in `backend/internal/store/triggers.go` and reloaded at start; the
+  in-memory maps in `httpapi/webhooks.go` are a cache over that table. The demo
+  seeding the finding did not mention, which reinserted fake triggers on every
+  restart, has also gone.
 
 ---
 

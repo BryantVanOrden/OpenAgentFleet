@@ -106,8 +106,10 @@ Each instance is a container with:
 
 - Hard cgroup limits on CPU and memory, **swap disabled** — a runaway build gets
   OOM-killed rather than dragging the host into thrash.
-- `no-new-privileges`, a PID limit, and no `SYS_ADMIN`. `NET_ADMIN` is added only
-  when the instance actually carries an egress policy to program.
+- A PID limit and no `SYS_ADMIN`. `NET_ADMIN` is added only when the instance
+  actually carries an egress policy to program. `no-new-privileges` is
+  deliberately **not** set — see "Sudo in the sandbox" below for why, and for
+  what that costs.
 - The agent is a non-root user (uid 1000); anything it writes is discarded with
   the container. Be precise about the scope of that: the *agent* is unprivileged,
   the *container* is not all-unprivileged. `supervisord`, `Xvfb`, both `x11vnc`
@@ -116,14 +118,50 @@ Each instance is a container with:
   `agentd` drop to `agent`.
 - Its own network, unreachable from the control plane except by the orchestrator.
 
-### Passwordless sudo in the sandbox
+### Sudo in the sandbox
 
-The image grants the agent user passwordless sudo, because the developer
-archetypes are expected to `apt-get install` a toolchain mid-task. That grant is
-no longer `NOPASSWD:ALL`. `/etc/sudoers.d/agent` denies the commands that would
-dismantle the platform's own controls: `nft`, `iptables`/`ip6tables` and their
-variants, `ip`, `tc`, `mount`/`umount`, `insmod`/`rmmod`/`modprobe`/`depmod`,
-`sysctl`, `unshare`, `nsenter`.
+Sudo is granted per instance and can be turned on and off while the instance is
+running. `SudoAccess` on the create request sets the initial state; after that
+the orchestrator changes it in place.
+
+**How it is enforced.** By the setuid bit on `/usr/bin/sudo`.
+`Manager.SetSudo` (`backend/internal/fleet/manager.go`) runs `chmod u+s` or
+`chmod u-s` on that binary as root inside the container. Provisioning always
+applies the setting once the container is up, and treats a failure as a
+provisioning failure rather than a warning — the image ships sudo setuid, so an
+instance that failed to have the bit cleared would quietly have root available.
+
+With the bit cleared, sudo cannot escalate. The agent runs as an unprivileged
+user (uid 1000) and so cannot put the bit back: restoring it needs exactly the
+privilege being withheld.
+
+**Why not `no-new-privileges`.** That container option is the stronger control —
+the kernel ignores every setuid bit in the container, so it does not matter what
+the filesystem says. It is deliberately not set, and the reasoning is written out
+in full in the comment on `securityOpts` in `backend/internal/fleet/tiers.go`.
+
+The problem is that the kernel applies the flag when the container is created and
+it cannot be changed afterwards. Using it to gate sudo meant the only way to
+revoke sudo from an agent was to recreate its container — and these sandboxes
+carry no volume, so recreating one discards everything the agent has done. The
+moment you most want to revoke sudo is mid-incident, which is exactly the moment
+losing the workspace costs most. Being unable to take privilege away from a
+misbehaving agent without destroying the evidence is the wrong failure to build
+in.
+
+**What that costs, stated plainly.** The backstop is gone. Under
+`no-new-privileges` a bug in sudo, or in any other setuid binary in the image,
+was unreachable because the kernel refused outright. It is reachable now. The
+setuid bit is a real boundary against an agent that simply types `sudo`; it is
+not a boundary against an exploit of a setuid binary. If your threat model
+includes that, run the fleet with sudo off everywhere and accept that revoking it
+is not the operation you will need.
+
+**The sudoers deny-list.** Whether or not sudo works, the grant is not
+`NOPASSWD:ALL`. `/etc/sudoers.d/agent` denies the commands that would dismantle
+the platform's own controls: `nft`, `iptables`/`ip6tables` and their variants,
+`ip`, `tc`, `mount`/`umount`, `insmod`/`rmmod`/`modprobe`/`depmod`, `sysctl`,
+`unshare`, `nsenter`.
 
 The one that motivated it: an instance carrying an egress policy also carries
 `CAP_NET_ADMIN`, and the nftables rules live in the container's own network
@@ -131,26 +169,27 @@ namespace. `sudo nft flush ruleset` therefore used to delete the entire policy �
 allow-list, RFC1918 block and all — from inside the container the policy exists
 to contain. Cgroup limits are enforced by the host and survive; egress did not.
 
-What this is worth, for an attacker who has code execution in the sandbox (via
-`shell`, `python`, or a human typing at the desktop):
+What the deny-list is worth, for an attacker who has code execution in the
+sandbox (via `shell`, `python`, or a human typing at the desktop):
 
-- **On an orchestrator-provisioned instance, sudo does not work at all.**
-  `no-new-privileges` (`backend/internal/fleet/manager.go`) makes the kernel
-  ignore sudo's setuid bit, so every `sudo` the agent runs simply fails. That
-  flag is still the control that matters, and it has not changed.
-- **The deny-list is what is left when that flag is not there** — most obviously
-  when someone runs the image directly with `docker run`, which is how a
-  developer first tests it. In that case the agent has real root, and the
-  deny-list stops the direct, obvious command: no one-line `sudo nft flush
-  ruleset` that drops the egress policy.
-- **It does not stop a determined attacker in that case.** A sudoers deny-list
+- **On an instance with sudo off, it is not the control doing the work** — the
+  cleared setuid bit is. The deny-list is behind it.
+- **On an instance with sudo on, the deny-list is the only thing left**, and it
+  stops the direct, obvious command: no one-line `sudo nft flush ruleset` that
+  drops the egress policy. The same applies when someone runs the image directly
+  with `docker run`, which is how a developer first tests it — there is no
+  orchestrator to clear the bit, so the agent has real root.
+- **It does not stop a determined attacker in either case.** A sudoers deny-list
   matches on the resolved binary path, so `sudo bash`, or copying `nft` somewhere
   else and running the copy, walks straight around it. Read it as a guardrail
   against the obvious move — and against an agent talked into it by a web page —
   not as a boundary.
-- The archetype workspace README still advertises "sudo enabled (NOPASSWD)" to
-  the model (`sandbox/init-archetype.sh`). That line is now inaccurate as well as
-  unwise, and should go: telling the model it has root is an invitation.
+- The archetype workspace README no longer tells the model it has root. It says
+  sudo "is available only if the operator granted it to this bot" and to check
+  with `sudo -n true` first (`sandbox/init-archetype.sh`). That is the right
+  wording now that the grant is per instance and changeable at runtime: the
+  README is written once at provision time and would otherwise go stale the
+  moment sudo was revoked.
 
 **This is container isolation, not VM isolation.** A kernel exploit reaches the
 host. The `developer-heavy` tier is the one most likely to run untrusted build
@@ -161,16 +200,31 @@ what closes that gap. Do not run genuinely hostile code here.
 
 `egress.sh` programs nftables inside the sandbox's own network namespace:
 
-- A non-empty allow-list is exclusive: everything else is dropped.
-- `block_local` drops RFC1918, link-local and CGNAT ranges, which is what stops
-  an agent reaching your LAN, your database, or a cloud metadata endpoint.
+- A non-empty allow-list is exclusive: everything else is dropped, and that
+  includes a blanket drop of all IPv6.
+- `block_local` drops RFC1918, link-local and CGNAT ranges over IPv4, which is
+  what stops an agent reaching your LAN, your database, or a cloud metadata
+  endpoint. Read the IPv4 qualifier literally — see the limitations below.
 - DNS and loopback stay open, or nothing resolves and the local control plane
   cannot talk to itself.
+- The container's own subnet is left reachable under `block_local`, on purpose:
+  the orchestrator has to be able to poll `agentd`. An agent can therefore always
+  reach other sandboxes on its own network, policy or no policy.
 - If the policy cannot be applied, the container **fails to start**. An instance
   asked to be restricted must never come up unrestricted.
 
-Two limitations, stated plainly:
+Limitations, stated plainly:
 
+- **`block_local` covers IPv4 only.** `sandbox/egress.sh` adds drops for
+  `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` and
+  `100.64.0.0/10`, and adds nothing for `fc00::/7` or `fe80::/10`. Hostname
+  resolution in that script is `getent ahostsv4`, so the allow- and deny-lists
+  are IPv4-only too. On the shipped topology this does not bite: neither network
+  in `docker-compose.yml` enables IPv6, so the sandbox has no IPv6 address to
+  send from. If you enable IPv6 on the sandbox network, `block_local` stops being
+  a containment boundary and an agent can reach the private network over v6.
+  Setting an allow-list is the workaround, because allow-list mode does drop IPv6
+  wholesale; `block_local` on its own does not.
 - Hostnames are resolved once, at policy time. A host behind a CDN whose
   addresses rotate will drift out of the allow-list. Use a CIDR or an explicit
   egress proxy for those.
@@ -178,10 +232,11 @@ Two limitations, stated plainly:
   holds `CAP_NET_ADMIN` whenever a policy exists — that is how the rules get
   programmed in the first place. Anything that reaches root *inside* the
   container can therefore still flush them. The sudoers deny-list above removes
-  the easy path and `no-new-privileges` removes the agent's route to root, but
-  the policy is not tamper-proof by construction. Moving it out of the
-  container's netns (host-side rules on the sandbox bridge, or a real egress
-  proxy) is what would make it so.
+  the easy path, and on an instance without sudo the cleared setuid bit removes
+  the agent's ordinary route to root — but neither is the kernel-level backstop
+  that `no-new-privileges` used to provide, and the policy is not tamper-proof by
+  construction. Moving it out of the container's netns (host-side rules on the
+  sandbox bridge, or a real egress proxy) is what would make it so.
 
 Note also that egress filtering is **off by default**. With no policy on the
 instance, `entrypoint.sh` skips `egress.sh` entirely and the sandbox can reach
