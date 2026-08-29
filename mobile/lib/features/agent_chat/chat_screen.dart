@@ -49,6 +49,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   ChatRef get _chatRef => (instanceId: widget.instanceId, chatId: _chatId);
 
+  /// Where the last-open chat is remembered, per bot. Coming back to an agent
+  /// should return you to the conversation you were having with it, not to
+  /// whichever chat happens to be oldest.
+  String get _lastChatKey => 'chat.last.${widget.instanceId}';
+
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   late final VoiceService _voice = VoiceService(api: ref.read(apiProvider));
@@ -63,6 +68,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Guards against re-reading the same reply when the provider rebuilds for
   /// an unrelated reason.
   String _lastSpokenId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreLastChat());
+  }
 
   @override
   void dispose() {
@@ -163,6 +174,64 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Reopen whichever chat was last in use with this bot.
+  ///
+  /// The screen is rebuilt whenever you switch tabs or come back to an agent,
+  /// and defaulting to the original chat meant every return dropped you into
+  /// the oldest conversation rather than the one you were just having.
+  Future<void> _restoreLastChat() async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final remembered = prefs.getString(_lastChatKey);
+
+    List<ChatSession> sessions;
+    try {
+      sessions = await ref.read(apiProvider).chatSessions(widget.instanceId);
+    } catch (_) {
+      // Offline or the server is down: the original chat still renders from
+      // whatever the chat provider can fetch, so this is not worth an error.
+      return;
+    }
+    if (!mounted || sessions.isEmpty) return;
+
+    // A remembered chat that has since been deleted must not strand the screen
+    // on an empty conversation.
+    ChatSession? target;
+    if (remembered != null) {
+      target = sessions.where((c) => c.id == remembered).firstOrNull;
+    }
+    // Nothing remembered: fall back to genuinely most recent activity rather
+    // than the list order, which puts pinned chats first.
+    target ??= _mostRecent(sessions);
+    if (target == null) return;
+
+    setState(() {
+      _chatId = target!.isDefault ? '' : target.id;
+      _chatTitle = target.displayTitle;
+    });
+  }
+
+  ChatSession? _mostRecent(List<ChatSession> sessions) {
+    ChatSession? best;
+    for (final c in sessions) {
+      final at = c.lastMessageAt;
+      if (at == null) continue;
+      if (best?.lastMessageAt == null || at.isAfter(best!.lastMessageAt!)) {
+        best = c;
+      }
+    }
+    return best ?? sessions.first;
+  }
+
+  /// Remember the open chat so returning to this bot resumes it.
+  void _rememberChat(String id) {
+    // The original chat is stored under its own name rather than as an empty
+    // string, so "the earlier chat, deliberately" is distinguishable from
+    // "nothing chosen yet".
+    ref
+        .read(sharedPreferencesProvider)
+        .setString(_lastChatKey, id.isEmpty ? ChatSession.defaultId : id);
+  }
+
   /// The chat you are in, and the way to get to the others.
   ///
   /// A bot holds several separate chats and each is its own context, so which
@@ -213,9 +282,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (picked == null || !mounted) return;
     setState(() {
       _chatId = picked.id == ChatSession.defaultId ? '' : picked.id;
-      _chatTitle = picked.id.isEmpty ? '' : picked.displayTitle;
+      _chatTitle = picked.displayTitle;
       _lastSpokenId = '';
     });
+    _rememberChat(_chatId);
     ref.invalidate(chatProvider(_chatRef));
   }
 
@@ -230,6 +300,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         _chatTitle = created.displayTitle;
         _lastSpokenId = '';
       });
+      _rememberChat(_chatId);
       ref.invalidate(chatProvider(_chatRef));
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));

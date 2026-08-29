@@ -162,19 +162,38 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
       await ref
           .read(apiProvider)
           .deleteChatSession(widget.instanceId, c.id);
-      // Deleting the chat you are reading has to move you somewhere real.
+      // Deleting the chat you are reading has to move you somewhere real —
+      // and to the conversation you were most recently in, not whichever one
+      // sorts first.
       if (c.id == widget.activeChatId) {
         final left = await ref.read(apiProvider).chatSessions(widget.instanceId);
         navigator.pop(left.isEmpty
             ? const ChatSession(
-                id: '', title: '', pinned: false, messageCount: 0)
-            : left.first);
+                id: ChatSession.defaultId,
+                title: '',
+                pinned: false,
+                messageCount: 0)
+            : _mostRecent(left));
         return;
       }
       await _refresh();
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
     }
+  }
+
+  /// The chat with the newest activity. The list arrives pinned-first, which
+  /// is the right order to read but the wrong one to fall back to.
+  ChatSession _mostRecent(List<ChatSession> sessions) {
+    ChatSession best = sessions.first;
+    for (final c in sessions) {
+      final at = c.lastMessageAt;
+      if (at == null) continue;
+      if (best.lastMessageAt == null || at.isAfter(best.lastMessageAt!)) {
+        best = c;
+      }
+    }
+    return best;
   }
 
   @override

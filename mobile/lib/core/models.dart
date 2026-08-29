@@ -736,6 +736,7 @@ class AIProvider {
     this.vision = true,
     this.priority = 100,
     this.enabled = true,
+    this.apiKeyRef = '',
   });
 
   final String id;
@@ -747,6 +748,12 @@ class AIProvider {
   final int priority;
   final bool enabled;
 
+  /// Names the vault entry holding this connection's key. The key itself never
+  /// leaves the server, so this is only ever "is one set", never the secret.
+  final String apiKeyRef;
+
+  bool get hasKey => apiKeyRef.isNotEmpty;
+
   factory AIProvider.fromJson(Map<String, dynamic> j) => AIProvider(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
@@ -756,6 +763,7 @@ class AIProvider {
         vision: j['vision'] as bool? ?? true,
         priority: (j['priority'] as num?)?.toInt() ?? 100,
         enabled: j['enabled'] as bool? ?? true,
+        apiKeyRef: j['api_key_ref'] as String? ?? '',
       );
 }
 

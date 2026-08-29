@@ -27,7 +27,24 @@ class ProviderEditSheet extends ConsumerStatefulWidget {
 }
 
 class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
-  static const _kinds = ['ollama', 'openai', 'anthropic', 'gemini', 'openrouter'];
+  static const _kinds = [
+    'ollama',
+    'openai',
+    'anthropic',
+    'gemini',
+    'antigravity',
+    'openai-compatible',
+  ];
+
+  /// Engines that authenticate with a key. Ollama on your own machine does
+  /// not, which is why the field is hidden rather than left blank there.
+  static const _needsKey = {
+    'openai',
+    'anthropic',
+    'gemini',
+    'antigravity',
+    'openai-compatible',
+  };
 
   late final _name =
       TextEditingController(text: widget.existing?.name ?? '');
@@ -36,7 +53,13 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
   late final _model =
       TextEditingController(text: widget.existing?.model ?? '');
 
+  final _apiKey = TextEditingController();
+
   late String _kind = widget.existing?.kind ?? 'ollama';
+  /// True once you choose to replace a key that is already stored. Until then
+  /// the field stays closed, because the stored key cannot be read back and an
+  /// empty box would look like "no key set".
+  bool _replacingKey = false;
   late bool _vision = widget.existing?.vision ?? true;
   late bool _enabled = widget.existing?.enabled ?? true;
 
@@ -44,10 +67,15 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
   bool _loadingModels = false;
   bool _busy = false;
 
+  /// False when the list came from the server's built-in catalogue rather than
+  /// from the engine itself.
+  bool _liveModels = true;
+  String _modelsReason = '';
+
   @override
   void initState() {
     super.initState();
-    if (_kind == 'ollama') _loadModels();
+    _loadModels();
   }
 
   @override
@@ -55,18 +83,28 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
     _name.dispose();
     _baseUrl.dispose();
     _model.dispose();
+    _apiKey.dispose();
     super.dispose();
   }
 
   /// Ask the engine what it can actually serve.
+  ///
+  /// The typed key is sent along so a cloud engine can be queried before the
+  /// connection is saved — otherwise you would have to save a blind guess at a
+  /// model name first, then come back and fix it.
   Future<void> _loadModels() async {
     setState(() => _loadingModels = true);
     try {
-      final list =
-          await ref.read(apiProvider).ollamaModels(baseUrl: _baseUrl.text.trim());
+      final res = await ref.read(apiProvider).discoverModels(
+            kind: _kind,
+            baseUrl: _baseUrl.text.trim(),
+            apiKey: _apiKey.text.trim(),
+          );
       if (!mounted) return;
       setState(() {
-        _available = list;
+        _available = res.models;
+        _liveModels = res.live;
+        _modelsReason = res.reason;
         _loadingModels = false;
       });
     } catch (_) {
@@ -75,6 +113,8 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
       if (!mounted) return;
       setState(() {
         _available = const [];
+        _liveModels = false;
+        _modelsReason = '';
         _loadingModels = false;
       });
     }
@@ -87,11 +127,21 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
       );
       return;
     }
+    if (_needsKey.contains(_kind) &&
+        _apiKey.text.trim().isEmpty &&
+        !(widget.existing?.hasKey ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$_kind needs an API key')),
+      );
+      return;
+    }
     setState(() => _busy = true);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(apiProvider).saveProvider(AIProvider(
+      await ref.read(apiProvider).saveProvider(
+          apiKey: _apiKey.text.trim(),
+          AIProvider(
             id: widget.existing?.id ?? '',
             name: _name.text.trim().isEmpty
                 ? '$_kind · ${_model.text.trim()}'
@@ -102,6 +152,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
             vision: _vision,
             priority: widget.existing?.priority ?? 100,
             enabled: _enabled,
+            apiKeyRef: widget.existing?.apiKeyRef ?? '',
           ));
       navigator.pop(true);
     } catch (err) {
@@ -140,8 +191,19 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                   DropdownMenuItem(value: k, child: Text(k)),
               ],
               onChanged: (v) {
-                setState(() => _kind = v ?? 'ollama');
-                if (_kind == 'ollama') _loadModels();
+                final next = v ?? 'ollama';
+                setState(() {
+                  // The ollama default address is meaningless for a cloud
+                  // engine, and a wrong base URL fails in a way that looks
+                  // like a bad key.
+                  if (next != 'ollama' && _kind == 'ollama') {
+                    _baseUrl.text = '';
+                  } else if (next == 'ollama' && _baseUrl.text.isEmpty) {
+                    _baseUrl.text = 'http://host.docker.internal:11434';
+                  }
+                  _kind = next;
+                });
+                _loadModels();
               },
             ),
             const SizedBox(height: 12),
@@ -161,8 +223,44 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                     ? 'Where ollama is listening'
                     : 'Leave empty for the official endpoint',
               ),
-              onEditingComplete: isOllama ? _loadModels : null,
+              onEditingComplete: _loadModels,
             ),
+            if (_needsKey.contains(_kind)) ...[
+              const SizedBox(height: 12),
+              if ((widget.existing?.hasKey ?? false) && !_replacingKey)
+                Row(
+                  children: [
+                    Icon(Icons.lock_outline, size: 15, color: Fleet.good),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'A key is stored for this connection.',
+                        style: TextStyle(color: Fleet.ink300, fontSize: 12),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _replacingKey = true),
+                      child: const Text('Replace', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                )
+              else
+                TextField(
+                  controller: _apiKey,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: 'API key',
+                    hintText: _kind == 'antigravity' || _kind == 'gemini'
+                        ? 'Google AI Studio key'
+                        : 'Paste the key',
+                    helperText: 'Sealed into the server vault. It is never '
+                        'stored on this device and never read back.',
+                    helperMaxLines: 2,
+                  ),
+                ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -174,8 +272,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                           letterSpacing: 0.6,
                           fontWeight: FontWeight.w700)),
                 ),
-                if (isOllama)
-                  TextButton.icon(
+                TextButton.icon(
                     onPressed: _loadingModels ? null : _loadModels,
                     icon: _loadingModels
                         ? const SizedBox(
@@ -206,10 +303,13 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               decoration: InputDecoration(
                 labelText: 'Model',
                 hintText: isOllama ? 'e.g. qwen3.5:4b' : 'e.g. claude-opus-5',
-                helperText: _available.isEmpty && isOllama
-                    ? 'Could not reach that address to list models — you can '
-                        'still type one'
+                helperText: !_liveModels
+                    ? (_modelsReason.isEmpty
+                        ? 'Could not reach the engine to list models — you can '
+                            'still type one'
+                        : _modelsReason)
                     : null,
+                helperMaxLines: 2,
               ),
               onChanged: (_) => setState(() {}),
             ),

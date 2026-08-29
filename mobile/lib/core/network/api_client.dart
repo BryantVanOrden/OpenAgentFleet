@@ -539,7 +539,11 @@ class ApiClient {
   }
 
   /// Create or update a connection. Passing an existing id edits it.
-  Future<AIProvider> saveProvider(AIProvider p) async {
+  ///
+  /// [apiKey] is sent only when you are setting or replacing one. The server
+  /// seals it into the vault and hands back a reference; the key itself is
+  /// never stored on the device and never comes back in a response.
+  Future<AIProvider> saveProvider(AIProvider p, {String apiKey = ''}) async {
     final body = {
       'id': p.id,
       'name': p.name,
@@ -549,6 +553,8 @@ class ApiClient {
       'vision': p.vision,
       'priority': p.priority,
       'enabled': p.enabled,
+      if (p.apiKeyRef.isNotEmpty) 'api_key_ref': p.apiKeyRef,
+      if (apiKey.isNotEmpty) 'api_key': apiKey,
     };
     final data = p.id.isEmpty
         ? await _post('/api/providers', body) as Map
@@ -566,17 +572,27 @@ class ApiClient {
 
   /// Models a connection can actually serve, asked of the engine itself rather
   /// than typed in by hand.
-  Future<List<String>> ollamaModels({String? baseUrl}) async {
-    final data = await _get('/api/providers/ollama/models',
-        query: baseUrl == null || baseUrl.isEmpty
-            ? null
-            : {'base_url': baseUrl});
-    if (data is List) return data.map((e) => _modelName(e)).toList();
-    if (data is Map) {
-      final list = (data['models'] as List?) ?? const [];
-      return list.map((e) => _modelName(e)).toList();
-    }
-    return const [];
+  ///
+  /// [live] is false when the server fell back to its built-in catalogue —
+  /// worth showing, because a confident list of models the engine may not
+  /// serve is how you pick one that 404s three steps into a run.
+  Future<({List<String> models, bool live, String reason})> discoverModels({
+    required String kind,
+    String baseUrl = '',
+    String apiKey = '',
+  }) async {
+    final data = await _get('/api/providers/models', query: {
+      'kind': kind,
+      if (baseUrl.isNotEmpty) 'base_url': baseUrl,
+      if (apiKey.isNotEmpty) 'api_key': apiKey,
+    });
+    if (data is! Map) return (models: <String>[], live: false, reason: '');
+    final list = (data['models'] as List?) ?? const [];
+    return (
+      models: list.map((e) => _modelName(e)).toList(),
+      live: data['live'] as bool? ?? false,
+      reason: '${data['reason'] ?? data['error'] ?? ''}',
+    );
   }
 
   static String _modelName(dynamic e) {
