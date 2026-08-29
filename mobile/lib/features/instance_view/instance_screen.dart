@@ -358,19 +358,24 @@ class _ControlMenu extends ConsumerWidget {
             ),
           ),
         ),
+        // Sudo used to be fixed at creation, when a container option enforced
+        // it -- so this sat here disabled, saying so. It is now the setuid bit
+        // on sudo, which SetSudo clears or restores on a running agent, and
+        // the handler for this action has been written all along. Leaving the
+        // item dead told operators the opposite of how the sandbox works and
+        // stranded the only way to revoke root from a misbehaving agent.
         PopupMenuItem(
-          enabled: false,
+          value: 'sudo',
           child: ListTile(
             dense: true,
-            leading:
-                Icon(Icons.admin_panel_settings_outlined, color: Fleet.ink500),
-            title: Text('Sudo: ${instance.sudoAccess ? "on" : "off"}',
-                style: TextStyle(color: Fleet.ink400)),
-            // Not a toggle, and saying so beats a switch that does nothing:
-            // sudo depends on a container option the kernel applies at
-            // creation, so it can only be chosen when the agent is built.
-            subtitle: Text('Fixed when the agent was created',
-                style: TextStyle(color: Fleet.ink500)),
+            leading: Icon(
+              Icons.admin_panel_settings_outlined,
+              color: instance.sudoAccess ? Fleet.warn : null,
+            ),
+            title: Text(instance.sudoAccess ? 'Revoke sudo' : 'Grant sudo'),
+            subtitle: Text(instance.sudoAccess
+                ? 'Root inside its own sandbox — takes effect immediately'
+                : 'Lets this agent become root inside its own sandbox'),
           ),
         ),
         const PopupMenuDivider(),

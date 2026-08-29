@@ -107,11 +107,12 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/egress.sh /usr/local/bi
 # boundary: sudo matches on the resolved binary path, so `sudo cp /usr/sbin/nft
 # /tmp/n && sudo /tmp/n flush ruleset` — or simply `sudo bash` — still gets
 # there. It stops the direct, obvious command an agent (or a page instructing
-# one) would actually reach for. The real control is `no-new-privileges` on the
-# container (backend/internal/fleet/manager.go), which makes the kernel ignore
-# sudo's setuid bit so sudo fails outright for orchestrator-provisioned
-# instances; this deny-list is what is left when someone runs the image directly
-# with `docker run`, which is how a developer will first test it.
+# one) would actually reach for. The real control is the setuid bit on
+# /usr/bin/sudo, which the orchestrator clears at provision unless the operator
+# granted sudo and can clear again at any time (Manager.SetSudo). With the bit
+# cleared sudo cannot escalate, and an unprivileged agent cannot restore it.
+# This deny-list is what is left when someone runs the image directly with
+# `docker run`, which is how a developer will first test it.
 RUN (userdel -r ubuntu 2>/dev/null || true) \
     && useradd -m -s /bin/bash -u 1000 agent \
     && printf '%s\n' \

@@ -205,11 +205,10 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 			// SYS_ADMIN is deliberately absent. NET_ADMIN is only added when the
 			// instance actually carries an egress policy to program.
 			//
-			// no-new-privileges is what actually stops sudo inside the sandbox:
-			// the kernel ignores sudo's setuid bit, so the sudoers deny-list in
-			// the image is only a guardrail behind it. Dropping it is therefore
-			// a real reduction in containment, which is why it is opt-in per
-			// instance and cannot be changed without recreating the container.
+			// no-new-privileges is deliberately not set here; sudo is gated by
+			// the setuid bit on /usr/bin/sudo instead, so it can be revoked
+			// from a running agent without destroying its workspace. See
+			// securityOpts in tiers.go for the trade that buys and costs.
 			SecurityOpt:   securityOpts(inst.SudoAccess),
 			RestartPolicy: restartPolicy{Name: "unless-stopped"},
 			Ulimits:       []ulimit{{Name: "nofile", Soft: 8192, Hard: 16384}},

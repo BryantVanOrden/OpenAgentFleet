@@ -3,6 +3,9 @@ name: AgentFleet CI & Release Build Pipeline
 on:
   push:
     branches: [ master, main ]
+    # Without this a version tag triggered nothing at all, so a release was
+    # only ever cut by hand.
+    tags: [ 'v*' ]
   pull_request:
     branches: [ master, main ]
   workflow_dispatch:
@@ -31,7 +34,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
           cache-dependency-path: backend/go.sum
 
       - name: Test Go Backend
@@ -241,10 +244,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v1.0.0"
-          TITLE="AgentFleet v1.0.0 — Production Release"
-          gh release create "$TAG" dist/* \
-            --title "$TITLE" \
-            --notes "🚀 **AgentFleet v1.0.0** includes cross-platform desktop runners for Windows and Linux, along with the Android Companion APK for mobile in-the-loop triage." \
-            --generate-notes || gh release upload "$TAG" dist/* --clobber
+          # Taken from the tag being built. It was hardcoded to v1.0.0, so
+          # every later release quietly re-uploaded its assets onto the first
+          # one and no new release was ever created.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            echo "not a tag build; nothing to release"
+            exit 0
+          fi
+          TITLE="AgentFleet ${TAG}"
+
+          # Prefer hand-written notes for this version when they exist.
+          NOTES="docs/RELEASE_NOTES_${TAG}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "$TAG" dist/* --title "$TITLE" --notes-file "$NOTES" \
+              || gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TITLE" --generate-notes \
+              || gh release upload "$TAG" dist/* --clobber
+          fi
 
