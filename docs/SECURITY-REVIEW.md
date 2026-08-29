@@ -17,13 +17,41 @@ this one.
 Verified against the tree at v1.1.0. Findings not listed here were not re-checked
 and should be assumed to still stand.
 
-- **The headline finding — `python` / `mount_tool` / `call_tool` bypassing the
-  shell toggle — is closed at the sandbox.** `sandbox/agentd/main.py` now refuses
-  all three unless `ALLOW_SHELL` is set, in the same gate that covers `shell`.
-  The orchestrator still does not check `Instance.ShellAccess` for them, so the
-  sandbox-side check is the one doing the work; the ungated actions that remain
-  are `snapshot` and `rollback`, which are a tar of `/home/agent/work` rather
-  than code execution, and `backend/internal/agent/runner.go` says so explicitly.
+- **F1, the headline finding — `python` / `mount_tool` / `call_tool` bypassing
+  the shell toggle — is fixed at all three enforcement points.** They share the
+  `ActShell` case in `backend/internal/agent/runner.go`, the same case in
+  `backend/internal/httpapi/instances.go` so manual takeover enforces it too,
+  and `sandbox/agentd/main.py` refuses them unless `ALLOW_SHELL` is set. The
+  ungated actions that remain are `snapshot` and `rollback`, which are a tar of
+  `/home/agent/work` rather than code execution.
+- **F2 (auditors get an interactive stream) is fixed.** `sandbox/supervisord.conf`
+  runs a second `x11vnc -viewonly` with its own websockify on port 6902, and
+  `backend/internal/httpapi/proxy.go` routes watchers there. Enforcing read-only
+  in the client would not have survived an edited URL.
+- **F3 (Gemini key in the query string) is fixed.** The key goes in the
+  `x-goog-api-key` header and errors are passed through a redactor.
+- **F4 (`Any` never imported in `main.py`) is fixed.**
+- **F5 (unbounded `spawn_agent` recursion) is fixed.**
+  `backend/internal/agent/spawn_budget.go` caps depth, children per task and
+  total concurrent tasks. The caveat about depth being held in memory is in
+  SECURITY.md.
+- **F7 (REPL timeout accepted and ignored) is fixed.** `sandbox/agentd/repl.py`
+  runs the body on a daemon thread and abandons it at the deadline.
+- **F9 (webhooks) is mostly fixed.** The literal seeded tokens are gone, the body
+  is bounded with `MaxBytesReader`, and webhooks and cron triggers are persisted
+  in `backend/internal/store/triggers.go` and reloaded at start. The in-memory
+  maps in `httpapi/webhooks.go` are now a cache over that table.
+- **F10 (passwordless sudo, disarmed by one flag) is superseded rather than
+  fixed, and the trade was made in the other direction.** `no-new-privileges` is
+  now deliberately *not* set. Sudo is gated by the setuid bit on `/usr/bin/sudo`,
+  cleared at provision unless granted and changeable at runtime through
+  `Manager.SetSudo`. The reasoning, and what is lost, are in `securityOpts` in
+  `backend/internal/fleet/tiers.go` and in the "Sudo in the sandbox" section of
+  SECURITY.md. F10's recommendation to "keep `no-new-privileges`" was not taken.
+  Its request to drop the "sudo enabled (NOPASSWD)" line from the archetype
+  README was: `sandbox/init-archetype.sh` now tells the model to check with
+  `sudo -n true` first. The sudoers grant is also no longer `NOPASSWD:ALL` — it
+  carries a `Cmnd_Alias` deny-list.
 - **F10 (passwordless sudo, disarmed by one flag) is superseded rather than
   fixed, and the trade was made in the other direction.** `no-new-privileges` is
   now deliberately *not* set. Sudo is gated by the setuid bit on `/usr/bin/sudo`,
@@ -37,12 +65,13 @@ and should be assumed to still stand.
 - **F11 (the prompt advertising three actions the parser rejects) is fixed.**
   `remember`, `recall` and `speak` are all in `validActions` in
   `backend/internal/agent/parse.go`, along with the peer-messaging, sharing and
-  snapshot actions that had the same problem.
-- **F9 (webhooks held only in memory) is fixed.** Webhooks and cron triggers are
-  persisted in `backend/internal/store/triggers.go` and reloaded at start; the
-  in-memory maps in `httpapi/webhooks.go` are a cache over that table. The demo
-  seeding the finding did not mention, which reinserted fake triggers on every
-  restart, has also gone.
+  snapshot actions that had the same problem. The claim in F11 that
+  `backend/internal/memory/engine.go` is referenced from nowhere is also no
+  longer true.
+- **F12 (`deep_search` SSRF) still stands.** `sandbox/agentd/search.py` validates
+  only that the URL starts with `http`.
+- **Counts quoted in the review are stale.** The action vocabulary is 30 kinds,
+  not the 20 the review counted.
 
 ---
 
