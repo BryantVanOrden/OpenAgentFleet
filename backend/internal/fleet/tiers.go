@@ -1,6 +1,8 @@
 package fleet
 
 import (
+	"strings"
+
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
@@ -99,4 +101,26 @@ func ApplyOverride(p protocol.TierProfile, o *protocol.ResourceOverride) protoco
 		p.Image = *o.Image
 	}
 	return p
+}
+
+// HasTier reports whether a tier name matches a configured profile. TierByName
+// deliberately falls back to a sane default, which is right for an unset tier
+// and wrong for a misspelled one; callers that can tell the difference use this
+// first.
+func HasTier(tiers []protocol.TierProfile, name protocol.Tier) bool {
+	for _, t := range tiers {
+		if t.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// TierNames lists the configured tiers, for error messages.
+func TierNames(tiers []protocol.TierProfile) string {
+	names := make([]string, 0, len(tiers))
+	for _, t := range tiers {
+		names = append(names, string(t.Name))
+	}
+	return strings.Join(names, ", ")
 }

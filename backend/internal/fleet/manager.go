@@ -78,6 +78,14 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		return nil, fmt.Errorf("host is at capacity (%d/%d instances)", live, m.cfg.MaxInstances)
 	}
 
+	// An empty tier legitimately means "give me the default", but a tier that
+	// was named and not recognised must not be quietly swapped for standard:
+	// asking for developer-heavy and silently getting 2 vCPU is the kind of
+	// substitution that is only noticed much later, by which point the agent
+	// has been running on the wrong hardware.
+	if req.Tier != "" && !HasTier(m.tiers, req.Tier) {
+		return nil, fmt.Errorf("unknown tier %q; available: %s", req.Tier, TierNames(m.tiers))
+	}
 	profile := ApplyOverride(TierByName(m.tiers, req.Tier), req.Override)
 	if profile.Driver == protocol.DriverQEMU {
 		return nil, fmt.Errorf("the qemu driver is not wired up yet; see docs/ROADMAP.md phase 5")

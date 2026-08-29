@@ -15,6 +15,7 @@ import (
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
@@ -238,8 +239,9 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			System:   buildSystem(inst, mountedTools),
 			JSONOnly: true,
 			Messages: []connectors.Message{{
-				Role:      connectors.RoleUser,
-				Text:      buildTurn(task, skill, obs, history, humanReply),
+				Role: connectors.RoleUser,
+				Text: buildTurn(task, skill, obs, history, humanReply,
+					r.peerContext(ctx, inst.ID)),
 				Image:     obs.ScreenshotB64,
 				ImageMime: "image/webp",
 			}},
@@ -382,6 +384,40 @@ func (r *Runner) execute(
 			fmt.Fprintf(&sb, "\n- %s: %s", m.Title, clip(m.Content, 200))
 		}
 		return sb.String(), terminalNone
+
+	// Peer messaging. Deliberately not gated behind a swarm: every instance can
+	// reach every other one, or broadcast, with no team declared up front. The
+	// bus is durable across the fleet, so a peer that is mid-task picks the
+	// message up on its next turn rather than needing to be listening now.
+	case protocol.ActMsgPeer, protocol.ActDelegateTask:
+		to := strings.TrimSpace(a.Target)
+		if to == "" {
+			to = "broadcast"
+		}
+		kind := "message"
+		content := firstNonEmpty(a.Text, a.Question, a.Summary)
+		if a.Action == protocol.ActDelegateTask {
+			kind = "delegation"
+			content = firstNonEmpty(a.SubGoal, a.Text, a.Question)
+		} else if strings.TrimSpace(a.Question) != "" {
+			kind = "question"
+		}
+		if content == "" {
+			return "failed: nothing to send", terminalNone
+		}
+
+		// Resolve a friendly name to an id so the model can address peers the
+		// way the prompt lists them rather than having to copy a UUID.
+		if to != "broadcast" {
+			if id, ok := r.resolvePeer(ctx, inst.ID, to); ok {
+				to = id
+			}
+		}
+		vault.GlobalBus.SendMessage(ctx, inst.ID, inst.Name, to, kind, content, nil)
+		if to == "broadcast" {
+			return "broadcast to the fleet: " + clip(content, 160), terminalNone
+		}
+		return "sent to " + to + ": " + clip(content, 160), terminalNone
 
 	case protocol.ActAskHuman:
 		reply, err := r.escalate(ctx, task, inst, protocol.AlertNeedsHuman, "warn",
@@ -752,6 +788,69 @@ func mapToDesktop(a protocol.Action, obs *protocol.Observation, ct CoordTransfor
 		out.To = []int{x, y}
 	}
 	return out
+}
+
+// resolvePeer maps whatever the model called a peer -- an id, or the name the
+// prompt listed it under -- onto an instance id. Names are matched case
+// insensitively because a model will happily retype "Research Bot" as
+// "research bot". Self is excluded: an agent messaging itself is a loop, not
+// collaboration.
+func (r *Runner) resolvePeer(ctx context.Context, selfID, ref string) (string, bool) {
+	insts, err := r.db.ListInstances(ctx)
+	if err != nil {
+		return "", false
+	}
+	want := strings.ToLower(strings.TrimSpace(ref))
+	for _, in := range insts {
+		if in.ID == selfID {
+			continue
+		}
+		if in.ID == ref || strings.ToLower(in.Name) == want {
+			return in.ID, true
+		}
+	}
+	return "", false
+}
+
+// peerContext lists the other instances an agent can talk to, plus anything
+// addressed to it since the last turn. Supplying this every turn is what makes
+// fleet collaboration automatic: no swarm has to be created, and an agent does
+// not have to be told who its colleagues are.
+func (r *Runner) peerContext(ctx context.Context, selfID string) string {
+	var sb strings.Builder
+
+	if insts, err := r.db.ListInstances(ctx); err == nil {
+		var peers []protocol.Instance
+		for _, in := range insts {
+			if in.ID != selfID && in.State == protocol.InstanceRunning {
+				peers = append(peers, in)
+			}
+		}
+		if len(peers) > 0 {
+			sb.WriteString("\nFLEET (peers you can message or delegate to)\n")
+			for i, in := range peers {
+				if i >= 12 {
+					fmt.Fprintf(&sb, "...and %d more\n", len(peers)-i)
+					break
+				}
+				fmt.Fprintf(&sb, "- %s (%s)\n", in.Name, in.ID)
+			}
+		}
+	}
+
+	msgs := vault.GlobalBus.ListMessages(ctx, selfID, 10)
+	if len(msgs) > 0 {
+		sb.WriteString("\nMESSAGES ADDRESSED TO YOU\n")
+		for _, m := range msgs {
+			scope := "direct"
+			if m.ToInstanceID == "broadcast" {
+				scope = "broadcast"
+			}
+			fmt.Fprintf(&sb, "- from %s (%s, %s): %s\n",
+				m.FromInstanceName, scope, m.Kind, clip(m.Content, 240))
+		}
+	}
+	return sb.String()
 }
 
 func lastHistory(h []turnSummary) string {

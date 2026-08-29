@@ -62,30 +62,32 @@ func TestEveryAdvertisedActionParses(t *testing.T) {
 	// A minimal well-formed reply for each action the prompt offers. If someone
 	// adds an action to the prompt, this fails until the parser handles it.
 	minimal := map[protocol.ActionKind]string{
-		protocol.ActClick:       `{"action":"click","target":"Save"}`,
-		protocol.ActDoubleClick: `{"action":"double_click","coordinates":[5,5]}`,
-		protocol.ActRightClick:  `{"action":"right_click","mark":2}`,
-		protocol.ActType:        `{"action":"type","text":"hello"}`,
-		protocol.ActKey:         `{"action":"key","key":"ctrl+s"}`,
-		protocol.ActScroll:      `{"action":"scroll","amount":5}`,
-		protocol.ActDrag:        `{"action":"drag","coordinates":[1,2],"to":[3,4]}`,
-		protocol.ActWait:        `{"action":"wait"}`,
-		protocol.ActWaitFor:     `{"action":"wait_for","text":"Ready"}`,
-		protocol.ActFocus:       `{"action":"focus","target":"Terminal"}`,
-		protocol.ActShell:       `{"action":"shell","text":"ls"}`,
-		protocol.ActPython:      `{"action":"python","code":"x=1"}`,
-		protocol.ActSpawnAgent:  `{"action":"spawn_agent","sub_goal":"build it"}`,
-		protocol.ActMountTool:   `{"action":"mount_tool","tool_name":"t","tool_handler":"def t(): pass"}`,
-		protocol.ActUnmountTool: `{"action":"unmount_tool","tool_name":"t"}`,
-		protocol.ActCallTool:    `{"action":"call_tool","tool_name":"t"}`,
-		protocol.ActDeepSearch:  `{"action":"deep_search","query":"go 1.23"}`,
-		protocol.ActRemember:    `{"action":"remember","text":"the build flag is -tags prod"}`,
-		protocol.ActRecall:      `{"action":"recall","query":"how did we log in last time"}`,
-		protocol.ActSpeak:       `{"action":"speak","text":"the deploy finished"}`,
-		protocol.ActAssert:      `{"action":"assert","text":"test -f /tmp/out"}`,
-		protocol.ActAskHuman:    `{"action":"ask_human","question":"which account?"}`,
-		protocol.ActDone:        `{"action":"done","summary":"finished"}`,
-		protocol.ActFail:        `{"action":"fail","summary":"blocked"}`,
+		protocol.ActClick:        `{"action":"click","target":"Save"}`,
+		protocol.ActDoubleClick:  `{"action":"double_click","coordinates":[5,5]}`,
+		protocol.ActRightClick:   `{"action":"right_click","mark":2}`,
+		protocol.ActType:         `{"action":"type","text":"hello"}`,
+		protocol.ActKey:          `{"action":"key","key":"ctrl+s"}`,
+		protocol.ActScroll:       `{"action":"scroll","amount":5}`,
+		protocol.ActDrag:         `{"action":"drag","coordinates":[1,2],"to":[3,4]}`,
+		protocol.ActWait:         `{"action":"wait"}`,
+		protocol.ActWaitFor:      `{"action":"wait_for","text":"Ready"}`,
+		protocol.ActFocus:        `{"action":"focus","target":"Terminal"}`,
+		protocol.ActShell:        `{"action":"shell","text":"ls"}`,
+		protocol.ActPython:       `{"action":"python","code":"x=1"}`,
+		protocol.ActSpawnAgent:   `{"action":"spawn_agent","sub_goal":"build it"}`,
+		protocol.ActMsgPeer:      `{"action":"message_peer","target":"Research Bot","text":"found the invoice"}`,
+		protocol.ActDelegateTask: `{"action":"delegate_task","target":"Research Bot","sub_goal":"summarise Q3"}`,
+		protocol.ActMountTool:    `{"action":"mount_tool","tool_name":"t","tool_handler":"def t(): pass"}`,
+		protocol.ActUnmountTool:  `{"action":"unmount_tool","tool_name":"t"}`,
+		protocol.ActCallTool:     `{"action":"call_tool","tool_name":"t"}`,
+		protocol.ActDeepSearch:   `{"action":"deep_search","query":"go 1.23"}`,
+		protocol.ActRemember:     `{"action":"remember","text":"the build flag is -tags prod"}`,
+		protocol.ActRecall:       `{"action":"recall","query":"how did we log in last time"}`,
+		protocol.ActSpeak:        `{"action":"speak","text":"the deploy finished"}`,
+		protocol.ActAssert:       `{"action":"assert","text":"test -f /tmp/out"}`,
+		protocol.ActAskHuman:     `{"action":"ask_human","question":"which account?"}`,
+		protocol.ActDone:         `{"action":"done","summary":"finished"}`,
+		protocol.ActFail:         `{"action":"fail","summary":"blocked"}`,
 	}
 
 	for _, kind := range promptActionVocabulary(t) {
@@ -414,5 +416,47 @@ func TestSummariseNeverReturnsEmpty(t *testing.T) {
 		if got := summarise(protocol.Action{Action: kind}); strings.TrimSpace(got) == "" {
 			t.Errorf("summarise(%q) is empty", kind)
 		}
+	}
+}
+
+// ------------------------------------------------------- peer messaging ---
+
+// message_peer and delegate_task were declared in the protocol but rejected by
+// the parser and never offered by the prompt, so fleet-wide collaboration was
+// unreachable. These pin the shapes the runner relies on.
+func TestMessagePeerNeedsSomethingToSay(t *testing.T) {
+	if _, err := ParseAction(`{"action":"message_peer","target":"Bob"}`); err == nil {
+		t.Fatal("expected an error for message_peer with no text or question")
+	}
+	// A question counts as something to say.
+	if _, err := ParseAction(`{"action":"message_peer","question":"did you finish?"}`); err != nil {
+		t.Fatalf("question form should parse: %v", err)
+	}
+}
+
+// Omitting target is how an agent broadcasts, so it must stay legal.
+func TestMessagePeerWithoutTargetIsABroadcast(t *testing.T) {
+	got, err := ParseAction(`{"action":"message_peer","text":"the build is green"}`)
+	if err != nil {
+		t.Fatalf("broadcast form should parse: %v", err)
+	}
+	if got.Target != "" {
+		t.Fatalf("expected no target, got %q", got.Target)
+	}
+}
+
+func TestDelegateTaskNeedsATargetAndAGoal(t *testing.T) {
+	if _, err := ParseAction(`{"action":"delegate_task","sub_goal":"do it"}`); err == nil {
+		t.Fatal("delegation without a target should be rejected")
+	}
+	if _, err := ParseAction(`{"action":"delegate_task","target":"Bob"}`); err == nil {
+		t.Fatal("delegation without a sub_goal should be rejected")
+	}
+	got, err := ParseAction(`{"action":"delegate_task","target":"Bob","sub_goal":"summarise Q3"}`)
+	if err != nil {
+		t.Fatalf("well-formed delegation failed: %v", err)
+	}
+	if got.Target != "Bob" || got.SubGoal != "summarise Q3" {
+		t.Fatalf("fields not carried through: %+v", got)
 	}
 }

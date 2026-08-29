@@ -17,6 +17,11 @@ var validActions = map[protocol.ActionKind]bool{
 	protocol.ActUnmountTool: true, protocol.ActCallTool: true,
 	protocol.ActDeepSearch: true, protocol.ActRemember: true,
 	protocol.ActRecall: true, protocol.ActSpeak: true,
+	// Peer messaging. These existed as constants in the protocol with nothing
+	// accepting or handling them, so an agent that tried to reach another agent
+	// got "unknown action" back. Fleet-wide collaboration needs no swarm to be
+	// declared first -- any instance can address any other, or broadcast.
+	protocol.ActMsgPeer: true, protocol.ActDelegateTask: true,
 	protocol.ActAssert:   true,
 	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,
 }
@@ -50,6 +55,18 @@ func ParseAction(raw string) (protocol.Action, error) {
 	case protocol.ActType:
 		if a.Text == "" {
 			return a, fmt.Errorf("type needs text")
+		}
+	case protocol.ActMsgPeer:
+		if strings.TrimSpace(firstNonEmpty(a.Text, a.Question, a.Summary)) == "" {
+			return a, fmt.Errorf("message_peer needs text or a question")
+		}
+	case protocol.ActDelegateTask:
+		// A delegation with no recipient is a wish, not an instruction.
+		if strings.TrimSpace(a.Target) == "" {
+			return a, fmt.Errorf("delegate_task needs a target peer")
+		}
+		if strings.TrimSpace(firstNonEmpty(a.SubGoal, a.Text, a.Question)) == "" {
+			return a, fmt.Errorf("delegate_task needs a sub_goal")
 		}
 	case protocol.ActKey:
 		if a.Key == "" {

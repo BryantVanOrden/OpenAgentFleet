@@ -18,6 +18,7 @@ import (
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/fleet"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/telemetry"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
 )
 
@@ -29,6 +30,7 @@ type Server struct {
 	runner *agent.Runner
 	bus    *bus.Bus
 	vault  *vault.Vault
+	host   *telemetry.HostCollector
 	art    artifacts.Store
 	log    *slog.Logger
 }
@@ -45,7 +47,8 @@ func NewServer(
 	log *slog.Logger,
 ) *Server {
 	return &Server{cfg: cfg, db: db, fleet: fm, models: models, runner: runner,
-		bus: b, vault: v, art: art, log: log}
+		bus: b, vault: v, art: art, log: log,
+		host: telemetry.NewHostCollector()}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -137,6 +140,10 @@ func (s *Server) Routes() http.Handler {
 
 	// Token & Financial Telemetry Cockpit
 	mux.Handle("GET /api/telemetry/financials", auth(roleAny, s.handleGetFinancialSummary))
+	// Live resource usage of the machine running the orchestrator. The existing
+	// telemetry endpoints are LLM token accounting; per-instance CPU/memory
+	// comes from Docker. Neither answers "is the host itself saturated".
+	mux.Handle("GET /api/telemetry/host", auth(roleAny, s.handleHostStats))
 	mux.Handle("GET /api/telemetry/records", auth(roleAny, s.handleListTelemetryRecords))
 
 	mux.Handle("GET /api/alerts", auth(roleAny, s.handleListAlerts))
@@ -300,4 +307,14 @@ func withLogging(log *slog.Logger, next http.Handler) http.Handler {
 				"status", sw.status, "ms", time.Since(start).Milliseconds())
 		}
 	})
+}
+
+// handleHostStats reports live CPU, memory, disk and GPU for the host.
+//
+// Sampling is cheap (a few /proc reads plus an optional nvidia-smi), so it is
+// taken per request rather than cached: a dashboard polling every few seconds
+// wants the current value, and a stale one is worse than a slightly costlier
+// read.
+func (s *Server) handleHostStats(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.host.Sample(r.Context()))
 }

@@ -36,6 +36,14 @@ services:
       AGENT_STALL_THRESHOLD: ${AGENT_STALL_THRESHOLD:-3}
       AGENT_SCREENSHOT_MAX_WIDTH: ${AGENT_SCREENSHOT_MAX_WIDTH:-1280}
       AGENT_COORD_SPACE: ${AGENT_COORD_SPACE:-auto}
+      # /proc/stat and /proc/meminfo are not namespaced, so CPU and memory are
+      # already the host's from in here. The filesystem is, hence the read-only
+      # host mount below and this pointing at it.
+      HOST_DISK_PATH: /hostfs
+      # GPU stats arrive as a file written by the host, not by running
+      # nvidia-smi in here: this image is Alpine, and the binary the NVIDIA
+      # container runtime injects is glibc-linked, so it cannot execute.
+      HOST_GPU_STATS_FILE: /hostfs/run/agentfleet/gpu-stats.csv
       ARTIFACT_BACKEND: ${ARTIFACT_BACKEND:-fs}
       ARTIFACT_DIR: /var/lib/agentfleet/artifacts
       S3_ENDPOINT: http://minio:9000
@@ -53,6 +61,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - artifacts:/var/lib/agentfleet/artifacts
       - ${FCM_SERVICE_ACCOUNT_HOST:-./deploy/placeholder}:/etc/agentfleet/fcm.json:ro
+      # Read-only, and only so host disk usage can be reported honestly rather
+      # than showing the image's own layer. This container already holds the
+      # docker socket, so it adds no privilege it did not have.
+      - /:/hostfs:ro
     # The container user needs the host's docker group to reach the socket.
     # `make up` computes this; override GID in .env if your host differs.
     group_add:

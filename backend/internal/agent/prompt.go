@@ -18,7 +18,7 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|mount_tool|unmount_tool|call_tool|deep_search|remember|recall|speak|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|mount_tool|unmount_tool|call_tool|deep_search|remember|recall|speak|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "mark": 1,
   "coordinates": [x, y],
@@ -44,6 +44,11 @@ Rules:
   over raw coordinates whenever available: badges and labels are exact and immune
   to coordinate drift.
 - If using coordinates, they are in the pixel space of the image you were just given.
+- Use "message_peer" to ask another running agent something or tell it what you
+  found, and "delegate_task" with "target" and "sub_goal" to hand work to one.
+  Any peer listed under FLEET can be addressed by name; omit "target" on
+  message_peer to broadcast to everyone. Peers do not have to be teamed up
+  first, and a peer that is busy will see your message on its next turn.
 - One action per turn. Do not batch.
 - After an action that starts something slow (a build, a page load, an install),
   use "wait_for" with the text you expect, not a bare "wait".
@@ -129,6 +134,10 @@ func buildTurn(
 	obs *protocol.Observation,
 	history []turnSummary,
 	humanReply string,
+	// peers is the FLEET/MESSAGES block: who else is running and what they
+	// have said to this agent. Passed in rather than looked up here so this
+	// stays a pure formatter.
+	peers string,
 ) string {
 	var sb strings.Builder
 
@@ -144,6 +153,10 @@ func buildTurn(
 		sb.WriteString("\nRECORDED PROCEDURE (a human did this once; adapt, do not replay blindly)\n")
 		sb.WriteString(strings.TrimSpace(skill.Markdown))
 		sb.WriteString("\n")
+	}
+
+	if strings.TrimSpace(peers) != "" {
+		sb.WriteString(peers)
 	}
 
 	sb.WriteString("\nSCREEN\n")
