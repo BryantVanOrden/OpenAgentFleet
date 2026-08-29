@@ -15,9 +15,7 @@ class VaultScreen extends ConsumerStatefulWidget {
 class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProviderStateMixin {
   // Two tabs now: comms moved to Fleet, where the agents are.
   late final TabController _tabs = TabController(length: 2, vsync: this);
-  final TextEditingController _broadcastCtrl = TextEditingController();
 
-  List<PeerMessage> _messages = [];
   List<SharedSecret> _secrets = [];
   List<SharedSession> _sessions = [];
   bool _loading = false;
@@ -32,7 +30,6 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
   @override
   void dispose() {
     _tabs.dispose();
-    _broadcastCtrl.dispose();
     super.dispose();
   }
 
@@ -43,12 +40,10 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
     });
     try {
       final api = ref.read(apiProvider);
-      final msgs = await api.peerMessages();
       final secs = await api.sharedSecrets();
       final sess = await api.sharedSessions();
       if (mounted) {
         setState(() {
-          _messages = msgs;
           _secrets = secs;
           _sessions = sess;
         });
@@ -183,9 +178,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
           ],
         ),
       ),
-      body: _loading && _messages.isEmpty
+      body: _loading && _secrets.isEmpty && _sessions.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : _error != null && _messages.isEmpty
+          : _error != null && _secrets.isEmpty && _sessions.isEmpty
               ? Center(child: Text(_error!, style: TextStyle(color: Fleet.bad)))
               : TabBarView(
                   controller: _tabs,
