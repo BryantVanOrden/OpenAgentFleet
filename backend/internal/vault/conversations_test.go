@@ -36,23 +36,54 @@ func TestKindForClassifiesMembers(t *testing.T) {
 	}
 }
 
-// Creating the same two-party thread twice must return the existing one, or
-// the pair's history splits across duplicates.
-func TestCreateConversationIsFindOrCreateForPairs(t *testing.T) {
+// Asking for a new chat with people you already have a chat with must give you
+// a new chat. This was find-or-create, which meant the second request renamed
+// the first thread and handed it back — so you could not have two
+// conversations with the same bot, and trying appeared to corrupt the one you
+// had.
+func TestCreateConversationAlwaysCreates(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
 	first := b.CreateConversation(ctx, "Scouting", []string{"a", "b"})
-	second := b.CreateConversation(ctx, "", []string{"b", "a"})
+	second := b.CreateConversation(ctx, "Release checks", []string{"a", "b"})
 
-	if first.ID != second.ID {
-		t.Fatalf("pair thread duplicated: %s vs %s", first.ID, second.ID)
+	if first.ID == second.ID {
+		t.Fatal("a second chat with the same pair reused the first thread")
 	}
-	if second.Title != "Scouting" {
-		t.Errorf("re-opening lost the title: %q", second.Title)
+	if first.Title != "Scouting" {
+		t.Errorf("the first thread was renamed to %q", first.Title)
 	}
-	if got := len(b.ListConversations(ctx)); got != 2 { // broadcast + the pair
-		t.Errorf("expected broadcast plus one thread, got %d", got)
+	// And the original is still there, under its own name.
+	var found bool
+	for _, c := range b.ListConversations(ctx) {
+		if c.ID == first.ID {
+			found = true
+			if c.Title != "Scouting" {
+				t.Errorf("stored title is %q", c.Title)
+			}
+		}
+	}
+	if !found {
+		t.Error("the first thread disappeared")
+	}
+}
+
+// The fleet's own traffic still has one stable home per pair, so agents
+// talking to each other do not mint a thread every time they speak.
+func TestCanonicalThreadIsStable(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	one := b.CanonicalThread(ctx, []string{"a", "b"})
+	two := b.CanonicalThread(ctx, []string{"b", "a"})
+	if one.ID != two.ID {
+		t.Fatal("the canonical thread differs by member order")
+	}
+	// An operator-created thread between the same pair is a separate thing.
+	named := b.CreateConversation(ctx, "Side channel", []string{"a", "b"})
+	if named.ID == one.ID {
+		t.Error("a named thread collided with the canonical one")
 	}
 }
 
@@ -208,5 +239,73 @@ func TestNonMemberGetsNoRecipient(t *testing.T) {
 	}
 	if !b.IsMember(c.ID, "a") || !b.IsMember(c.ID, "b") {
 		t.Error("an actual member was not recognised")
+	}
+}
+
+// The one channel every fleet has should not be the only one that cannot be
+// labelled. It stays undeletable — it is where unaddressed messages land — but
+// a name is just a label.
+func TestBroadcastChannelCanBeRenamed(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	if _, ok := b.RenameConversation(ctx, protocol.BroadcastConversationID, "General"); !ok {
+		t.Fatal("the broadcast channel refused a rename")
+	}
+	var seen bool
+	for _, c := range b.ListConversations(ctx) {
+		if c.ID == protocol.BroadcastConversationID {
+			seen = true
+			if c.Title != "General" {
+				t.Errorf("title is %q, want General", c.Title)
+			}
+		}
+	}
+	if !seen {
+		t.Error("the broadcast channel vanished after renaming")
+	}
+	// Still undeletable.
+	if b.DeleteConversation(ctx, protocol.BroadcastConversationID) {
+		t.Error("the broadcast channel was deleted")
+	}
+}
+
+// An unfiled agent-to-agent message must produce a thread that actually shows
+// up, or two agents can talk at length and appear silent.
+func TestAutoFiledMessagesGetAVisibleThread(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	b.SendMessage(ctx, "a", "Alpha", "b", "message", "are you free?", nil)
+
+	var found bool
+	for _, c := range b.ListConversations(ctx) {
+		if c.ID == ConversationIDFor([]string{"a", "b"}) {
+			found = true
+			if c.MessageCount != 1 {
+				t.Errorf("thread shows %d messages", c.MessageCount)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the pair's own thread is not listed, so their exchange is invisible")
+	}
+}
+
+// Renaming the broadcast channel gives it a stored row, which must not then be
+// listed alongside the implicit one.
+func TestBroadcastIsListedOnce(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+	b.RenameConversation(ctx, protocol.BroadcastConversationID, "General")
+
+	seen := 0
+	for _, c := range b.ListConversations(ctx) {
+		if c.ID == protocol.BroadcastConversationID {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Errorf("the broadcast channel appears %d times", seen)
 	}
 }

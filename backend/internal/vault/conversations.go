@@ -94,43 +94,63 @@ func (b *Bus) AttachConversationStore(ctx context.Context, st ConversationStore)
 	return nil
 }
 
-// CreateConversation opens a thread between the given members.
+// CreateConversation opens a new thread between the given members.
 //
-// For direct and pair threads this is find-or-create: asking twice for the
-// conversation between the same two parties returns the same one rather than
-// splitting their history across duplicates.
+// Always a new one, even when a thread between the same people already exists.
+// This used to be find-or-create keyed on a hash of the member set, on the
+// reasoning that a pair's history should not split across duplicates — but it
+// meant asking for a new chat with someone you already had a chat with
+// silently RENAMED the existing thread and handed it back. You could not have
+// two conversations with the same bot, and trying appeared to corrupt the one
+// you had.
+//
+// Agent-to-agent chatter still has a stable home: an unfiled message is placed
+// in the canonical thread for its two parties, created on demand by
+// CanonicalThread, so a pair always has somewhere to talk without anyone
+// opening a thread first.
 func (b *Bus) CreateConversation(ctx context.Context, title string, members []string) protocol.Conversation {
 	norm := normalizeMembers(members)
-	kind := KindFor(norm)
 
-	id := ConversationIDFor(norm)
-	if kind == protocol.ConversationGroup {
-		b.mu.Lock()
-		b.seq++
-		id = fmt.Sprintf("conv-group-%d-%d", time.Now().UnixNano(), b.seq)
-		b.mu.Unlock()
+	b.mu.Lock()
+	b.seq++
+	c := protocol.Conversation{
+		ID:        fmt.Sprintf("conv-%d-%d", time.Now().UnixNano(), b.seq),
+		Kind:      KindFor(norm),
+		Title:     title,
+		Members:   norm,
+		CreatedAt: time.Now().UTC(),
 	}
+	b.conversations[c.ID] = c
+	st, log := b.convStore, b.log
+	b.mu.Unlock()
+
+	if st != nil {
+		if err := st.UpsertConversation(ctx, c); err != nil && log != nil {
+			log.Warn("conversation not persisted", "id", c.ID, "err", err)
+		}
+	}
+	return c
+}
+
+// CanonicalThread is the thread an unfiled message between two parties belongs
+// to, created if it does not exist yet.
+//
+// Deterministic so that A→B and B→A land in the same place however the
+// conversation started. Distinct from CreateConversation: this is where the
+// fleet's own traffic goes, and it should not multiply every time two agents
+// speak.
+func (b *Bus) CanonicalThread(ctx context.Context, members []string) protocol.Conversation {
+	norm := normalizeMembers(members)
+	id := ConversationIDFor(norm)
 
 	b.mu.Lock()
 	if existing, ok := b.conversations[id]; ok {
-		// Re-opening a direct or pair thread keeps its history. A new title is
-		// still honoured; the operator renaming a thread should not be ignored.
-		if title != "" && title != existing.Title {
-			existing.Title = title
-			b.conversations[id] = existing
-		}
-		st := b.convStore
 		b.mu.Unlock()
-		if st != nil && title != "" {
-			_ = st.UpsertConversation(ctx, existing)
-		}
 		return existing
 	}
-
 	c := protocol.Conversation{
 		ID:        id,
-		Kind:      kind,
-		Title:     title,
+		Kind:      KindFor(norm),
 		Members:   norm,
 		CreatedAt: time.Now().UTC(),
 	}
@@ -140,7 +160,7 @@ func (b *Bus) CreateConversation(ctx context.Context, title string, members []st
 
 	if st != nil {
 		if err := st.UpsertConversation(ctx, c); err != nil && log != nil {
-			log.Warn("conversation not persisted", "id", c.ID, "err", err)
+			log.Warn("canonical thread not persisted", "id", id, "err", err)
 		}
 	}
 	return c
@@ -178,14 +198,29 @@ func (b *Bus) ListConversations(ctx context.Context) []protocol.Conversation {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
+	// The broadcast channel is implicit — it is not created, and cannot be
+	// deleted — but it can be renamed, so a stored row overrides the default
+	// name when one exists.
 	broadcast := protocol.Conversation{
 		ID:      protocol.BroadcastConversationID,
 		Kind:    protocol.ConversationGroup,
 		Title:   "Everyone",
 		Members: []string{},
 	}
+	if stored, ok := b.conversations[protocol.BroadcastConversationID]; ok {
+		if stored.Title != "" {
+			broadcast.Title = stored.Title
+		}
+		broadcast.Pinned = stored.Pinned
+	}
 	out := []protocol.Conversation{broadcast}
 	for _, c := range b.conversations {
+		// The broadcast channel is already at the head. Once it has been
+		// renamed it also has a stored row, and appending that too listed the
+		// one channel every fleet has twice.
+		if c.ID == protocol.BroadcastConversationID {
+			continue
+		}
 		out = append(out, c)
 	}
 
@@ -402,8 +437,20 @@ func (b *Bus) updateConversation(ctx context.Context, id string, apply func(*pro
 	b.mu.Lock()
 	c, ok := b.conversations[id]
 	if !ok {
-		b.mu.Unlock()
-		return protocol.Conversation{}, false
+		// The broadcast channel has no row until someone renames or pins it,
+		// and refusing here would make the one channel every fleet has the
+		// only one that cannot be labelled.
+		if id != protocol.BroadcastConversationID {
+			b.mu.Unlock()
+			return protocol.Conversation{}, false
+		}
+		c = protocol.Conversation{
+			ID:        id,
+			Kind:      protocol.ConversationGroup,
+			Title:     "Everyone",
+			Members:   []string{},
+			CreatedAt: time.Now().UTC(),
+		}
 	}
 	apply(&c)
 	b.conversations[id] = c

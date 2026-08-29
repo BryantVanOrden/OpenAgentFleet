@@ -64,10 +64,6 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 // handleUpdateConversation renames or pins a thread.
 func (s *Server) handleUpdateConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == protocol.BroadcastConversationID {
-		fail(w, http.StatusBadRequest, "the broadcast channel cannot be renamed or pinned")
-		return
-	}
 
 	var req struct {
 		Title  string `json:"title"`

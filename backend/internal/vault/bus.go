@@ -252,12 +252,26 @@ func (b *Bus) sendFrom(ctx context.Context, conversationID, fromID, fromName, fr
 		Data:             data,
 		CreatedAt:        time.Now().UTC(),
 	}
+	autoFiled := false
 	if msg.ConversationID == "" {
 		msg.ConversationID = b.conversationOf(msg)
+		autoFiled = msg.ConversationID != protocol.BroadcastConversationID
 	}
 	b.messages = append(b.messages, msg)
 	st, log := b.store, b.log
 	b.mu.Unlock()
+
+	// Give an auto-filed message a thread to belong to. Filing one under an id
+	// with no conversation behind it hides the whole exchange from the comms
+	// list, which is how two agents can talk at length and appear silent.
+	// Outside the lock because CanonicalThread takes it.
+	if autoFiled {
+		from := fromID
+		if from == "" {
+			from = protocol.OperatorMemberID
+		}
+		b.CanonicalThread(ctx, []string{from, toID})
+	}
 
 	// Written outside the lock: a database round trip must not block every
 	// other agent's reads. A failed write costs durability for this one
