@@ -687,8 +687,8 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     if (_recording) {
       try {
         final skill = await api.stopRecording(widget.instance.id);
-        setState(() => _recording = false);
         if (mounted) {
+          setState(() => _recording = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -706,36 +706,41 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
       }
     } else {
       final ctrl = TextEditingController();
-      final name = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('🎬 Record Demonstration'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'e.g. Export CRM Invoices to PDF',
-              labelText: 'What task is this teaching the AI?',
+      final String? name;
+      try {
+        name = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('🎬 Record Demonstration'),
+            content: TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'e.g. Export CRM Invoices to PDF',
+                labelText: 'What task is this teaching the AI?',
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                child: const Text('Start Recording'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Start Recording'),
-            ),
-          ],
-        ),
-      );
+        );
+      } finally {
+        ctrl.dispose();
+      }
 
       if (name != null && name.isNotEmpty) {
         try {
           await api.startRecording(widget.instance.id, name);
-          setState(() => _recording = true);
           if (mounted) {
+            setState(() => _recording = true);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                   content:
