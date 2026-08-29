@@ -122,7 +122,7 @@ func (c *ollama) Complete(ctx context.Context, req Request) (*Response, error) {
 	// stops the registry's fallback chain and burns the agent loop's parse
 	// retries against an endpoint that is not going to produce an action.
 	if strings.TrimSpace(out.Message.Content) == "" {
-		return nil, fmt.Errorf("%s: empty completion (done %v)", c.p.Name, out.Done)
+		return nil, fmt.Errorf("%s: %w (done %v)", c.p.Name, ErrEmptyCompletion, out.Done)
 	}
 	return &Response{
 		Text:         out.Message.Content,

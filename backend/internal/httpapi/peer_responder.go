@@ -18,6 +18,10 @@ import (
 // message_peer, and a human can always say something new.
 const peerReplyKind = "reply"
 
+// peerSummaryKind marks a compaction summary. It stands in for messages rather
+// than being one, so nobody answers it.
+const peerSummaryKind = "summary"
+
 // RunPeerResponder lets idle agents answer messages addressed to them.
 //
 // The agent loop only reads its inbox while a task is running (peerContext is
@@ -106,10 +110,24 @@ func (s *Server) nextUnanswered(ctx context.Context, instanceID string, since ti
 
 	var best protocol.PeerMessage
 	found := false
+	// Anything older than this is not worth answering. The high-water mark is
+	// in memory, so every restart used to look like a fleet with a full inbox:
+	// each agent answered the newest message again, however many hours old,
+	// and a channel with three agents gained three replies to a question that
+	// had been answered that morning. Verified against the live fleet, where
+	// the last operator message was at 07:40 and the agents were still
+	// re-answering it at 16:03.
+	const freshEnough = 10 * time.Minute
+	cutoff := time.Now().Add(-freshEnough)
+
 	for _, m := range msgs {
 		switch {
 		case m.FromInstanceID == instanceID: // never answer yourself
 		case m.Kind == peerReplyKind: // replies do not beget replies
+		case m.Kind == peerSummaryKind:
+			// A summary is a record of what was said, not something said to
+			// anyone. Compacting a thread used to make every agent chime in.
+		case m.CreatedAt.Before(cutoff):
 		case !m.CreatedAt.After(since):
 		case found && !m.CreatedAt.After(best.CreatedAt):
 		default:

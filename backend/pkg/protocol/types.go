@@ -465,9 +465,12 @@ type MCPTool struct {
 
 // PipelineNode represents one step/agent in a multi-bot workflow DAG.
 type PipelineNode struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	ArchetypeID  string            `json:"archetype_id"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// InstanceID pins the node to one bot. Empty falls back to ArchetypeID,
+	// which picks whichever eligible instance is free.
+	InstanceID   string            `json:"instance_id,omitempty"`
+	ArchetypeID  string            `json:"archetype_id,omitempty"`
 	GoalTemplate string            `json:"goal_template"`
 	Params       map[string]string `json:"params,omitempty"`
 }

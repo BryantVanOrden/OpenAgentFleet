@@ -1,6 +1,9 @@
 package connectors
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"reflect"
 	"testing"
 
@@ -125,4 +128,70 @@ func TestSimpleClassification(t *testing.T) {
 	if complexOne.Simple() {
 		t.Error("a combination naming other roles is not simple")
 	}
+}
+
+// A model that answers with nothing gets one more chance without the thinking
+// pass before the chain gives up on it. Falling straight through sends the
+// work to a model the operator ranked lower, and on the live fleet it failed
+// the whole task instead.
+type flakyThinker struct {
+	calls      int
+	sawNoThink bool
+	visionOK   bool
+}
+
+func (f *flakyThinker) ID() string   { return "flaky" }
+func (f *flakyThinker) Name() string { return "Flaky thinker" }
+func (f *flakyThinker) Vision() bool { return f.visionOK }
+func (f *flakyThinker) Complete(ctx context.Context, req Request) (*Response, error) {
+	f.calls++
+	if !req.DisableThinking {
+		return nil, fmt.Errorf("flaky: %w (done true)", ErrEmptyCompletion)
+	}
+	f.sawNoThink = true
+	return &Response{Text: "recovered"}, nil
+}
+
+func TestEmptyCompletionRetriesWithoutThinking(t *testing.T) {
+	f := &flakyThinker{visionOK: true}
+	r := NewRegistry(nil, nil, slog.Default())
+
+	resp, err := r.complete(context.Background(), []Connector{f}, Request{})
+	if err != nil {
+		t.Fatalf("the retry did not recover: %v", err)
+	}
+	if resp.Text != "recovered" {
+		t.Errorf("got %q", resp.Text)
+	}
+	if f.calls != 2 {
+		t.Errorf("called %d times, want 2 (the attempt and one retry)", f.calls)
+	}
+	if !f.sawNoThink {
+		t.Error("the retry did not disable thinking")
+	}
+}
+
+// A request that already had thinking off must not be retried: the retry would
+// be identical, so it would just double the latency of a real failure.
+func TestNoRetryWhenThinkingAlreadyOff(t *testing.T) {
+	f := &alwaysEmpty{}
+	r := NewRegistry(nil, nil, slog.Default())
+
+	if _, err := r.complete(context.Background(), []Connector{f},
+		Request{DisableThinking: true}); err == nil {
+		t.Fatal("expected failure")
+	}
+	if f.calls != 1 {
+		t.Errorf("called %d times, want 1", f.calls)
+	}
+}
+
+type alwaysEmpty struct{ calls int }
+
+func (a *alwaysEmpty) ID() string   { return "empty" }
+func (a *alwaysEmpty) Name() string { return "Always empty" }
+func (a *alwaysEmpty) Vision() bool { return true }
+func (a *alwaysEmpty) Complete(ctx context.Context, req Request) (*Response, error) {
+	a.calls++
+	return nil, fmt.Errorf("empty: %w", ErrEmptyCompletion)
 }

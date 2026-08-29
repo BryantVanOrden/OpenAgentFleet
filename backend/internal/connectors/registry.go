@@ -142,6 +142,15 @@ func (r *Registry) Complete(ctx context.Context, preferred string, req Request) 
 	return r.complete(ctx, chain, req)
 }
 
+// ErrEmptyCompletion is a model that answered with nothing.
+//
+// Almost always a reasoning model that spent its whole budget on the hidden
+// thinking pass. It is worth its own error because the cheapest correct
+// response is to ask the same model again without that pass, rather than
+// falling through to a weaker one — or, as happened on the live fleet,
+// failing the whole task.
+var ErrEmptyCompletion = errors.New("empty completion")
+
 func (r *Registry) complete(ctx context.Context, chain []Connector, req Request) (*Response, error) {
 	var errs []error
 	for _, c := range chain {
@@ -151,6 +160,22 @@ func (r *Registry) complete(ctx context.Context, chain []Connector, req Request)
 			continue
 		}
 		resp, err := c.Complete(ctx, req)
+
+		// One retry without the thinking pass before giving up on this model.
+		// A model that thought itself out of a budget will usually answer if
+		// asked plainly, and the alternative is falling through to a model the
+		// operator ranked lower for a reason.
+		if errors.Is(err, ErrEmptyCompletion) && !req.DisableThinking && ctx.Err() == nil {
+			r.log.Warn("empty completion, retrying without the thinking pass",
+				"provider", c.Name())
+			retry := req
+			retry.DisableThinking = true
+			if resp2, err2 := c.Complete(ctx, retry); err2 == nil {
+				r.recordSuccess(c.ID())
+				return resp2, nil
+			}
+		}
+
 		if err == nil {
 			r.recordSuccess(c.ID())
 			return resp, nil

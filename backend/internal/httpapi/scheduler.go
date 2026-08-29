@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/pipeline"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
 )
 
@@ -26,10 +27,17 @@ func (s *Server) StartBackground(ctx context.Context) {
 		if err := vault.GlobalBus.AttachConversationStore(ctx, s.db); err != nil {
 			s.logger().Error("conversations not loaded; threads stay in-memory", "err", err)
 		}
+		if err := pipeline.GlobalEngine.AttachStore(ctx, s.db); err != nil {
+			s.logger().Error("pipelines not loaded; they stay in-memory", "err", err)
+		}
 		if err := memory.GlobalEngine.AttachStore(ctx, s.db, s.logger()); err != nil {
 			s.logger().Error("episodic memory not loaded; the index stays in-memory", "err", err)
 		}
 	}
+	// Gives the pipeline engine a way to actually run a node. Without this it
+	// refuses to start a run rather than reporting invented success.
+	pipeline.GlobalEngine.SetNodeRunner(s.runPipelineNode)
+
 	go s.RunCronScheduler(ctx)
 	// Idle agents answer messages too; without this a broadcast to a fleet
 	// with nothing running is met with silence.
