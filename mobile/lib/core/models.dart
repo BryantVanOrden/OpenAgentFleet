@@ -506,6 +506,39 @@ class PipelineRun {
       );
 }
 
+class AIProvider {
+  AIProvider({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.model,
+    this.baseUrl = '',
+    this.vision = true,
+    this.priority = 100,
+    this.enabled = true,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final String model;
+  final String baseUrl;
+  final bool vision;
+  final int priority;
+  final bool enabled;
+
+  factory AIProvider.fromJson(Map<String, dynamic> j) => AIProvider(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'ollama',
+        model: j['model'] as String? ?? '',
+        baseUrl: j['base_url'] as String? ?? '',
+        vision: j['vision'] as bool? ?? true,
+        priority: (j['priority'] as num?)?.toInt() ?? 100,
+        enabled: j['enabled'] as bool? ?? true,
+      );
+}
+
 String humanAgo(DateTime at) {
   final seconds = DateTime.now().difference(at).inSeconds;
   if (seconds < 45) return 'just now';

@@ -277,6 +277,22 @@ class ApiClient {
     return SwarmMessage.fromJson(data);
   }
 
+  // ------------------------------------------------------------- providers ---
+
+  Future<List<AIProvider>> providers() async {
+    final data = await _get('/api/providers') as List;
+    return data
+        .map((e) => AIProvider.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<List<AIProvider>> reorderProviders(List<String> ids) async {
+    final data = await _post('/api/providers/reorder', {'ids': ids}) as List;
+    return data
+        .map((e) => AIProvider.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
   // --------------------------------------------------------------- devices ---
 
   Future<void> registerDevice(String pushToken, String platform) =>

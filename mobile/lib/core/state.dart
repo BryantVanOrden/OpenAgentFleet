@@ -98,3 +98,7 @@ final chatProvider =
 final skillsProvider = FutureProvider<List<Skill>>(
   (ref) => ref.watch(apiProvider).skills(),
 );
+
+final aiProvidersProvider = FutureProvider<List<AIProvider>>(
+  (ref) => ref.watch(apiProvider).providers(),
+);

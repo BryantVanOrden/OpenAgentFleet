@@ -184,6 +184,22 @@ func (s *Store) DeleteProvider(ctx context.Context, id string) error {
 	return norm(err)
 }
 
+func (s *Store) ReorderProviders(ctx context.Context, ids []string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return norm(err)
+	}
+	defer tx.Rollback(ctx)
+
+	for i, id := range ids {
+		priority := (i + 1) * 10
+		if _, err := tx.Exec(ctx, `UPDATE providers SET priority=$1 WHERE id=$2`, priority, id); err != nil {
+			return norm(err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 // --------------------------------------------------------------- instances ---
 
 func (s *Store) CreateInstance(ctx context.Context, in *protocol.Instance) error {

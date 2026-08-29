@@ -83,14 +83,29 @@ export default function Models({ role }: { role: string }) {
     }
   };
 
+  const move = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= providers.length) return;
+    const copy = [...providers];
+    const [moved] = copy.splice(index, 1);
+    copy.splice(target, 0, moved);
+    try {
+      const updated = await api.reorderProviders(copy.map((p) => p.id));
+      setProviders(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const enabledProviders = providers.filter((p) => p.enabled);
+
   return (
     <div className="space-y-6 p-6">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">AI engines</h1>
+          <h1 className="text-xl font-semibold tracking-tight">AI Connections & Tiered Fallback Chain</h1>
           <p className="text-sm text-ink-400">
-            Ordered fallback chain. Lower priority runs first; a provider that fails twice is
-            skipped for a minute before it is tried again.
+            Define your primary model and automatic fallback sequence. If your primary engine (e.g. Claude) runs out of usage, hits a rate limit, or experiences an outage, AgentFleet automatically fails over to the next tier seamlessly.
           </p>
         </div>
         {!readOnly && (
@@ -98,9 +113,9 @@ export default function Models({ role }: { role: string }) {
             variant="primary"
             onClick={() =>
               setEditing({
-                kind: "ollama",
-                base_url: KIND_HINTS.ollama.base,
-                model: KIND_HINTS.ollama.model,
+                kind: "antigravity",
+                base_url: KIND_HINTS.antigravity.base,
+                model: KIND_HINTS.antigravity.model,
                 vision: true,
                 temperature: 0.2,
                 max_tokens: 1024,
@@ -116,15 +131,48 @@ export default function Models({ role }: { role: string }) {
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
+      {enabledProviders.length > 1 && (
+        <div className="rounded-xl border border-ink-800 bg-ink-950 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wider text-ink-400 mb-2">
+            Active Multi-Tier Failover Sequence
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+            {enabledProviders.map((p, idx) => (
+              <div key={p.id} className="flex items-center gap-2">
+                <span
+                  className={cx(
+                    "rounded-md px-2 py-1 font-medium ring-1",
+                    idx === 0
+                      ? "bg-good-500/15 text-good-400 ring-good-500/30"
+                      : idx === 1
+                      ? "bg-cyan-500/15 text-cyan-400 ring-cyan-500/30"
+                      : idx === 2
+                      ? "bg-purple-500/15 text-purple-400 ring-purple-500/30"
+                      : "bg-ink-850 text-ink-300 ring-ink-700",
+                  )}
+                >
+                  Tier {idx + 1}: {p.name} ({p.model})
+                </span>
+                {idx < enabledProviders.length - 1 && (
+                  <span className="text-ink-500 font-bold">➔ (if exhausted/error) ➔</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {providers.length === 0 ? (
         <Empty
           title="No engines configured"
-          hint="Add at least one vision-capable model. Ollama with a local VL model costs nothing and keeps screenshots on your own hardware."
+          hint="Add at least one vision-capable model. Connect your Google Antigravity account, Claude API, or local Ollama."
         />
       ) : (
         <div className="space-y-3">
-          {providers.map((p) => {
+          {providers.map((p, idx) => {
             const probe_ = probes[p.id];
+            const isFirst = idx === 0;
+            const isLast = idx === providers.length - 1;
             return (
               <div
                 key={p.id}
@@ -133,11 +181,49 @@ export default function Models({ role }: { role: string }) {
                   p.enabled ? "ring-ink-700" : "opacity-60 ring-ink-800",
                 )}
               >
-                <div className="w-10 text-center font-mono text-xs text-ink-500">{p.priority}</div>
+                {!readOnly && (
+                  <div className="flex flex-col gap-1 text-ink-500">
+                    <button
+                      type="button"
+                      disabled={isFirst}
+                      onClick={() => move(idx, -1)}
+                      className="rounded p-1 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-20 text-xs"
+                      title="Move up in fallback chain"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLast}
+                      onClick={() => move(idx, 1)}
+                      className="rounded p-1 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-20 text-xs"
+                      title="Move down in fallback chain"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                )}
+
+                <div className="min-w-[70px] text-center font-mono">
+                  <span
+                    className={cx(
+                      "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                      idx === 0
+                        ? "bg-good-500/20 text-good-400"
+                        : idx === 1
+                        ? "bg-cyan-500/20 text-cyan-400"
+                        : idx === 2
+                        ? "bg-purple-500/20 text-purple-400"
+                        : "bg-ink-800 text-ink-400",
+                    )}
+                  >
+                    Tier {idx + 1}
+                  </span>
+                </div>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">{p.name}</span>
+                    <span className="text-sm font-semibold">{p.name}</span>
                     <span className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[11px] text-ink-400">
                       {p.kind}
                     </span>
@@ -153,9 +239,17 @@ export default function Models({ role }: { role: string }) {
                         text only
                       </span>
                     )}
-                    {!p.enabled && (
+                    {!p.enabled ? (
                       <span className="rounded bg-ink-800 px-1.5 py-0.5 text-[11px] text-ink-400">
                         disabled
+                      </span>
+                    ) : idx === 0 ? (
+                      <span className="rounded bg-good-500/20 px-1.5 py-0.5 text-[11px] font-medium text-good-400">
+                        ★ Primary
+                      </span>
+                    ) : (
+                      <span className="rounded bg-ink-800 px-1.5 py-0.5 text-[11px] text-ink-400">
+                        Fallback #{idx}
                       </span>
                     )}
                   </div>

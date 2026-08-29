@@ -382,7 +382,54 @@ def cmd_vault_comms(args: argparse.Namespace) -> None:
         print(f"❌ Error: {e}")
 
 
+# ------------------------------------------------------------- AI Models & Fallback ---
+
+
+def cmd_models_list(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        providers = client.list_providers()
+        print(f"\n🧠 AI CONNECTIONS & TIERED FALLBACK CHAIN ({len(providers)}):")
+        print(f"{'TIER':<8} {'NAME':<24} {'KIND':<12} {'MODEL':<28} {'STATUS'}")
+        print("-" * 80)
+        for idx, p in enumerate(providers):
+            tier_str = f"Tier {idx+1}"
+            if idx == 0:
+                tier_str += " ★"
+            status = "Enabled" if p.get("enabled", True) else "Disabled"
+            if p.get("vision"):
+                status += " (Vision)"
+            print(f"{tier_str:<8} {p.get('name',''):<24} {p.get('kind',''):<12} {p.get('model',''):<28} {status}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+def cmd_models_reorder(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        updated = client.reorder_providers(args.ids)
+        print(f"✅ Fallback sequence updated successfully across {len(updated)} engines:")
+        for idx, p in enumerate(updated):
+            role = "Primary Engine" if idx == 0 else f"Fallback #{idx}"
+            print(f"  Tier {idx+1} ({role}): {p.get('name')} [{p.get('model')}]")
+    except Exception as e:
+        print(f"❌ Reorder failed: {e}")
+
+
+def cmd_models_probe(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        res = client._post(f"/api/providers/{args.id}/probe")
+        if res.get("ok"):
+            print(f"✅ Provider '{args.id}' is reachable and authenticated.")
+        else:
+            print(f"❌ Provider '{args.id}' check failed: {res.get('error')}")
+    except Exception as e:
+        print(f"❌ Probe error: {e}")
+
+
 # ----------------------------------------------------------------------- MCP ---
+
 
 
 def cmd_mcp_list(args: argparse.Namespace) -> None:
@@ -647,6 +694,18 @@ def main() -> None:
     p_wh_trig.add_argument("token", help="Webhook token")
     p_wh_trig.add_argument("--data", "-d", help="JSON payload")
     p_wh_trig.set_defaults(func=cmd_webhooks_trigger)
+
+    # models & fallback chain
+    p_models = subparsers.add_parser("models", help="Manage AI engines and tiered fallback order")
+    mod_subs = p_models.add_subparsers(dest="models_action", required=True)
+    p_mod_list = mod_subs.add_parser("list", help="List engines in fallback priority order")
+    p_mod_list.set_defaults(func=cmd_models_list)
+    p_mod_reorder = mod_subs.add_parser("reorder", help="Reorder fallback chain (Tier 1 -> Tier 2 -> ...)")
+    p_mod_reorder.add_argument("ids", nargs="+", help="Provider IDs in desired priority order")
+    p_mod_reorder.set_defaults(func=cmd_models_reorder)
+    p_mod_probe = mod_subs.add_parser("probe", help="Test connectivity of an AI engine")
+    p_mod_probe.add_argument("id", help="Provider ID")
+    p_mod_probe.set_defaults(func=cmd_models_probe)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

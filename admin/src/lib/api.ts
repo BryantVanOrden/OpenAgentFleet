@@ -575,6 +575,7 @@ export const api = {
   saveProvider: (p: Partial<Provider> & { api_key?: string }) =>
     p.id ? put<Provider>(`/api/providers/${p.id}`, p) : post<Provider>("/api/providers", p),
   deleteProvider: (id: string) => del<void>(`/api/providers/${id}`),
+  reorderProviders: (ids: string[]) => post<Provider[]>("/api/providers/reorder", { ids }),
   probeProvider: (id: string) => post<{ ok: boolean; error?: string }>(`/api/providers/${id}/probe`),
   /**
    * Discover the models a provider actually serves, for any provider kind.

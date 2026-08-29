@@ -197,3 +197,14 @@ class FleetClient:
     def get_financial_summary(self) -> dict[str, Any]:
         """Fetches fleet-wide token and cost financial telemetry."""
         return self._get("/api/telemetry/financials") or {}
+
+    # ----------------------------------------------------------- AI Providers & Fallback ---
+
+    def list_providers(self) -> list[dict[str, Any]]:
+        """Lists configured AI engine providers in tiered fallback priority order."""
+        return self._get("/api/providers") or []
+
+    def reorder_providers(self, provider_ids: list[str]) -> list[dict[str, Any]]:
+        """Reorders the fallback chain priority (Tier 1 -> Tier 2 -> Tier 3)."""
+        return self._post("/api/providers/reorder", {"ids": provider_ids}) or []
+

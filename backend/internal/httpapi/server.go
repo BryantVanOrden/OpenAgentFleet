@@ -146,6 +146,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/providers", auth(roleAdmin, s.handleUpsertProvider))
 	mux.Handle("PUT /api/providers/{id}", auth(roleAdmin, s.handleUpsertProvider))
 	mux.Handle("DELETE /api/providers/{id}", auth(roleAdmin, s.handleDeleteProvider))
+	mux.Handle("POST /api/providers/reorder", auth(roleAdmin, s.handleReorderProviders))
 	mux.Handle("POST /api/providers/{id}/probe", auth(roleAdmin, s.handleProbeProvider))
 	// Model discovery for any provider kind. The two routes below it predate
 	// this one and are kept so existing clients keep working; new code should

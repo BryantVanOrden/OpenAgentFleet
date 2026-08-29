@@ -708,6 +708,25 @@ class TestAgentFleetSDK(unittest.TestCase):
         self.assertEqual(loaded.id, manifest.id)
         self.assertEqual(loaded.vcpu, 8.0)
 
+    @patch.object(FleetClient, "_get")
+    @patch.object(FleetClient, "_post")
+    def test_list_and_reorder_providers(self, mock_post, mock_get):
+        fake_providers = [
+            {"id": "prov-claude", "name": "Claude 3.7", "priority": 10},
+            {"id": "prov-antigravity", "name": "Google Antigravity", "priority": 20},
+            {"id": "prov-ollama", "name": "Local Ollama", "priority": 30},
+        ]
+        mock_get.return_value = fake_providers
+        res = self.client.list_providers()
+        mock_get.assert_called_once_with("/api/providers")
+        self.assertEqual(len(res), 3)
+
+        mock_post.return_value = fake_providers
+        reordered = self.client.reorder_providers(["prov-antigravity", "prov-claude", "prov-ollama"])
+        mock_post.assert_called_once_with("/api/providers/reorder", {"ids": ["prov-antigravity", "prov-claude", "prov-ollama"]})
+        self.assertEqual(len(reordered), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
+

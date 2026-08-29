@@ -72,6 +72,26 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleReorderProviders(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.db.ReorderProviders(r.Context(), req.IDs); err != nil {
+		failErr(w, err)
+		return
+	}
+	list, err := s.db.ListProviders(r.Context(), false)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 // handleProbeProvider does a real round-trip so the operator finds out about a
 // bad key here rather than three steps into a run.
 func (s *Server) handleProbeProvider(w http.ResponseWriter, r *http.Request) {
