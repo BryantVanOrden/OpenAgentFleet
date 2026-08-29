@@ -395,11 +395,13 @@ class ApiClient {
     final encoded = Uri.encodeComponent(token ?? '');
     final query = {
       'autoconnect': 'true',
-      // 'remote' asks the desktop to resize to the client instead of scaling a
-      // fixed 1920x1080 frame down to a phone: text stays legible and, more
-      // importantly, a tap lands where you touched. Under 'scale' the pointer
-      // mapping is off by the scale factor on some clients.
-      'resize': 'remote',
+      // 'scale', not 'remote'. remote asks the VNC server to resize its
+      // framebuffer to the client, and this one cannot: x11vnc runs without
+      // xrandr support over a fixed-size Xvfb, so the request is ignored and
+      // the canvas stays at native resolution — on a phone you get a corner of
+      // the desktop and taps land nowhere near your finger. scale fits the
+      // frame to the view and noVNC translates pointer coordinates itself.
+      'resize': 'scale',
       'reconnect': 'true',
       // A visible cursor. On a touch screen there is no hover, so without this
       // there is no way to tell where the pointer actually is.

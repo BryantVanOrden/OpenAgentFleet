@@ -28,6 +28,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 		}
 	}
 	go s.RunCronScheduler(ctx)
+	// Idle agents answer messages too; without this a broadcast to a fleet
+	// with nothing running is met with silence.
+	go s.RunPeerResponder(ctx)
 }
 
 // RunCronScheduler fires due triggers once a minute until ctx is cancelled.

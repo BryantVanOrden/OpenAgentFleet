@@ -107,13 +107,10 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 			failErr(w, err)
 			return
 		}
-		reply := &store.ChatMessage{
-			InstanceID: instanceID, TaskID: task.ID, Role: "agent",
-			Body: "Starting work on that. I will message you if I get stuck.",
-		}
-		_ = s.db.AppendChat(r.Context(), reply)
-		s.bus.Emit("chat", instanceID, task.ID, reply)
-		writeJSON(w, http.StatusAccepted, map[string]any{"task": task, "message": reply})
+		// No canned acknowledgement. A fixed "Starting work on that" line is
+		// not the agent talking, and in a conversation it reads as one — the
+		// task's own state is what actually says whether work began.
+		writeJSON(w, http.StatusAccepted, map[string]any{"task": task})
 		return
 	}
 
@@ -253,13 +250,9 @@ func (s *Server) handleApprovePlan(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("plan approved but state not recorded", "plan", planID, "err", err)
 	}
 
-	reply := &store.ChatMessage{
-		InstanceID: instanceID, TaskID: task.ID, Role: "agent",
-		Body: "Plan approved — starting work. I will message you if I get stuck.",
-	}
-	_ = s.db.AppendChat(r.Context(), reply)
-	s.bus.Emit("chat", instanceID, task.ID, reply)
-	writeJSON(w, http.StatusAccepted, map[string]any{"task": task, "message": reply})
+	// The plan bubble already shows "Approved — this became a task", so a
+	// canned agent line on top of it says the same thing twice.
+	writeJSON(w, http.StatusAccepted, map[string]any{"task": task})
 }
 
 // handleDiscardPlan closes a plan without running it.

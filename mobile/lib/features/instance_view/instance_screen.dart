@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -266,6 +267,13 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   bool _streaming = false;
   String? _frame;
   bool _loading = false;
+
+  /// Keeps the still frame current so the Desktop tab shows what the agent is
+  /// doing right now rather than a snapshot from whenever you opened it. Two
+  /// seconds is frequent enough to follow a run and cheap enough on mobile
+  /// data: /observe returns one downscaled webp, not a video stream.
+  Timer? _refresh;
+  bool _live = true;
   String? _error;
   bool _recording = false;
   WebViewController? _webView;
@@ -273,19 +281,49 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   @override
   void initState() {
     super.initState();
-    if (widget.instance.isRunning) _loadFrame();
+    if (widget.instance.isRunning) _setLive(true);
   }
 
-  Future<void> _loadFrame() async {
+  @override
+  void dispose() {
+    // A timer left running after the tab is gone keeps polling the API for a
+    // screen nobody is looking at.
+    _refresh?.cancel();
+    super.dispose();
+  }
+
+  void _setLive(bool on) {
+    setState(() => _live = on);
+    _refresh?.cancel();
+    if (on && !_streaming) {
+      _refresh = Timer.periodic(
+          const Duration(seconds: 2), (_) => _loadFrame(quiet: true));
+      _loadFrame(quiet: true);
+    }
+  }
+
+  /// [quiet] suppresses the spinner: a refresh every two seconds that flashes
+  /// a loading state would be unreadable.
+  Future<void> _loadFrame({bool quiet = false}) async {
+    if (_loading) return;
     setState(() {
-      _loading = true;
-      _error = null;
+      _loading = !quiet;
+      if (!quiet) _error = null;
     });
     try {
       final shot = await ref.read(apiProvider).observe(widget.instance.id);
-      if (mounted) setState(() => _frame = shot);
+      if (mounted) {
+        setState(() {
+          _frame = shot;
+          _error = null;
+        });
+      }
     } catch (err) {
-      if (mounted) setState(() => _error = '$err');
+      // A failed poll keeps the last good frame; only a manual refresh with
+      // nothing to show is worth an error state.
+      if (mounted && (!quiet || _frame == null)) {
+        setState(() => _error = '$err');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -294,8 +332,33 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   static bool get _canEmbedWebView =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
+  /// Raise the phone's keyboard for the remote desktop.
+  ///
+  /// noVNC's UI is an ES module, so its API is not reachable from injected
+  /// script; its control bar buttons are ordinary DOM elements, and clicking
+  /// the keyboard one focuses the hidden input that makes Android show the
+  /// soft keyboard. Keystrokes then go to the desktop, not to the page.
+  Future<void> _toggleRemoteKeyboard() async {
+    final web = _webView;
+    if (web == null) return;
+    try {
+      await web.runJavaScript(
+        "document.getElementById('noVNC_keyboard_button')?.click();",
+      );
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open the remote keyboard: $err')),
+        );
+      }
+    }
+  }
+
   void _startStream() {
     if (!_canEmbedWebView) return;
+    // The interactive stream is already live; polling stills on top of it
+    // would be pure waste.
+    _refresh?.cancel();
     final api = ref.read(apiProvider);
     setState(() {
       _streaming = true;
@@ -471,14 +534,21 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _loading
-                            ? null
-                            : () {
-                                setState(() => _streaming = false);
-                                _loadFrame();
-                              },
-                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                        label: Text(_streaming ? 'Single frame' : 'Refresh frame'),
+                        // Live by default so the tab shows what is happening
+                        // now; switchable off for a still on metered data.
+                        onPressed: () {
+                          setState(() => _streaming = false);
+                          _setLive(!_live);
+                        },
+                        icon: Icon(
+                          _live && !_streaming
+                              ? Icons.pause_circle_outline
+                              : Icons.play_circle_outline,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _live && !_streaming ? 'Pause live' : 'Go live',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -497,6 +567,17 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                         ),
                       ),
                     ),
+                    // Only useful once the stream is up, and only reachable
+                    // there — noVNC's own keyboard button lives in a control
+                    // bar that collapses to a thin handle on a phone.
+                    if (_streaming) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: _toggleRemoteKeyboard,
+                        tooltip: 'Keyboard',
+                        icon: const Icon(Icons.keyboard_alt_outlined),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 8),
