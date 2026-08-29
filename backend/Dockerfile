@@ -1,6 +1,6 @@
 # Orchestrator image. Static binary, distroless-ish runtime, no shell in the
 # final layer beyond what busybox provides for the healthcheck.
-FROM golang:1.23-alpine AS build
+FROM golang:1.25-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
