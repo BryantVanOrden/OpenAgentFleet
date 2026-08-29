@@ -1,3 +1,4 @@
+import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +17,12 @@ import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/vault/vault_screen.dart';
 
-void main() {
+void main(List<String> args) {
+  // desktop_webview_window re-executes this binary to host its title bar; that
+  // process must render only the title bar and nothing else, so it returns
+  // before the app is built.
+  if (runWebViewTitleBarWidget(args)) return;
+
   WidgetsFlutterBinding.ensureInitialized();
 
   // Registered before runApp so a notification arriving during a cold start is

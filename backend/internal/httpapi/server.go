@@ -145,6 +145,10 @@ func (s *Server) Routes() http.Handler {
 	// telemetry endpoints are LLM token accounting; per-instance CPU/memory
 	// comes from Docker. Neither answers "is the host itself saturated".
 	mux.Handle("GET /api/telemetry/host", auth(roleAny, s.handleHostStats))
+
+	// Text to speech, proxied to the tts sidecar.
+	mux.Handle("GET /api/voice/voices", auth(roleAny, s.handleListVoices))
+	mux.Handle("POST /api/voice/speak", auth(roleAny, s.handleSpeak))
 	mux.Handle("GET /api/telemetry/records", auth(roleAny, s.handleListTelemetryRecords))
 
 	mux.Handle("GET /api/alerts", auth(roleAny, s.handleListAlerts))

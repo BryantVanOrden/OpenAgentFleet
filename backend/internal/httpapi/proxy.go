@@ -20,10 +20,27 @@ import (
 // for the RFB stream itself, which needs a raw byte tunnel rather than a
 // buffering proxy.
 func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
-	claims, err := s.parseToken(tokenFrom(r))
+	id := r.PathValue("id")
+
+	// A browser sends the token only on the URL we handed it. Every asset
+	// vnc.html then pulls — its stylesheet, its JavaScript modules, its icons —
+	// is a relative URL with no token on it, so all of them used to 401. The
+	// page loaded, its code did not, and noVNC rendered as unstyled text under
+	// "noVNC encountered an error". That is the whole bug: the desktop was
+	// never broken, its client just never got its own source.
+	//
+	// So the token is accepted from the URL as before and, when it is valid,
+	// echoed back as a cookie scoped to this instance's proxy path. Subsequent
+	// asset requests carry it automatically. Nothing is made public: assets
+	// still require a valid credential, and the cookie is confined to
+	// /vnc/{id}/ so it cannot authenticate anything else.
+	claims, err := s.parseToken(vncTokenFrom(r, id))
 	if err != nil {
 		fail(w, http.StatusUnauthorized, "authentication required")
 		return
+	}
+	if q := r.URL.Query().Get("token"); q != "" {
+		setVNCCookie(w, id, q)
 	}
 	if !roleAllows(claims.Role, roleAny) {
 		fail(w, http.StatusForbidden, "insufficient role")
@@ -36,7 +53,6 @@ func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
 	// so it would not make the claim in docs/SECURITY.md true.
 	readOnly := !roleAllows(claims.Role, roleOperator)
 
-	id := r.PathValue("id")
 	inst, err := s.db.Instance(r.Context(), id)
 	if err != nil {
 		failErr(w, err)
@@ -148,4 +164,36 @@ func (s *Server) tunnelWebSocket(w http.ResponseWriter, r *http.Request, upstrea
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+// vncCookieName is per instance so a session for one desktop cannot be
+// replayed against another.
+func vncCookieName(instanceID string) string {
+	return "af_vnc_" + strings.ReplaceAll(instanceID, "-", "")
+}
+
+// vncTokenFrom takes the token from the URL, an Authorization header, or the
+// cookie set when the page was served — in that order, so an explicit token
+// always wins over a stale cookie.
+func vncTokenFrom(r *http.Request, instanceID string) string {
+	if t := tokenFrom(r); t != "" {
+		return t
+	}
+	if c, err := r.Cookie(vncCookieName(instanceID)); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+func setVNCCookie(w http.ResponseWriter, instanceID, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:  vncCookieName(instanceID),
+		Value: token,
+		// Scoped to this desktop only.
+		Path:     "/vnc/" + instanceID + "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		// Session cookie: it should not outlive the browser, and the JWT it
+		// carries has its own expiry regardless.
+	})
 }

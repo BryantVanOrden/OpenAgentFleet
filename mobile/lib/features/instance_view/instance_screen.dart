@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -336,13 +337,45 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
   static bool get _canEmbedWebView =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
-  /// ...but "no embedded view" is not "no takeover". On a desktop there is a
-  /// real browser one launch away, and it is a better VNC client than an
-  /// embedded webview: a proper window, a real keyboard, a real mouse. Only
-  /// the web build has nowhere to send it.
+  /// Linux and Windows get their own webview window instead — WebKitGTK and
+  /// WebView2 respectively, carried by the app. Depending on the system
+  /// browser turned out to be fragile: on this machine the default handler
+  /// pointed at a Chromium sitting behind a first-run terms dialog, so the
+  /// desktop opened nothing at all and gave no clue why.
+  static bool get _canUseDesktopWebView =>
+      !kIsWeb && (Platform.isLinux || Platform.isWindows);
+
   static bool get _canOpenExternally => !kIsWeb;
 
-  bool get _canTakeOver => _canEmbedWebView || _canOpenExternally;
+  bool get _canTakeOver =>
+      _canEmbedWebView || _canUseDesktopWebView || _canOpenExternally;
+
+  /// Open the desktop in the app's own webview window.
+  Future<void> _openDesktopWindow() async {
+    final api = ref.read(apiProvider);
+    final url = api.desktopUrl(widget.instance.id);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final web = await WebviewWindow.create(
+        configuration: CreateConfiguration(
+          title: '${widget.instance.name} — desktop',
+          windowWidth: 1280,
+          windowHeight: 800,
+          // Keep each instance's session separate, so switching agents does
+          // not inherit the previous one's auth cookie.
+          userDataFolderWindows: 'agentfleet_${widget.instance.id}',
+        ),
+      );
+      web.launch(url);
+    } catch (err) {
+      // A machine without WebKitGTK falls back to the system browser rather
+      // than losing takeover entirely.
+      if (mounted) await _openInBrowser();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Built-in viewer unavailable, used the browser: $err')),
+      );
+    }
+  }
 
   /// Hand the desktop to the system browser.
   Future<void> _openInBrowser() async {
@@ -624,21 +657,27 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                       child: Tooltip(
                         message: _canEmbedWebView
                             ? 'Drive the desktop directly'
-                            : _canOpenExternally
-                                ? 'Opens the desktop in your browser'
-                                : 'Takeover is unavailable on this platform',
+                            : _canUseDesktopWebView
+                                ? 'Opens the desktop in its own window'
+                                : _canOpenExternally
+                                    ? 'Opens the desktop in your browser'
+                                    : 'Takeover is unavailable on this platform',
                         child: FilledButton.icon(
                           onPressed: !_canTakeOver || (_streaming && _canEmbedWebView)
                               ? null
                               : _canEmbedWebView
                                   ? _startStream
-                                  : _openInBrowser,
+                                  : _canUseDesktopWebView
+                                      ? _openDesktopWindow
+                                      : _openInBrowser,
                           icon: Icon(
                             _canEmbedWebView
                                 ? Icons.cast_connected
-                                : _canOpenExternally
-                                    ? Icons.open_in_new
-                                    : Icons.desktop_access_disabled_outlined,
+                                : _canUseDesktopWebView
+                                    ? Icons.open_in_browser
+                                    : _canOpenExternally
+                                        ? Icons.open_in_new
+                                        : Icons.desktop_access_disabled_outlined,
                             size: 18,
                           ),
                           label: Text(_canTakeOver ? 'Take over' : 'Unavailable'),

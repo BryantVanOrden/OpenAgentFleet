@@ -25,9 +25,14 @@ dependencies:
   webview_flutter_android: ^4.3.2
   webview_flutter_wkwebview: ^3.17.0
 
-  # Opening the desktop in the system browser on platforms with no embeddable
-  # webview — Linux and Windows. There, a real browser is the better client
-  # anyway: full keyboard, real mouse, its own window.
+  # The desktop viewer on Linux and Windows. webview_flutter has no
+  # implementation there, so the app carries its own WebKitGTK/WebView2 window
+  # rather than depending on whatever browser the machine happens to have —
+  # which on this one turned out to be a Chromium stuck behind a first-run
+  # terms dialog, opening nothing.
+  desktop_webview_window: ^0.3.0
+
+  # Last-resort fallback, and for any other outbound link.
   url_launcher: ^6.3.1
 
   # Voice. On-device rather than server-side: Android and iOS both ship good
