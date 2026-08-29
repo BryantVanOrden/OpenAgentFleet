@@ -78,7 +78,14 @@ authoritative — the one input it trusts above what is on its own screen.
 
 ### Settings
 
-Access control, the credential vault, and platform limits.
+Access control and platform limits. The credential vault moved to its own
+top-level page; what remains here is the deployment secret store.
+
+> **This gallery covers eight of the console's sections.** The navigation also
+> carries Mission Control, Pipelines, Fleet Vault, MCP Hub, Financials and
+> Autopilot Sinks, plus the voice co-pilot launcher, none of which are
+> photographed here. Two of them — MCP Hub and Mission Control — front features
+> that are not finished; see the README's "What is partly built".
 
 | Dark | Light |
 | --- | --- |

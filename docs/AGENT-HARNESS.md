@@ -5,6 +5,31 @@ A critique of `backend/internal/agent/{prompt,parse,runner}.go` and
 scaffolds, with concrete replacements. External claims are cited; anything I
 could not verify is tagged **unverified**. Read `ARCHITECTURE.md` first.
 
+> **Status: a point-in-time critique. Several of its recommendations have since
+> been implemented, and its quotations of the code are stale in those places.**
+> Specifically:
+>
+> - **§3.9 proposes Set-of-Marks as future work. It shipped.**
+>   `sandbox/agentd/som.py` badges interactive elements on the frame, the prompt
+>   advertises them, and the parser accepts a `mark` on an action (the proposal
+>   called the field `ref`). A mark bypasses coordinate transformation entirely.
+> - **§3.3's coordinate recommendations shipped**, differently. The prompt no
+>   longer talks about a scale factor; it states the image's own dimensions, and
+>   `backend/internal/agent/coordspace.go` calibrates each model's convention by
+>   measurement rather than instruction.
+> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 30.
+>   The additions include `python`, `spawn_agent`, `mount_tool`, `unmount_tool`,
+>   `call_tool`, `deep_search`, `remember`, `recall`, `speak`, `message_peer`,
+>   `delegate_task`, `share_secret`, `share_session`, `snapshot` and `rollback`.
+> - **The a11y tree clip is 4000 bytes, not 6000.**
+> - **`buildTurn`'s order has changed**: a fleet/messages block now sits between
+>   the skill and the screen.
+> - One citation in §4 carries an arXiv identifier that is not a real one. Treat
+>   the external references here with more care than the code references.
+>
+> The critiques that still stand include the byte-slicing `clip()`, the unsorted
+> parameter map, and resuming an interrupted task with no history.
+
 ---
 
 ## 1. Critique

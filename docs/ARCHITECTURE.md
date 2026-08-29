@@ -10,7 +10,14 @@ One binary, one process, several concerns kept in separate packages:
 | ------------- | -------------------------------------------------------------------- |
 | `fleet`       | Provisions and supervises sandboxes over the Docker Engine REST API   |
 | `agent`       | The perceive → decide → act loop, stall detection, recursive sub-agents, and continual self-refinement |
-| `connectors`  | Normalises multimodal chat completion across OpenAI, Anthropic, Gemini, Ollama |
+| `connectors`  | Normalises chat completion across OpenAI, Anthropic, Gemini, Antigravity, Ollama and OpenAI-compatible gateways; owns the fallback chain and role-based routing through model combinations |
+| `pipeline`    | Multi-bot DAG workflows, run in topological order one node at a time |
+| `swarm`       | Shared-blackboard swarms. A data structure today; it starts no work   |
+| `memory`      | Per-instance episodic memory behind `remember` and `recall`           |
+| `mcp`         | Custom tool server registry. Does not yet speak the MCP protocol      |
+| `schedule`    | Cron parsing and the trigger scheduler                                |
+| `telemetry`   | Token counting and cost accounting                                    |
+| `config`      | Environment configuration and defaults                                |
 | `recorder`    | Compiles a raw demonstration trace into a semantic skill              |
 | `vault`       | AES-256-GCM sealed credential storage                                 |
 | `artifacts`   | Screenshots and recordings, on a filesystem or S3/MinIO               |
@@ -27,7 +34,12 @@ An Ubuntu image running, under supervisord in dependency order:
 
 ```
 Xvfb → dbus → at-spi-bus-launcher → xfce4 → x11vnc → websockify(noVNC) → agentd
+                                          ↘ x11vnc -viewonly → websockify(noVNC view)
 ```
+
+The second, view-only VNC pair is what makes the auditor role real. Auditors are
+proxied there rather than being asked not to interact, because read-only enforced
+in the client would not survive an edited URL.
 
 `agentd` is the only component with access to the virtual input devices, the framebuffer, the accessibility bus, and the stateful Python REPL engine. It exposes:
 
@@ -35,9 +47,11 @@ Xvfb → dbus → at-spi-bus-launcher → xfce4 → x11vnc → websockify(noVNC)
 | ---------------- | ------------------------------------------------------------ |
 | `GET /health`    | Readiness — grabs a frame, so "X is up" is not mistaken for "the desktop is up" |
 | `POST /observe`  | WebP frame, active window, flattened AT-SPI tree, difference hash |
-| `POST /act`      | Execute one action from the shared vocabulary (`click`, `type`, `python`, `spawn_agent`, etc.) |
+| `POST /act`      | Execute one action from the shared vocabulary (`click`, `type`, `python`, `shell`, `snapshot`, …). Note `spawn_agent` is **not** among them — it is handled entirely orchestrator-side and never reaches agentd |
 | `POST /record/*` | Start and stop a demonstration capture                        |
 | `POST /keyring`  | Inject a run-scoped credential onto tmpfs                     |
+| `DELETE /keyring`| Drop it again                                                 |
+| `GET /voice/voices`, `POST /voice/speak` | The TTS surface           |
 
 It has no authentication of its own, exactly like a kubelet: the port is never published, the sandbox network is not routable from outside, and operator authentication happens at the orchestrator's proxy.
 

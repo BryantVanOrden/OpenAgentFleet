@@ -4,10 +4,24 @@ What belongs in the desktop image, what does not, and the exact configuration to
 make it usable by an agent rather than by a person. Claims are cited; anything I
 could not verify is tagged **unverified**.
 
-This describes a target. `sandbox/Dockerfile` today ships Ubuntu 24.04 + XFCE +
-Xvfb + x11vnc + noVNC + Firefox + xdotool/wmctrl/scrot/imagemagick + AT-SPI +
-a venv for agentd, and nothing else — no file manager, no editor, no viewer, no
-office suite, no fonts beyond DejaVu and Liberation.
+This describes a target, and its picture of "today" has drifted. Two corrections
+before you read the rest:
+
+- **The baseline is bigger than stated.** `sandbox/Dockerfile` also installs git,
+  ripgrep, jq, build-essential, nano, htop, tmux, ffmpeg, nmap, net-tools,
+  dnsutils, tree, strace, lsof, openssh-client, xclip, nftables, iproute2 and
+  python3-pip. It installs the `xfce4` metapackage, which depends on Thunar — so
+  a file manager *is* present, and §5's recommendation to add one, along with
+  part of §2's case for dropping the metapackage, is already answered.
+- **Tooling is no longer baked per tier.** §3 and §9 assume the image decides
+  what an agent has. It does not: `sandbox/init-archetype.sh` and
+  `sandbox/tools.conf` install an archetype's tools at container start, including
+  operator-supplied custom recipes, and the orchestrator then reconciles the
+  agent's prompt against what actually installed. §8's proposed
+  `/etc/agentfleet/manifest.json` does not exist; `/etc/agentfleet/tools.conf`
+  does, and they are not the same thing.
+
+The rest reads correctly as forward-looking recommendation.
 
 ## 1. What agents are actually asked to do
 

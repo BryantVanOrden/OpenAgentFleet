@@ -29,6 +29,8 @@ While recording is active, `agentd` monitors:
 Raw input traces are full of noise (mouse jitter, key pauses, redundant focus events). `recorder.Compile` processes the raw trace:
 * **Typing Aggregation**: Individual printable keystrokes are merged into single `type` steps. Pauses longer than 1.2s create separate field entries.
 * **Gesture Lifting**: Clicks within 400ms and 6px are merged into `double_click`.
+  This happens in the recorder itself (`sandbox/agentd/recorder.py`), not in
+  `compile.go`; the thresholds quoted here are that file's.
 * **Focus Normalization**: Redundant window switches and temporary focus changes are eliminated.
 * **Label Preservation**: Every step retains its accessible `role` and `label`, with screen coordinates stored only as a secondary fallback.
 
@@ -54,9 +56,16 @@ Verify each outcome on screen before moving on.
 
 ---
 
-## 4. Continual Harness & AI Self-Refinement (Prime Agent Integration)
+## 4. Continual refinement
 
-Static procedures can decay as software updates. Inspired by Prime Agent's continual learning harness, AgentFleet includes an **Autonomous Refinement Engine** ([`backend/internal/agent/refine.go`](file:///c:/Users/borden/Documents/Code/Apps/AgentFleet/backend/internal/agent/refine.go)).
+Static procedures decay as the software underneath them changes. The refinement
+engine lives in
+[`backend/internal/agent/refine.go`](../backend/internal/agent/refine.go).
+
+It runs automatically **on success only**, and only when the task set auto-refine
+or was launched against an existing skill. A failed run is not analysed. Both
+paths can also be triggered by hand: `POST /api/skills/{id}/refine` and
+`POST /api/tasks/{id}/synthesize-skill`.
 
 ```
 ┌────────────────────────┐
@@ -92,5 +101,7 @@ If an operator launches an agent with a natural-language goal and **no prior dem
 
 In the React Admin Console (**Skills** page):
 * **Parameterization**: Mark typed strings as template variables (e.g. `{{branch}}`, `{{username}}`). When launching a task, operators pass runtime parameter values.
-* **Step Reordering & Pruning**: Operators can delete missteps, adjust timeout bounds, or insert custom `assert` conditions.
+* **Step reordering and pruning**: Operators can delete missteps and move steps.
+  Adjusting timeout bounds and inserting `assert` steps are not implemented — the
+  Skills page has no control for either.
 * **"⚡ AI Refine" Button**: Trigger immediate AI refinement on any skill against its latest execution history.
