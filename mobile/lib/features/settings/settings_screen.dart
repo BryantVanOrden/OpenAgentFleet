@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'host_usage_card.dart';
-import 'providers_screen.dart';
-import '../admin/orgs_screen.dart';
 import '../auth/login_screen.dart';
 import 'theme_card.dart';
 
@@ -14,6 +12,14 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Re-read on arrival, so settings opened after something changed
+    // elsewhere is not showing what was true at app start.
+    ref.listen(tabRefreshProvider(Tabs.settings), (_, __) {
+      ref.invalidate(serverVoicesProvider);
+      ref.invalidate(hostStatsProvider);
+      ref.invalidate(meProvider);
+    });
+
     final api = ref.watch(apiProvider);
     final connected = ref.watch(connectionProvider).valueOrNull ?? false;
 
@@ -88,38 +94,6 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Card(
-            color: Fleet.ink850,
-            child: ListTile(
-              leading: Icon(Icons.hub_outlined, color: Fleet.ink300),
-              title: const Text('AI connections'),
-              subtitle: Text(
-                'Add engines, pick models, set the fallback order',
-                style: TextStyle(color: Fleet.ink400, fontSize: 11),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const ProvidersScreen(),
-              )),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Card(
-            color: Fleet.ink850,
-            child: ListTile(
-              leading: Icon(Icons.apartment_outlined, color: Fleet.ink300),
-              title: const Text('Departments and access'),
-              subtitle: Text(
-                'Who can see and drive which bots, and use which secrets',
-                style: TextStyle(color: Fleet.ink400, fontSize: 11),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const OrgsScreen(),
-              )),
             ),
           ),
           const SizedBox(height: 20),

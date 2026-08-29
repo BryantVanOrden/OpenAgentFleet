@@ -128,6 +128,9 @@ class _ControlMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Model chains are deployment-wide: which engines the fleet pays
+    // for and which one sees a bot's screen. The route is admin-only.
+    final isAdmin = ref.watch(meProvider).valueOrNull?.isAdmin ?? false;
     Future<void> act(String action) async {
       final api = ref.read(apiProvider);
       final messenger = ScaffoldMessenger.of(context);
@@ -342,8 +345,12 @@ class _ControlMenu extends ConsumerWidget {
             subtitle: Text('Who may see and drive this bot'),
           ),
         ),
-        PopupMenuItem(
-          value: 'models',
+        // Model chains are a deployment-wide concern: which engines the fleet
+        // pays for and which one sees a bot's screen. The route is admin-only,
+        // so offering the item to everyone else only produced a refusal.
+        if (isAdmin)
+          PopupMenuItem(
+            value: 'models',
           child: ListTile(
             dense: true,
             leading: const Icon(Icons.memory_outlined),

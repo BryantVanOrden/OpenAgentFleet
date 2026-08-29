@@ -146,3 +146,33 @@ final webhookTriggersProvider = FutureProvider<List<WebhookTrigger>>(
 /// deployed, which is a supported configuration rather than an error.
 final serverVoicesProvider = FutureProvider<List<ServerVoice>>(
     (ref) => ref.watch(apiProvider).serverVoices());
+
+
+/// The signed-in operator, for deciding which surfaces to offer.
+///
+/// Watched against [sessionProvider] like the rest, so signing out and back in
+/// as someone else re-reads the role rather than keeping the last person's.
+final meProvider = FutureProvider<CurrentUser>((ref) {
+  ref.watch(sessionProvider);
+  return ref.read(apiProvider).me();
+});
+
+
+/// Which bottom-nav tab is which, so the shell and the screens agree.
+class Tabs {
+  static const fleet = 0;
+  static const pipelines = 1;
+  static const vault = 2;
+  static const alerts = 3;
+  static const settings = 4;
+  static const admin = 5;
+}
+
+/// Bumped every time a tab is selected.
+///
+/// The shell keeps every tab alive in an IndexedStack, so a screen that loads
+/// in initState loads once and then shows whatever it fetched when the app
+/// started — for the rest of the session. Vault, Pipelines and the provider
+/// settings all did. Listening to this lets a screen reload when you actually
+/// arrive at it, which is when you expect it to be current.
+final tabRefreshProvider = StateProvider.family<int, int>((ref, index) => 0);

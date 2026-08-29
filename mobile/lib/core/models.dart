@@ -1322,3 +1322,108 @@ class ServerVoice {
         preset: j['preset'] as bool? ?? false,
       );
 }
+
+
+/// The signed-in operator.
+///
+/// The app used to keep only the token, so it had no idea what the person
+/// using it was allowed to do — every screen was offered to everyone and the
+/// server refused the ones they could not have. Knowing the role lets the
+/// admin surfaces be hidden rather than merely denied.
+class CurrentUser {
+  const CurrentUser({
+    required this.id,
+    required this.email,
+    required this.role,
+  });
+
+  final String id;
+  final String email;
+
+  /// 'admin', 'operator', 'auditor' or 'viewer'.
+  final String role;
+
+  /// Deployment administrator: provider connections, users, departments and
+  /// API keys. Not the same as an org role, which scopes one department.
+  bool get isAdmin => role == 'admin';
+
+  factory CurrentUser.fromJson(Map<String, dynamic> j) => CurrentUser(
+        id: j['id'] as String? ?? '',
+        email: j['email'] as String? ?? '',
+        role: j['role'] as String? ?? '',
+      );
+}
+
+
+/// A person with an account on this deployment.
+class AdminUser {
+  const AdminUser({
+    required this.id,
+    required this.email,
+    required this.role,
+    required this.createdAt,
+    this.disabledAt,
+  });
+
+  final String id;
+  final String email;
+  final String role;
+  final DateTime createdAt;
+
+  /// Set when the account has been turned off. Disabled rather than deleted,
+  /// so what they did stays traceable and their keys die with them.
+  final DateTime? disabledAt;
+
+  bool get disabled => disabledAt != null;
+
+  static const roles = ['admin', 'operator', 'auditor', 'viewer'];
+
+  factory AdminUser.fromJson(Map<String, dynamic> j) => AdminUser(
+        id: j['id'] as String? ?? '',
+        email: j['email'] as String? ?? '',
+        role: j['role'] as String? ?? 'operator',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
+        disabledAt: DateTime.tryParse(j['disabled_at'] as String? ?? ''),
+      );
+}
+
+/// A long-lived access key for scripts and CI.
+class ApiKey {
+  const ApiKey({
+    required this.id,
+    required this.name,
+    required this.userEmail,
+    required this.createdAt,
+    this.lastUsedAt,
+    this.revokedAt,
+    this.secret = '',
+  });
+
+  final String id;
+  final String name;
+  final String userEmail;
+  final DateTime createdAt;
+
+  /// Null for a key that has never been used, which is how a key issued and
+  /// forgotten is told apart from one in daily service.
+  final DateTime? lastUsedAt;
+  final DateTime? revokedAt;
+
+  /// Only ever set on the response that creates the key. There is no second
+  /// copy to fetch later.
+  final String secret;
+
+  bool get revoked => revokedAt != null;
+
+  factory ApiKey.fromJson(Map<String, dynamic> j) => ApiKey(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        userEmail: j['user_email'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
+        lastUsedAt: DateTime.tryParse(j['last_used_at'] as String? ?? ''),
+        revokedAt: DateTime.tryParse(j['revoked_at'] as String? ?? ''),
+        secret: j['secret'] as String? ?? '',
+      );
+}

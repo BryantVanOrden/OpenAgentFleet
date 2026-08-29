@@ -16,10 +16,25 @@ class AlertsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Refresh on arrival as well as on the button: the shell keeps this tab
+    // alive, so without it you would be reading whatever the stream last
+    // delivered rather than what is true now.
+    ref.listen(tabRefreshProvider(Tabs.alerts),
+        (_, __) => ref.invalidate(alertsProvider));
+
     final alerts = ref.watch(alertsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Alerts')),
+      appBar: AppBar(
+        title: const Text('Alerts'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
+            onPressed: () => ref.invalidate(alertsProvider),
+          ),
+        ],
+      ),
       body: alerts.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) =>

@@ -105,6 +105,61 @@ class ApiClient {
 
   Future<void> logout() => _setToken(null);
 
+  // --------------------------------------------------- administration ---
+
+  Future<List<AdminUser>> adminUsers() async {
+    final data = await _get('/api/users') as List? ?? const [];
+    return data
+        .map((e) => AdminUser.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<AdminUser> createUser(
+      String email, String password, String role) async {
+    final data = await _post('/api/users', {
+      'email': email,
+      'password': password,
+      'role': role,
+    }) as Map;
+    return AdminUser.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> setUserRole(String id, String role) =>
+      _put('/api/users/$id/role', {'role': role});
+
+  /// Reset someone's password. On a deployment with no mail server this is the
+  /// only way back in for an account that is locked out.
+  Future<void> setUserPassword(String id, String password) =>
+      _put('/api/users/$id/password', {'password': password});
+
+  /// Turn an account on or off. Disabling also stops every key it holds.
+  Future<void> setUserDisabled(String id, bool disabled) =>
+      _put('/api/users/$id/disabled', {'disabled': disabled});
+
+  Future<List<ApiKey>> apiKeys() async {
+    final data = await _get('/api/api-keys') as List? ?? const [];
+    return data
+        .map((e) => ApiKey.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Issue a key. The returned secret is the only copy that will ever exist.
+  Future<ApiKey> createApiKey(String name, {String userId = ''}) async {
+    final data = await _post('/api/api-keys', {
+      'name': name,
+      if (userId.isNotEmpty) 'user_id': userId,
+    }) as Map;
+    return ApiKey.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> revokeApiKey(String id) => _delete('/api/api-keys/$id');
+
+  /// Who is signed in, and what they are allowed to reach.
+  Future<CurrentUser> me() async {
+    final data = await _get('/api/me') as Map;
+    return CurrentUser.fromJson(data.cast<String, dynamic>());
+  }
+
   // ----------------------------------------------------------------- fleet ---
 
   Future<List<Instance>> instances() async {

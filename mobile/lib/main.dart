@@ -9,6 +9,7 @@ import 'core/state.dart';
 import 'core/theme/theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/alerts/alerts_screen.dart';
+import 'features/admin/admin_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
 import 'features/pipelines/pipelines_screen.dart';
@@ -155,25 +156,43 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
 
+  /// Tell the tab being opened to reload.
+  ///
+  /// Everything lives in an IndexedStack, so screens are built once and kept.
+  /// Without this they show what they fetched when the app started.
+  void _select(int i) {
+    setState(() => _index = i);
+    ref.read(tabRefreshProvider(i).notifier).state++;
+  }
+
   @override
   Widget build(BuildContext context) {
     final blocking = ref.watch(blockingAlertCountProvider);
     final connected = ref.watch(connectionProvider).valueOrNull ?? false;
+    // Administration is a separate place, and only for administrators. A
+    // non-admin never sees the tab rather than being refused inside it.
+    final isAdmin = ref.watch(meProvider).valueOrNull?.isAdmin ?? false;
+
+    // Losing admin mid-session (signed out, role changed) must not leave the
+    // stack pointing at a child that is no longer there.
+    final pageCount = isAdmin ? 6 : 5;
+    final index = _index < pageCount ? _index : 0;
 
     return Scaffold(
       body: IndexedStack(
-        index: _index,
-        children: const [
-          FleetScreen(),
-          PipelinesScreen(),
-          VaultScreen(),
-          AlertsScreen(),
-          SettingsScreen(),
+        index: index,
+        children: [
+          const FleetScreen(),
+          const PipelinesScreen(),
+          const VaultScreen(),
+          const AlertsScreen(),
+          const SettingsScreen(),
+          if (isAdmin) const AdminScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        selectedIndex: index,
+        onDestinationSelected: _select,
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.grid_view_outlined),
@@ -207,6 +226,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             selectedIcon: const Icon(Icons.settings_rounded),
             label: 'Settings',
           ),
+          if (isAdmin)
+            const NavigationDestination(
+              icon: Icon(Icons.admin_panel_settings_outlined),
+              selectedIcon: Icon(Icons.admin_panel_settings),
+              label: 'Admin',
+            ),
         ],
       ),
     );

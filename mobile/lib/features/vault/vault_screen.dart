@@ -153,6 +153,11 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    // Reload when this tab is opened. The shell keeps every tab alive in an
+    // IndexedStack, so loading in initState alone meant showing whatever was
+    // fetched when the app started, for the rest of the session.
+    ref.listen(tabRefreshProvider(Tabs.vault), (_, __) => _load());
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Vault'),
