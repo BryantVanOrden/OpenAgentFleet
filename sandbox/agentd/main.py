@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 import a11y
@@ -130,7 +130,7 @@ def observe(req: ObserveRequest) -> dict:
     if req.som and req.screenshot:
         try:
             from som import annotate_frame
-            nodes = a11y.snapshot() if req.a11y else []
+            nodes = a11y.nodes() if req.a11y else []
             if nodes:
                 annotated_img, marks = annotate_frame(frame.image, nodes, origin=frame.origin)
                 frame = capture.Frame(
@@ -341,7 +341,7 @@ def act(req: ActRequest) -> dict:
         return {"ok": ok, "detail": "search completed", "stdout": out}
 
     # snapshot/rollback are workspace time-machine operations, not code
-    # execution: they tar and restore /home/agent/workspace, so they run
+    # execution: they tar and restore /home/agent/work, so they run
     # regardless of ALLOW_SHELL. The orchestrator leaves them ungated for the
     # same reason. SnapshotEngine is a long-lived singleton so its in-memory
     # history survives across /act calls within a run.
@@ -432,7 +432,7 @@ class KeyringEntry(BaseModel):
 
 
 @app.post("/keyring")
-def keyring_put(entry: KeyringEntry) -> JSONResponse:
+def keyring_put(entry: KeyringEntry) -> Response:
     """Store a credential for the duration of a run.
 
     Files land in a tmpfs-backed directory readable only by the agent user, so a
@@ -446,15 +446,15 @@ def keyring_put(entry: KeyringEntry) -> JSONResponse:
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(entry.value)
     os.chmod(path, 0o600)
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)
 
 
 @app.delete("/keyring")
-def keyring_clear() -> JSONResponse:
+def keyring_clear() -> Response:
     if os.path.isdir(KEYRING_DIR):
         for name in os.listdir(KEYRING_DIR):
             try:
                 os.remove(os.path.join(KEYRING_DIR, name))
             except OSError:
                 pass
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)
