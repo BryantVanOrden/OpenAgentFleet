@@ -198,4 +198,4 @@ To connect your phone or laptop companion app to your AgentFleet orchestrator fr
 | **Multi-Bot DAG Pipeline Dispatcher** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Live Single-Frame Desktop Viewer** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **FCM / APNs Push Notifications** | ✅ | ✅ | ✖ | ✖ | ✖ |
-| **Interactive noVNC WebView Takeover**| ✅ | ✅ | ✅ | *Use Web Console* | *Use Web Console* |
+| **Interactive noVNC WebView Takeover**| ✅ | ✅ | ✅ | ✅ (CEF) | ✅ (CEF) |

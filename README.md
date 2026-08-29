@@ -1,8 +1,8 @@
 # AgentFleet
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Flutter-3.24+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/License-NonCommercial_1.0-orange?style=for-the-badge" alt="License" />
@@ -34,56 +34,136 @@
 
 ---
 
-## Key Superpowers
+## What it does
 
-* 🛡️ **Hard-Sandboxed Desktops**: Containerized Ubuntu XFCE sessions governed by strict cgroup envelopes (CPU, RAM, disk quotas), optional GPU passthrough, and kernel-level `nftables` network egress policies.
-* ⏪ **OS Snapshot Time-Machine & Auto-Rollback**: Instant copy-on-write workspace snapshots before risky file/system actions with automatic rollback if assertions fail.
-* 🔌 **Native Model Context Protocol (MCP) Bridge**: Connect Anthropic open-standard MCP tool servers (GitHub, Postgres, Slack, Brave Search, AWS) out of the box with zero custom code.
-* ⛓️ **Multi-Bot Workflow DAG Pipelines**: Visual multi-agent workflow DAG builder chaining specialist bots across sequential stages (e.g. Audit ➔ Code ➔ Test ➔ PR).
-* 📊 **Token Cost & Financial Telemetry Cockpit**: Live tracking of Prompt, Completion, and Cached tokens, model response latency, and dollar spend ($ USD).
-* 📦 **Portable `.agentfleet.yaml` Archetype Hub**: One-click serialization, export, and import of complete bot personas, tools, and environments.
-* 🎬 **Interactive Grok-Style Demonstration Recording HUD**: Teach bots by doing! Record live desktop demonstrations that compile directly into semantic `SKILL.md` playbooks.
-* 🎙️ **Pocket TTS Real-Time Voice Co-Pilot**: Ultra-low-latency CPU text-to-speech powered by Kyutai Labs' Pocket TTS with 6 curated voice models (4 Male: **Shadow** [default], Atlas, Vortex, Echo; 2 Female: Aura, Lyra) for spoken duplex dialogue.
-* 🐝 **Autonomous Multi-Agent Swarms & Mission Control**: Collaborative multi-bot team swarms operating on a shared blackboard with peer review and real-time deliverable handoffs.
-* 🔐 **Shared Fleet Vault & Inter-Agent Comms**: Direct peer-to-peer inter-bot messaging, broadcast channels, shared secret variables, and browser cookie/session handoffs.
-* 🧠 **Persistent Long-Term Episodic Vector Memory**: Cross-fleet semantic memory index for storing and retrieving successful workflows, API workarounds, and AT-SPI coordinates across all sandboxes.
-* ⚡ **Event-Driven Webhook Sinks & 24/7 Autopilot**: Public ingress endpoints (`/api/webhooks/{token}`) for GitHub PRs, Comp AI CRM leads, Stripe events, plus autonomous background cron schedules.
-* 👁️ **Hybrid Visual & Accessibility Perception**: Blends high-resolution WebP visual frames with AT-SPI semantic accessibility trees. Automatic image-to-display coordinate mapping ensures pixel-perfect interaction across arbitrary resolutions.
-* 🧠 **Continual Harness & AI Self-Refinement**: Post-task refinement engine inspects execution trajectories to self-heal fragile coordinate clicks into robust accessible selectors, automatically evolving `SKILL.md` workflows from `v1` to `v2`.
-* 🔀 **Recursive Sub-Agent Orchestration**: Agents can dynamically spawn and coordinate child sub-agents (`spawn_agent`) to handle parallel research, compilation, or verification tasks with full parent-child hierarchy tracking.
-* 🐍 **Persistent Python REPL Substrate**: Embeds a stateful, interactive Python REPL inside the sandbox daemon (`agentd`). Agents can manipulate data, query the AT-SPI bus programmatically, and maintain state variables across turns.
-* 📱 **Mobile Human-in-the-Loop Triage**: First-class Flutter mobile companion with time-sensitive push dispatch for CAPTCHAs, MFA, and human approvals with 1-tap resolution.
-* 🌐 **Universal Model Fallback Chain**: Works out-of-the-box with local vision models (Ollama / `qwen2.5vl:7b`), OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible gateway (vLLM, LiteLLM) configured as a resilient fallback chain.
+- **Sandboxed desktops.** Each bot is a container running Ubuntu with XFCE, under
+  cgroup limits on CPU and memory with swap disabled, an optional GPU device
+  request, and an optional nftables egress policy. See [Security](docs/SECURITY.md)
+  for what that isolation is and is not worth.
+- **A perceive-decide-act loop.** Each turn the agent gets a WebP frame with
+  Set-of-Marks badges over interactive elements, the AT-SPI accessibility tree,
+  and its own history; it replies with one JSON action. Coordinate conventions
+  are calibrated per model automatically, because vision models disagree about
+  whether a coordinate is a pixel or a fraction and will not tell you which.
+- **Model combinations.** Name a mapping from roles — vision, reasoning, chat,
+  summarize, refine — to different models, and use it anywhere a single provider
+  would go. A bot's fallback chain can mix single providers and combinations, so
+  "these two models, and if neither answers, that one" is one list.
+- **Organisations, departments and per-bot permissions.** Beyond the three
+  platform roles, organisations have their own members and org roles, and
+  individual bots carry permission grants.
+- **Teaching by demonstration.** Record a human doing the task; the trace is
+  compiled into a `SKILL.md` of semantic steps, editable in the console. After a
+  successful run the agent can rewrite its own skill, replacing brittle
+  coordinate clicks with accessible labels.
+- **Escalation to a human.** An unchanged screen across several actions, or an
+  action the agent should not take alone — a CAPTCHA, an MFA prompt, a payment —
+  parks the task and raises an alert, with the screen as it was at the moment it
+  stopped. Answer from the console or the phone and the run continues.
+- **A stateful Python REPL in the sandbox.** Variables, handles and browser
+  sessions persist across turns, so a workflow that would be forty clicks can be
+  a few lines instead.
+- **Custom tools.** Choose which tools an archetype installs, and add your own
+  recipes.
+- **Workspace snapshots.** A tarball of the agent's working directory, taken
+  before a risky step and restored when the agent asks to roll back.
+- **Sub-agents.** An agent can spawn children, bounded by depth, siblings per
+  task and total concurrent tasks. Children run on the same desktop as the
+  parent, so they suit parallel research rather than parallel GUI work.
+- **Chat, conversations and identity.** Per-bot named chat sessions that can be
+  pinned; fleet-wide conversations with membership; and a sender identity on each
+  message, so an agent knows who is speaking rather than reading an
+  undifferentiated stream. A bot can propose a plan and wait for approval instead
+  of acting immediately.
+- **Pipelines.** Multi-bot DAG workflows, executed in topological order and
+  resumable after an orchestrator restart. See the note below on what the engine
+  does not yet do.
+- **Triggers.** Webhook ingress on a per-webhook token with optional HMAC, and a
+  cron scheduler. Both persist across restarts.
+- **Cost telemetry.** Prompt and completion tokens, latency and a dollar estimate
+  per call, from a hand-maintained price table.
+- **A phone app.** Flutter, on Android, iOS, macOS, Linux and Windows, with push
+  alerts and interactive takeover on all five.
 
-## Pre-Configured Bot Archetypes
+### What is partly built
 
-AgentFleet includes 11 out-of-the-box, role-specialized agent personas equipped with domain tools, curated repositories, and structured Domain Operating Playbooks:
+Stated here rather than left to be discovered. None of the following is finished,
+and some of it is a stub behind a working-looking screen.
 
-| Archetype | Icon | Category | Recommended Hardware | Pre-installed Tooling & Curated Repos |
+- **MCP bridge.** `backend/internal/mcp` registers servers and lists tools, but it
+  speaks no MCP: there is no JSON-RPC, no stdio or SSE transport, and `CallTool`
+  returns a canned response without executing anything. The transport, command
+  and URL fields are stored and never read, registrations do not survive a
+  restart, and agents cannot reach it at all — the `call_mcp` action is not in the
+  parser's accepted set. Treat the MCP Hub screen as a placeholder.
+- **Swarms.** The coordinator is an in-memory CRUD store with a shared message
+  list. Creating a swarm does not create tasks, start instances or run anything,
+  and with no members specified it fabricates three bots that do not exist. There
+  is no peer review and no route to publish an artifact.
+- **Pipeline execution.** The engine runs nodes one at a time, in topological
+  order. It does not run independent nodes in parallel, and it does not evaluate
+  edge conditions — a `condition` on an edge is stored and displayed and nothing
+  acts on it. There is also no graph builder: the console's create button posts a
+  fixed three-node pipeline, and everything else is a viewer.
+- **Archetype export/import.** The SDK writes an `.agentfleet.json` manifest
+  (not `.agentfleet.yaml`), with tools and recorded skills left empty. `hub
+  import` reads the file and prints a summary; it does not create anything. There
+  is no endpoint and no UI.
+- **Voice.** The Pocket TTS sidecar is real and serves speech over
+  `/api/voice/speak`. But the agent's own `speak` action does not reach it — it
+  falls through to a tone generator in the sandbox whose output is discarded —
+  and the console's voice co-pilot uses the browser's own speech synthesis. The
+  default voice is `echo`, not `shadow`.
+- **Memory.** Persistent and useful, but it is a bag-of-words index scanned
+  linearly, not embeddings, and it is per-bot: nothing ever writes to the shared
+  namespace, so one agent's discovery is not retrievable by another.
+- **Cached-token accounting.** The column exists and is summed; nothing ever
+  populates it, so it is always zero.
+- **Webhooks are generic.** One token endpoint that renders a goal template. There
+  is no GitHub, Stripe or CRM specific parsing; Stripe's signature scheme in
+  particular is not understood.
+- **`developer-heavy` needs an image that is not built here.** The tier asks for
+  `agentfleet/sandbox:latest-dev`, and no Dockerfile or make target produces that
+  tag. Build it yourself or override the image per instance.
+
+## Bot archetypes
+
+Eleven role-specialised personas, each with a default tier, a tool list and an
+operating playbook. The tool lists below are what the archetype *asks* for.
+Installation happens at container start and some of it fails — the orchestrator
+reconciles the agent's prompt against what actually landed, so the model is told
+what it really has rather than what the template hoped for.
+
+For the vCPU and memory behind each tier name, see
+[Hardware profiles](#hardware-profiles-and-isolation-tiers) below. Earlier
+revisions of this table carried its own numbers, and they were wrong.
+
+| Archetype | Icon | Category | Default tier | Tooling the archetype asks for |
 | :--- | :---: | :--- | :--- | :--- |
-| **Fleet Manager & Commander** | 🎯 | Management | `standard` (4 vCPU, 8 GB) | `tmux`, `git`, `gh`, `ripgrep`, `jq`, `curl`, `n8n`, `htop`, `tree` — decomposes goals & delegates to specialists |
-| **CyberSec PenTester** | 🛡️ | Security | `standard` (4 vCPU, 8 GB) | `nmap`, `wireshark`, `ffuf`, `metasploit`, `ghidra`, `semgrep`, `sqlmap`, `burpsuite`, `nuclei`, `subfinder`, `SecLists` |
-| **Full-Stack Architect** | 💻 | Engineering | `developer-heavy` (8 vCPU, 16 GB) | VS Code, Node/Bun/pnpm, Go, Python, Rust, Docker CLI, PostgreSQL, Redis, Playwright, `gh`, `lazygit`, `ripgrep` |
-| **DevOps & Cloud SRE** | ⚙️ | DevOps | `developer-heavy` (8 vCPU, 16 GB) | `kubectl`, `helm`, `terraform`, `ansible`, `k9s`, `docker`, `aws-cli`, `gcloud`, `promql-cli`, `grafana-cli`, `trivy` |
-| **QA & UI/UX Auditor** | 🎨 | QA & Design | `standard` (4 vCPU, 8 GB) | Playwright, Cypress, Lighthouse CI, Pa11y, Axe-Core, GIMP, Figma Web, ImageMagick, Screenkey |
-| **Game Dev & 3D Engine** | 🎮 | Gaming & 3D | `developer-heavy` (8 vCPU, 32 GB, GPU) | Godot Engine 4, Blender 3D, Aseprite, Pygame, GLTF validator, Shader compiler, RenderDoc, MeshLab |
-| **Social Media & Growth** | 📱 | Marketing | `micro` (2 vCPU, 4 GB) | Chromium Multi-Profile, Postiz/Buffer CLI, Photopea, FFmpeg Short-Clipper, `yt-dlp`, Whisper |
-| **Media Studio & Video** | 🎬 | Creative | `power-user` (8 vCPU, 24 GB, GPU) | FFmpeg, Kdenlive, Audacity, Whisper AI Transcriber, ImageMagick, ComfyUI, OBS Studio, HandBrake |
-| **Agentic CRM (Comp AI)** | 🤝 | Sales & CRM | `standard` (4 vCPU, 8 GB) | Comp AI CRM (`trycompai/crm`), PostgreSQL, Email Drafting Engine, Lead Enrichment API, DuckDB, `n8n` |
-| **Data Scientist & Quant** | 📈 | Data & Finance | `developer-heavy` (8 vCPU, 16 GB) | JupyterLab, Polars, DuckDB, Pandas, yfinance, Plotly, SciPy, Quarto, TA-Lib, Scikit-Learn |
-| **Deep Academic Researcher**| 🔬 | Research | `standard` (4 vCPU, 8 GB) | Zotero, Pandoc, Typst, LaTeX, PDFMiner, BeautifulSoup4, WeasyPrint, Calibre |
+| **Fleet Manager & Commander** | 🎯 | Management | `standard` | `tmux`, `git`, `gh`, `ripgrep`, `jq`, `curl`, `n8n`, `htop`, `tree` — decomposes goals & delegates to specialists |
+| **CyberSec PenTester** | 🛡️ | Security | `standard` | `nmap`, `wireshark`, `ffuf`, `metasploit`, `ghidra`, `semgrep`, `sqlmap`, `burpsuite`, `nuclei`, `subfinder`, `SecLists` |
+| **Full-Stack Architect** | 💻 | Engineering | `developer-heavy` | VS Code, Node/Bun/pnpm, Go, Python, Rust, Docker CLI, PostgreSQL, Redis, Playwright, `gh`, `lazygit`, `ripgrep` |
+| **DevOps & Cloud SRE** | ⚙️ | DevOps | `developer-heavy` | `kubectl`, `helm`, `terraform`, `ansible`, `k9s`, `docker`, `aws-cli`, `gcloud`, `promql-cli`, `grafana-cli`, `trivy` |
+| **QA & UI/UX Auditor** | 🎨 | QA & Design | `standard` | Playwright, Cypress, Lighthouse CI, Pa11y, Axe-Core, GIMP, Figma Web, ImageMagick, Screenkey |
+| **Game Dev & 3D Engine** | 🎮 | Gaming & 3D | `developer-heavy` | Godot Engine 4, Blender 3D, Aseprite, Pygame, GLTF validator, Shader compiler, RenderDoc, MeshLab |
+| **Social Media & Growth** | 📱 | Marketing | `micro` | Chromium Multi-Profile, Postiz/Buffer CLI, Photopea, FFmpeg Short-Clipper, `yt-dlp`, Whisper |
+| **Media Studio & Video** | 🎬 | Creative | `power-user` | FFmpeg, Kdenlive, Audacity, Whisper AI Transcriber, ImageMagick, ComfyUI, OBS Studio, HandBrake |
+| **Agentic CRM (Comp AI)** | 🤝 | Sales & CRM | `standard` | Comp AI CRM (`trycompai/crm`), PostgreSQL, Email Drafting Engine, Lead Enrichment API, DuckDB, `n8n` |
+| **Data Scientist & Quant** | 📈 | Data & Finance | `developer-heavy` | JupyterLab, Polars, DuckDB, Pandas, yfinance, Plotly, SciPy, Quarto, TA-Lib, Scikit-Learn |
+| **Deep Academic Researcher**| 🔬 | Research | `standard` | Zotero, Pandoc, Typst, LaTeX, PDFMiner, BeautifulSoup4, WeasyPrint, Calibre |
 
 ---
 
-## 🐍 Python SDK & `fleetctl` CLI
+## Python SDK and the `fleetctl` CLI
 
-AgentFleet includes a pip-installable Python client SDK and command-line utility:
+A Python client and command-line utility live in `sdk/python`. They are not on
+PyPI yet, so install from the repository:
 
 ```bash
-pip install agentfleet
+pip install -e ./sdk/python
 ```
 
-### Programmatic Python Usage:
+### Python
 ```python
 from agentfleet import FleetClient
 
@@ -98,11 +178,11 @@ print(f"Result: {task.result}")
 # Launch multi-agent swarm
 swarm = fleet.launch_swarm("Fintech Audit", "Full-Stack + QA + CyberSec collaborative team")
 
-# Pocket TTS Voice Feedback (6 curated voices, Shadow default)
-fleet.speak("Task execution finished successfully, operator.", voice="shadow")
+# Speech through the TTS sidecar
+fleet.speak("Task execution finished.", voice="shadow")
 ```
 
-### Command-Line Utility (`fleetctl`):
+### Command line
 ```bash
 # Run comprehensive platform diagnostics
 fleetctl diagnostics
@@ -120,7 +200,7 @@ fleetctl voice speak "All systems operational." --voice shadow
 
 ---
 
-## Hardware Profiles & Isolation Tiers
+## Hardware profiles and isolation tiers
 
 AgentFleet ships with four pre-configured hardware tiers:
 
@@ -145,7 +225,7 @@ overridden per instance. Two caveats worth stating rather than discovering:
 
 ## What it looks like
 
-Real screenshots of the running console — regenerate with `make screenshots`.
+Screenshots of the running console, regenerated with `make screenshots`.
 
 <p align="center">
   <img src="docs/images/fleet-dark-amber.png" alt="Fleet dashboard" width="900">
@@ -192,34 +272,45 @@ identically into the Flutter companion app.
 
 More in the [interface gallery](docs/UI.md).
 
-## Quick Start
+## Quick start
 
-### 1-Click Interactive Bootstrap
+You need Docker with Compose v2, and `make`. Everything else runs in containers.
 
-Clone the repo and run the interactive quickstart script (auto-checks Docker, generates cryptographically secure `.env` secrets, and boots the entire fleet):
-
-**Linux / macOS:**
 ```bash
 git clone https://github.com/BryantVanOrden/AgentFleet.git
 cd AgentFleet
-./scripts/quickstart.sh
+
+make doctor   # Docker, RAM, ports, model endpoints
+make env      # writes .env with fresh JWT_SECRET and MASTER_KEY, and your docker GID
+make up       # builds the sandbox image, then starts the stack
 ```
 
-**Windows PowerShell:**
-```powershell
-git clone https://github.com/BryantVanOrden/AgentFleet.git
-cd AgentFleet
-.\scripts\quickstart.ps1
-```
+Use the `make` path rather than `scripts/quickstart.sh`. The script does not
+compute `DOCKER_GID`, does not build the sandbox image, and writes two keys the
+orchestrator does not read — so the first bot you try to launch will fail. It
+also ships without the executable bit set, so it needs `bash scripts/quickstart.sh`
+rather than `./scripts/quickstart.sh`.
 
-Once started:
-1. Open the Admin Console at **<http://localhost:5173>** (or <http://localhost:8080>).
-2. Under **AI Connections**, configure your models (e.g. Claude ➔ Google Antigravity ➔ Local Ollama) in your desired **Tiered Fallback Chain**.
-3. Click **⚡ Launch an Agent** to deploy your first autonomous desktop bot!
+The first `make up` builds the TTS image, which is Torch-based and takes a while.
+That is expected.
+
+Then:
+
+1. Open the admin console at <http://localhost:8081>. The API is on 8080 and
+   serves no UI.
+2. Create the first administrator. The bootstrap endpoint is available only while
+   there are no users.
+3. Under **AI Connections**, add at least one model provider — an API key, an
+   in-app sign-in, or a local Ollama endpoint.
+4. Launch an agent.
+
+On Windows, `scripts/quickstart.ps1` exists but carries the same gaps; running
+the three `make` targets under WSL or Git Bash is the better path. See
+[Platforms](docs/PLATFORMS.md).
 
 ---
 
-## Verifying with Smoke Tests
+## Smoke tests
 
 ```bash
 # Basic smoke test: provisions sandbox, verifies observation, injects input, checks screen dhash change
@@ -231,7 +322,7 @@ make smoke-agent
 
 ---
 
-## Project Architecture & Directory Layout
+## Directory layout
 
 | Directory | Description |
 | :--- | :--- |
@@ -239,48 +330,68 @@ make smoke-agent
 | [`sandbox/`](sandbox/) | Ubuntu desktop container image (XFCE, Xvfb, AT-SPI accessibility bus, x11vnc, noVNC proxy, and the `agentd` daemon) |
 | [`admin/`](admin/) | React 19 + TypeScript + Vite + Tailwind CSS operator console (fleet dashboard, live VNC streams, skill timeline editor, AI refinement studio) |
 | [`mobile/`](mobile/) | Flutter companion app (real-time desktop streaming, interactive agent chat, resolution centre, FCM/APNs push notifications) |
-| [`scripts/`](scripts/) | Preflight health check (`doctor.sh`) and end-to-end integration test (`smoke.sh`) |
+| [`scripts/`](scripts/) | Preflight check (`doctor.sh`), end-to-end test (`smoke.sh`), bootstrap scripts, and the screenshot generator |
+| [`sdk/`](sdk/) | Python client library and the `fleetctl` CLI |
+| [`tts/`](tts/) | CPU text-to-speech sidecar |
 | [`docs/`](docs/) | In-depth technical guides, architecture specifications, and security model |
 
 ---
 
-## The Perceive → Decide → Act Loop
+## The perceive-decide-act loop
 
 ```
-1. Observe   ──► agentd grabs WebP frame, active window title, AT-SPI tree, and perceptual dhash.
-2. Guard     ──► If screen hash is unchanged across 3 actions, the agent pauses and escalates to your phone.
-3. Prompt    ──► Assembles goal, SKILL.md guide, recent history, REPL variables, and downscaled screenshot.
-4. Decide    ──► Model returns exactly one structured JSON action.
-5. Act       ──► Translates coordinates to desktop pixel space and executes via agentd (or runs persistent Python / spawns child agent).
-6. Persist   ──► Stores screenshot, duration, prompt/completion token metrics, and outcome in audit trail.
-7. Refine    ──► Upon task success, the Continual Refinement Engine self-heals selectors and updates SKILL.md.
+1. Observe   ──► agentd captures a WebP frame, the active window title, the AT-SPI
+                 tree, and a perceptual hash of the screen.
+2. Guard     ──► If the hash is unchanged across AGENT_STALL_THRESHOLD actions
+                 (3 by default), the run parks and an alert goes to the operator.
+3. Prompt    ──► Goal, parameters, SKILL.md, peer messages, the badged screenshot
+                 with its Set-of-Marks element list, and recent history.
+4. Decide    ──► The vision role of the bot's chain returns one JSON action.
+5. Act       ──► Coordinates are mapped from the model's convention into desktop
+                 pixels — or skipped entirely if the model answered with a mark —
+                 and executed through agentd.
+6. Persist   ──► Screenshot, duration, token counts and outcome into the audit
+                 trail.
+7. Refine    ──► On success only, and only if the task set auto-refine or carries
+                 a skill: the trace goes to the refine role, which rewrites the
+                 skill. A failed run is not analysed.
 ```
 
 ---
 
-## Available Commands
+## Available commands
+
+`make help` lists everything. The ones you will use:
 
 ```bash
-make doctor           # Check Docker, RAM, ports, secrets, and model availability
-make up               # Build sandbox image and start entire stack
-make down             # Stop the stack (sandboxes are preserved)
-make smoke            # Run end-to-end integration smoke test
-make smoke-agent      # Run live autonomous task against an AI model
-make clean-sandboxes  # Terminate and destroy all managed sandbox containers
+make doctor           # Check Docker, RAM, ports, secrets and model availability
+make env              # Create .env from the example, generate secrets, set DOCKER_GID
+make sandbox          # Build the sandbox desktop image on its own
+make up               # Build the sandbox image and start the whole stack
+make down             # Stop the stack (sandboxes are left running)
+make nuke             # Stop everything and delete all data
 make logs             # Tail orchestrator logs
-make test             # Run Go test suites and React production build
+make psql             # Open a database shell
+make smoke            # End-to-end test against a running stack
+make smoke-agent      # The same, plus a real autonomous task against a real model
+make clean-sandboxes  # Destroy every sandbox container this platform created
+make test             # Go, Python agentd, Python SDK, admin build, flutter analyze
+make screenshots      # Recapture the documentation screenshots
 ```
+
+`make test` needs Go, Python, Node and Flutter all present.
 
 ---
 
-## In-Depth Documentation
+## Documentation
 
-* 🛡️ [**Security Review**](docs/SECURITY-REVIEW.md) — An adversarial audit of the agent capabilities, with severities and fixes.
+* 📓 [**Changelog**](CHANGELOG.md) — What changed in each release.
+* 🛡️ [**Security Review**](docs/SECURITY-REVIEW.md) — A point-in-time adversarial audit. Several findings have since been addressed; the document says which.
 * ♿ [**Accessibility & Contrast**](docs/ACCESSIBILITY.md) — WCAG 2.1 AA contrast ratios measured across all ten themes.
 * 📱 [**Flutter Companion Guide**](docs/FLUTTER_CROSS_PLATFORM_GUIDE.md) — Step-by-step instructions for Linux, Windows, Apple macOS/iOS, and Android runners.
 * 💻 [**Platform Guide**](docs/PLATFORMS.md) — Running on Linux, macOS and Windows, and what is genuinely not portable.
 * 🖼️ [**Interface Gallery**](docs/UI.md) — Every screen, all ten themes, and how the theming is built.
-* 🧠 [**Agent Philosophy (Prime & DeepSeek Harness)**](docs/AGENT_PHILOSOPHY.md) — The bicameral agent architecture, System 1 perception vs System 2 reasoning, and continual self-refinement.
+* 🧠 [**Agent Philosophy**](docs/AGENT_PHILOSOPHY.md) — How the work of driving a desktop is split across models, what ships, and what is only intended.
 * 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) — Detailed component design, data flow, schema, and networking model.
 * 🔌 [**REST & WebSocket API Reference**](docs/API.md) — Complete endpoint specifications, request/response schemas, and real-time events.
 * 🎓 [**Skills & Continual Refinement**](docs/SKILLS_AND_REFINEMENT.md) — Learn-by-demonstration recorder, AT-SPI compilation, and AI self-healing workflows.
@@ -299,9 +410,9 @@ AgentFleet is distributed under the **[PolyForm Noncommercial License 1.0.0](LIC
 
 ---
 
-## ⚡ Support the Project — Buy Me a Monster ⚡
+## Supporting the project
 
-If you find AgentFleet useful and want to fuel late-night coding sessions and open-source updates, you can support development with **XRP** or **Bitcoin (BTC)**:
+If AgentFleet is useful to you, you can support development with XRP or Bitcoin.
 
 <div align="center">
 
@@ -314,5 +425,5 @@ If you find AgentFleet useful and want to fuel late-night coding sessions and op
 </div>
 
 > [!IMPORTANT]
-> **Destination Tag / Memo is required** when sending XRP to the Robinhood deposit address (`796343731`). Thank you for your support! 🚀
+> **A destination tag is required** when sending XRP to this deposit address (`796343731`). Without it the transfer will not be credited.
 
