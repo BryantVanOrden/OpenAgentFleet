@@ -194,27 +194,28 @@ More in the [interface gallery](docs/UI.md).
 
 ## Quick Start
 
-### Prerequisites
-* **Docker & Docker Compose** (v24+) — Linux, macOS or Windows (WSL 2). See the [platform guide](docs/PLATFORMS.md).
-* **Ollama** with a vision model pulled (e.g. `ollama pull qwen2.5vl:7b`) OR a cloud API key (OpenAI, Anthropic, Gemini).
+### 1-Click Interactive Bootstrap
 
+Clone the repo and run the interactive quickstart script (auto-checks Docker, generates cryptographically secure `.env` secrets, and boots the entire fleet):
+
+**Linux / macOS:**
 ```bash
-# 1. Clone repository and verify environment
 git clone https://github.com/BryantVanOrden/AgentFleet.git
 cd AgentFleet
+./scripts/quickstart.sh
+```
 
-# 2. Run preflight doctor (checks Docker, RAM, ports, secrets, vision models)
-make doctor
-
-# 3. Build sandbox images and start platform
-make up
+**Windows PowerShell:**
+```powershell
+git clone https://github.com/BryantVanOrden/AgentFleet.git
+cd AgentFleet
+.\scripts\quickstart.ps1
 ```
 
 Once started:
-1. Open the Admin Console at **<http://localhost:8081>**.
-2. Complete the one-time administrator bootstrap.
-3. Under **Engines**, test your local Ollama endpoint or add cloud API keys.
-4. Click **⚡ Launch an Agent** to start your first autonomous workflow!
+1. Open the Admin Console at **<http://localhost:5173>** (or <http://localhost:8080>).
+2. Under **AI Connections**, configure your models (e.g. Claude ➔ Google Antigravity ➔ Local Ollama) in your desired **Tiered Fallback Chain**.
+3. Click **⚡ Launch an Agent** to deploy your first autonomous desktop bot!
 
 ---
 

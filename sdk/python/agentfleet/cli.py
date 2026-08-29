@@ -568,8 +568,8 @@ def main() -> None:
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
-    # diagnostics
-    p_diag = subparsers.add_parser("diagnostics", help="Run comprehensive platform health diagnostics")
+    # diagnostics / doctor
+    p_diag = subparsers.add_parser("diagnostics", aliases=["doctor"], help="Run comprehensive platform health diagnostics")
     p_diag.set_defaults(func=cmd_diagnostics)
 
     # config

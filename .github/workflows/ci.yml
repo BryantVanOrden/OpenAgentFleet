@@ -45,11 +45,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Python dependencies & Test Sandbox agentd
+      - name: Install Python dependencies & Test Sandbox agentd & Python SDK
         run: |
           cd sandbox/agentd
           pip install -r requirements.txt || true
           python -m unittest discover -p "test_*.py"
+          cd ../../sdk/python
+          python -m unittest discover -s tests -p "test_*.py"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -63,6 +65,19 @@ jobs:
           cd admin
           npm ci
           npm run build
+
+      - name: Set up Flutter for Fast Analysis
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Analyze Mobile / Desktop Flutter codebase
+        run: |
+          cd mobile
+          flutter pub get
+          flutter analyze
 
   # ---------------------------------------------------------------------------
   # 2. Heavy Cross-Platform Build: Flutter Android APK
