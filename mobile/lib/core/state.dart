@@ -102,3 +102,28 @@ final skillsProvider = FutureProvider<List<Skill>>(
 final aiProvidersProvider = FutureProvider<List<AIProvider>>(
   (ref) => ref.watch(apiProvider).providers(),
 );
+
+/// Sandbox tiers offered by the orchestrator. Fetched rather than hardcoded so
+/// the picker cannot drift from what the server will actually accept — it
+/// rejects an unknown tier outright rather than substituting a smaller one.
+final tiersProvider = FutureProvider<List<TierProfile>>(
+    (ref) => ref.watch(apiProvider).tiers());
+
+/// Bot archetypes, as starting points for a new agent.
+final templatesProvider = FutureProvider<List<BotTemplate>>(
+    (ref) => ref.watch(apiProvider).templates());
+
+/// Live usage of the machine running the orchestrator, polled while on screen.
+/// Separate from [statsProvider], which is per sandbox.
+final hostStatsProvider = StreamProvider<HostStats>((ref) async* {
+  final api = ref.watch(apiProvider);
+  while (true) {
+    try {
+      yield await api.hostStats();
+    } catch (_) {
+      // A failed sample is not worth tearing the stream down for; the next
+      // tick usually succeeds, and the UI keeps showing the last good numbers.
+    }
+    await Future<void>.delayed(const Duration(seconds: 5));
+  }
+});

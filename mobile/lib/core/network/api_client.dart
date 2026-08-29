@@ -74,6 +74,12 @@ class ApiClient {
     return res.data;
   }
 
+  Future<dynamic> _delete(String path) async {
+    final res = await _dio.delete(path, options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return res.data;
+  }
+
   // ------------------------------------------------------------------ auth ---
 
   Future<void> login(String email, String password) async {
@@ -109,6 +115,46 @@ class ApiClient {
 
   Future<void> instanceAction(String id, String action) =>
       _post('/api/instances/$id/$action');
+
+  Future<List<TierProfile>> tiers() async {
+    final data = await _get('/api/tiers') as List? ?? const [];
+    return data
+        .map((e) => TierProfile.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<List<BotTemplate>> templates() async {
+    final data = await _get('/api/templates') as List? ?? const [];
+    return data
+        .map((e) => BotTemplate.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Provision a sandbox. `tier` must be one of [tiers]; the orchestrator
+  /// rejects an unknown name rather than quietly substituting a smaller box.
+  Future<Instance> createInstance({
+    required String name,
+    required String tier,
+    String? archetypeId,
+    bool shellAccess = false,
+  }) async {
+    final data = await _post('/api/instances', {
+      'name': name,
+      'tier': tier,
+      if (archetypeId != null && archetypeId.isNotEmpty)
+        'archetype_id': archetypeId,
+      'shell_access': shellAccess,
+    }) as Map;
+    return Instance.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteInstance(String id) => _delete('/api/instances/$id');
+
+  // ------------------------------------------------------------------ host ---
+
+  /// Live usage of the machine running the orchestrator.
+  Future<HostStats> hostStats() async => HostStats.fromJson(
+      (await _get('/api/telemetry/host') as Map).cast<String, dynamic>());
 
   /// Single frame instead of a live stream — the right default on mobile data.
   Future<String?> observe(String id) async {

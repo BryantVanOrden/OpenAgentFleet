@@ -14,9 +14,7 @@ import 'features/dashboard/fleet_screen.dart';
 import 'features/pipelines/pipelines_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
-import 'features/swarms/swarms_screen.dart';
 import 'features/vault/vault_screen.dart';
-import 'features/voice/voice_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -139,8 +137,14 @@ class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
   }
 }
 
-/// Bottom-nav shell: fleet, alerts, settings. Three destinations because a phone
-/// is for triage, not administration — the console does the rest.
+/// Bottom-nav shell.
+///
+/// Five destinations, down from seven. Voice and Swarms were pulled out as
+/// top-level tabs because neither is a place you go: voice is one of the ways
+/// to talk to a particular agent, so it lives inside that agent alongside chat,
+/// and agents now message each other automatically over the fleet bus, so a
+/// swarm is not a thing you assemble and then visit. Their content did not
+/// disappear; it moved to where it is used.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -161,10 +165,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         index: _index,
         children: const [
           FleetScreen(),
-          SwarmsScreen(),
           PipelinesScreen(),
           VaultScreen(),
-          VoiceScreen(),
           AlertsScreen(),
           SettingsScreen(),
         ],
@@ -179,11 +181,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             label: 'Fleet',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.hub_outlined),
-            selectedIcon: Icon(Icons.hub_rounded),
-            label: 'Swarms',
-          ),
-          const NavigationDestination(
             icon: Icon(Icons.account_tree_outlined),
             selectedIcon: Icon(Icons.account_tree_rounded),
             label: 'Pipelines',
@@ -192,11 +189,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             icon: Icon(Icons.lock_outline),
             selectedIcon: Icon(Icons.lock_rounded),
             label: 'Vault',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.mic_none_outlined),
-            selectedIcon: Icon(Icons.mic_rounded),
-            label: 'Voice',
           ),
           NavigationDestination(
             icon: Badge(

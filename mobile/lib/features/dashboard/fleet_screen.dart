@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'provision_sheet.dart';
 import '../instance_view/instance_screen.dart';
 
 /// The fleet at a glance: what is running, how hard it is working, and what it
@@ -18,6 +19,17 @@ class FleetScreen extends ConsumerWidget {
     final connected = ref.watch(connectionProvider).valueOrNull ?? false;
 
     return Scaffold(
+      // Provisioning is the thing you most want when an alert reaches you away
+      // from the desk, so it gets the primary action rather than living only
+      // in the web console.
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final created = await ProvisionSheet.show(context);
+          if (created == true) ref.invalidate(instancesProvider);
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('New agent'),
+      ),
       appBar: AppBar(
         title: const Text('Fleet'),
         actions: [

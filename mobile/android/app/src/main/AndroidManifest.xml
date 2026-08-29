@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Speech recognition runs on-device but still needs the microphone, and
+         Android 11+ requires the query below to see the recogniser service. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- Notifications for agent alerts (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
@@ -48,6 +51,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Android 11+ package visibility. Without these the on-device
+             recogniser and synthesiser are invisible and the plugins report
+             "unavailable" on a handset that has both. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>

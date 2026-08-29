@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'host_usage_card.dart';
 import '../auth/login_screen.dart';
 import 'theme_card.dart';
 
@@ -75,11 +76,11 @@ class SettingsScreen extends ConsumerWidget {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Text(
-                    'Watch instances, answer agents that are blocked, take over a desktop, and '
-                    'start or stop runs.\n\n'
-                    'Provisioning, recording skills, model configuration and access control live '
-                    'in the web console — they are administration, not triage, and a phone is the '
-                    'wrong place to do them.',
+                    'Watch instances, provision new agents, answer agents that are blocked, '
+                    'take over a desktop, talk to an agent by voice, and start or stop runs.\n\n'
+                    'Model configuration and access control still live in the web console — '
+                    'those are administration rather than triage, and a phone is the wrong '
+                    'place for them.',
                     style: TextStyle(
                         color: Fleet.ink400, fontSize: 12, height: 1.4),
                   ),
@@ -87,6 +88,8 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          const SizedBox(height: 20),
+          const HostUsageCard(),
           const SizedBox(height: 20),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(

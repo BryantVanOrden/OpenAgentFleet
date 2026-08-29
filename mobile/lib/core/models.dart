@@ -558,3 +558,112 @@ String humanBytes(int n) {
   }
   return '${value.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
 }
+
+/// Live resource usage of the machine running the orchestrator, from
+/// GET /api/telemetry/host. Distinct from InstanceStats, which is per sandbox.
+class HostStats {
+  HostStats({
+    required this.cpuPercent,
+    required this.cpuCores,
+    required this.load1,
+    required this.memoryUsed,
+    required this.memoryTotal,
+    required this.swapUsed,
+    required this.swapTotal,
+    required this.diskUsed,
+    required this.diskTotal,
+    required this.uptimeSec,
+    this.gpu,
+    this.gpuMessage = '',
+  });
+
+  final double cpuPercent;
+  final int cpuCores;
+  final double load1;
+  final int memoryUsed;
+  final int memoryTotal;
+  final int swapUsed;
+  final int swapTotal;
+  final int diskUsed;
+  final int diskTotal;
+  final double uptimeSec;
+
+  /// Null on a host with no GPU, or where the orchestrator cannot read one.
+  /// [gpuMessage] then says which, so the UI never has to guess.
+  final GpuStats? gpu;
+  final String gpuMessage;
+
+  factory HostStats.fromJson(Map<String, dynamic> j) => HostStats(
+        cpuPercent: (j['cpu_percent'] as num?)?.toDouble() ?? 0,
+        cpuCores: (j['cpu_cores'] as num?)?.toInt() ?? 0,
+        load1: (j['load1'] as num?)?.toDouble() ?? 0,
+        memoryUsed: (j['memory_used_bytes'] as num?)?.toInt() ?? 0,
+        memoryTotal: (j['memory_total_bytes'] as num?)?.toInt() ?? 0,
+        swapUsed: (j['swap_used_bytes'] as num?)?.toInt() ?? 0,
+        swapTotal: (j['swap_total_bytes'] as num?)?.toInt() ?? 0,
+        diskUsed: (j['disk_used_bytes'] as num?)?.toInt() ?? 0,
+        diskTotal: (j['disk_total_bytes'] as num?)?.toInt() ?? 0,
+        uptimeSec: (j['uptime_sec'] as num?)?.toDouble() ?? 0,
+        gpu: j['gpu'] == null
+            ? null
+            : GpuStats.fromJson((j['gpu'] as Map).cast<String, dynamic>()),
+        gpuMessage: j['gpu_message'] as String? ?? '',
+      );
+
+  double get memoryFraction =>
+      memoryTotal == 0 ? 0 : memoryUsed / memoryTotal;
+  double get diskFraction => diskTotal == 0 ? 0 : diskUsed / diskTotal;
+}
+
+class GpuStats {
+  GpuStats({
+    required this.name,
+    required this.memoryUsed,
+    required this.memoryTotal,
+    required this.utilisation,
+    this.temperatureC = 0,
+  });
+
+  final String name;
+  final int memoryUsed;
+  final int memoryTotal;
+  final double utilisation;
+  final double temperatureC;
+
+  factory GpuStats.fromJson(Map<String, dynamic> j) => GpuStats(
+        name: j['name'] as String? ?? 'GPU',
+        memoryUsed: (j['memory_used_bytes'] as num?)?.toInt() ?? 0,
+        memoryTotal: (j['memory_total_bytes'] as num?)?.toInt() ?? 0,
+        utilisation: (j['utilisation_percent'] as num?)?.toDouble() ?? 0,
+        temperatureC: (j['temperature_c'] as num?)?.toDouble() ?? 0,
+      );
+
+  double get memoryFraction =>
+      memoryTotal == 0 ? 0 : memoryUsed / memoryTotal;
+}
+
+/// A bot archetype from GET /api/templates: a starting point for provisioning
+/// rather than a blank instance.
+class BotTemplate {
+  BotTemplate({
+    required this.id,
+    required this.name,
+    this.tagline = '',
+    this.category = '',
+    this.recommendedTier = '',
+  });
+
+  final String id;
+  final String name;
+  final String tagline;
+  final String category;
+  final String recommendedTier;
+
+  factory BotTemplate.fromJson(Map<String, dynamic> j) => BotTemplate(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        tagline: j['tagline'] as String? ?? '',
+        category: j['category'] as String? ?? '',
+        recommendedTier: j['recommended_tier'] as String? ?? '',
+      );
+}

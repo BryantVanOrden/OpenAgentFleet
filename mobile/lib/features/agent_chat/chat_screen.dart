@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/voice/voice_service.dart';
 
 /// Talking to a machine.
 ///
@@ -24,13 +27,57 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
+  final _voice = VoiceService();
   bool _busy = false;
+  bool _listening = false;
+
+  /// Read replies aloud. Off by default: someone triaging on a train does not
+  /// want the agent talking, and this is a preference per session rather than
+  /// per message.
+  bool _speakReplies = false;
+
+  /// Guards against re-reading the same reply when the provider rebuilds for
+  /// an unrelated reason.
+  String _lastSpokenId = '';
 
   @override
   void dispose() {
     _controller.dispose();
     _scroll.dispose();
+    _voice.dispose();
     super.dispose();
+  }
+
+  /// Dictate into the message box. The transcript lands in the same field the
+  /// keyboard fills, so speaking is just another way to compose — the user
+  /// still chooses Ask or Run, and can edit a misheard word first.
+  Future<void> _dictate() async {
+    if (_listening) {
+      await _voice.stopListening();
+      if (mounted) setState(() => _listening = false);
+      return;
+    }
+
+    setState(() => _listening = true);
+    final heard = await _voice.listenOnce(
+      onPartial: (words) {
+        if (mounted) _controller.text = words;
+      },
+    );
+    if (!mounted) return;
+    setState(() => _listening = false);
+
+    if (heard == null || heard.isEmpty) {
+      final why = _voice.lastError.isEmpty
+          ? 'Nothing was heard.'
+          : 'Could not listen: ${_voice.lastError}';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(why)));
+      return;
+    }
+    _controller.text = heard;
+    _controller.selection =
+        TextSelection.collapsed(offset: _controller.text.length);
   }
 
   Future<void> _send({required bool asTask}) async {
@@ -80,6 +127,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Speaking happens here rather than after sendChat: that call returns
+    // nothing, and the agent's reply only exists once the chat reloads.
+    ref.listen(chatProvider(widget.instanceId), (_, next) {
+      if (!_speakReplies) return;
+      final list = next.valueOrNull;
+      if (list == null || list.isEmpty) return;
+      final latest = list.last;
+      if (latest.isUser || latest.id == _lastSpokenId) return;
+      _lastSpokenId = latest.id;
+      unawaited(_voice.speak(latest.body));
+    });
+
     final messages = ref.watch(chatProvider(widget.instanceId));
 
     return Column(
@@ -138,14 +197,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   maxLines: 4,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
-                    hintText: widget.enabled
-                        ? 'What is on screen right now?'
-                        : 'Instance is not running',
+                    hintText: _listening
+                        ? 'Listening...'
+                        : widget.enabled
+                            ? 'What is on screen right now?'
+                            : 'Instance is not running',
                   ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
+                    // Dictate. Voice is a way to talk to this agent, not a
+                    // separate place, so it sits on the agent's own composer.
+                    IconButton(
+                      onPressed: widget.enabled && !_busy ? _dictate : null,
+                      tooltip: _listening ? 'Stop dictating' : 'Dictate',
+                      icon: Icon(
+                        _listening ? Icons.mic : Icons.mic_none_outlined,
+                        color: _listening ? Fleet.good : null,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        setState(() => _speakReplies = !_speakReplies);
+                        if (!_speakReplies) unawaited(_voice.stopSpeaking());
+                      },
+                      tooltip: _speakReplies
+                          ? 'Stop reading replies aloud'
+                          : 'Read replies aloud',
+                      icon: Icon(
+                        _speakReplies
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_outlined,
+                        color: _speakReplies ? Fleet.good : null,
+                      ),
+                    ),
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: widget.enabled && !_busy

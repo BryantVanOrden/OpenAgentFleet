@@ -99,6 +99,46 @@ class _ControlMenu extends ConsumerWidget {
     Future<void> act(String action) async {
       final api = ref.read(apiProvider);
       final messenger = ScaffoldMessenger.of(context);
+      final navigator = Navigator.of(context);
+
+      // Destroying an agent takes its disk with it, so it is the one action
+      // here that asks first. The others are all reversible.
+      if (action == 'delete') {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: Fleet.ink850,
+            title: const Text('Delete this agent?'),
+            content: Text(
+              '"${instance.name}" and everything on its disk will be removed. '
+              'This cannot be undone.',
+              style: TextStyle(color: Fleet.ink300),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+        try {
+          await api.deleteInstance(instance.id);
+          ref.invalidate(instancesProvider);
+          // The screen it was showing no longer exists.
+          navigator.pop();
+        } catch (err) {
+          messenger.showSnackBar(SnackBar(content: Text('$err')));
+        }
+        return;
+      }
+
       try {
         await api.instanceAction(instance.id, action);
         ref.invalidate(instancesProvider);
@@ -145,6 +185,16 @@ class _ControlMenu extends ConsumerWidget {
                 leading: Icon(Icons.power_settings_new),
                 title: Text('Start')),
           ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'delete',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.delete_outline, color: Fleet.bad),
+            title: Text('Delete', style: TextStyle(color: Fleet.bad)),
+            subtitle: const Text('Removes the agent and its disk'),
+          ),
+        ),
       ],
     );
   }
