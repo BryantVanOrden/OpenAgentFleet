@@ -619,6 +619,7 @@ type Provider struct {
 	OAuthTokenRef string `json:"oauth_token_ref,omitempty"`
 	// OAuth endpoints. Empty falls back to Google's, which is what the
 	// google-flavoured provider kinds use.
+	OAuthAuthURL   string `json:"oauth_auth_url,omitempty"`
 	OAuthDeviceURL string `json:"oauth_device_url,omitempty"`
 	OAuthTokenURL  string `json:"oauth_token_url,omitempty"`
 	OAuthScope     string `json:"oauth_scope,omitempty"`

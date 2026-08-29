@@ -22,6 +22,11 @@ services:
     environment:
       AGENTFLEET_ENV: ${AGENTFLEET_ENV:-development}
       HTTP_ADDR: ":8080"
+      # Where this server is reachable from a phone or another machine, not
+      # from inside the container. OAuth redirects are sent here, and a
+      # localhost redirect resolves to whichever device opened the sign-in
+      # page rather than to the server.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
       DATABASE_URL: postgres://${POSTGRES_USER:-agentfleet}:${POSTGRES_PASSWORD:-agentfleet}@db:5432/${POSTGRES_DB:-agentfleet}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-}
       MASTER_KEY: ${MASTER_KEY:-}

@@ -174,6 +174,13 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/providers/{id}/probe", auth(roleAdmin, s.handleProbeProvider))
 	// Signing in with an account rather than pasting a key.
 	mux.Handle("POST /api/providers/{id}/signin", auth(roleAdmin, s.handleStartProviderSignIn))
+	// In-app sign-in: the app loads the consent page in a webview and the
+	// provider redirects back here.
+	mux.Handle("POST /api/providers/{id}/signin/url", auth(roleAdmin, s.handleStartAuthCodeSignIn))
+	mux.Handle("GET /api/providers/signin/status", auth(roleAdmin, s.handleAuthCodeStatus))
+	// Unauthenticated: this receives the provider's redirect, which carries no
+	// operator session. The unguessable single-use state is what authorises it.
+	mux.HandleFunc("GET "+oauthCallbackPath, s.handleOAuthCallback)
 	mux.Handle("GET /api/providers/{id}/signin", auth(roleAdmin, s.handleProviderSignInStatus))
 	mux.Handle("DELETE /api/providers/{id}/signin", auth(roleAdmin, s.handleProviderSignOut))
 	// Model discovery for any provider kind. The two routes below it predate

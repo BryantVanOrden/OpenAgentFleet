@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'oauth_webview_screen.dart';
+
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
@@ -51,6 +53,48 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
     _clientId.dispose();
     _clientSecret.dispose();
     super.dispose();
+  }
+
+  /// Sign in inside the app: load the provider's consent page in a webview and
+  /// let the server handle the redirect. This is the path that finishes without
+  /// leaving AgentFleet.
+  Future<void> _startInApp() async {
+    if (_clientId.text.trim().isEmpty) {
+      setState(() => _error = 'An OAuth client ID is required.');
+      return;
+    }
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
+    try {
+      final res = await ref.read(apiProvider).startInAppSignIn(
+            widget.provider.id,
+            clientId: _clientId.text.trim(),
+            clientSecret: _clientSecret.text.trim(),
+          );
+      if (!mounted) return;
+      setState(() => _starting = false);
+
+      final ok = await OAuthWebViewScreen.show(
+        context,
+        authorizeUrl: res.authorizeUrl,
+        state: res.state,
+        providerName: widget.provider.name,
+      );
+      if (!mounted) return;
+      if (ok == true) {
+        Navigator.pop(context, true);
+      } else {
+        setState(() => _error = 'Sign-in was not completed.');
+      }
+    } catch (err) {
+      if (!mounted) return;
+      setState(() {
+        _starting = false;
+        _error = '$err';
+      });
+    }
   }
 
   Future<void> _start() async {
@@ -173,15 +217,29 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: _starting ? null : _start,
+            onPressed: _starting ? null : _startInApp,
             icon: _starting
                 ? const SizedBox(
                     width: 15,
                     height: 15,
                     child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.login, size: 18),
-            label: const Text('Sign in with Google'),
+            label: const Text('Sign in'),
           ),
+        ),
+        const SizedBox(height: 6),
+        Center(
+          child: TextButton(
+            onPressed: _starting ? null : _start,
+            child: const Text('Use a code on another device instead',
+                style: TextStyle(fontSize: 11.5)),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Redirect URI to register: your server\'s address followed by '
+          '/api/providers/oauth/callback',
+          style: TextStyle(color: Fleet.ink500, fontSize: 10.5, height: 1.4),
         ),
       ];
 

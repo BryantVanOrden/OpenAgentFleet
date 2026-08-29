@@ -591,6 +591,39 @@ class ApiClient {
     );
   }
 
+  /// Begin an in-app sign-in. Returns the consent page to load in a webview
+  /// and the redirect the provider will come back to.
+  Future<({String authorizeUrl, String state, String redirectUri})>
+      startInAppSignIn(
+    String id, {
+    required String clientId,
+    String clientSecret = '',
+    String scope = '',
+    String authUrl = '',
+    String tokenUrl = '',
+  }) async {
+    final data = await _post('/api/providers/$id/signin/url', {
+      'client_id': clientId,
+      'client_secret': clientSecret,
+      if (scope.isNotEmpty) 'scope': scope,
+      if (authUrl.isNotEmpty) 'auth_url': authUrl,
+      if (tokenUrl.isNotEmpty) 'token_url': tokenUrl,
+    }) as Map;
+    return (
+      authorizeUrl: '${data['authorize_url'] ?? ''}',
+      state: '${data['state'] ?? ''}',
+      redirectUri: '${data['redirect_uri'] ?? ''}',
+    );
+  }
+
+  /// Poll while the webview completes. Returns true once signed in; throws
+  /// with the provider's own reason if it failed.
+  Future<bool> inAppSignInComplete(String state) async {
+    final data = await _get('/api/providers/signin/status',
+        query: {'state': state}) as Map;
+    return data['status'] == 'signed_in';
+  }
+
   /// Poll while the operator approves. Returns true once signed in.
   Future<bool> providerSignInComplete(String id) async {
     final data = await _get('/api/providers/$id/signin') as Map;
