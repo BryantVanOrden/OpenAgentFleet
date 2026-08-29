@@ -243,9 +243,12 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 
 		obsKey := r.storeObservation(ctx, task, obs)
 
-		// This bot's own model chain, with any per-task pin at the head.
-		resp, err := r.models.CompleteFor(ctx,
-			connectors.PreferredChain(task.ProviderID, inst.ProviderIDs), connectors.Request{
+		// This bot's own chain, resolved for the role this turn actually plays:
+		// perceiving the screen and choosing the next action. A combination
+		// sends this to whichever model it assigns to the hands.
+		resp, err := r.models.CompleteRole(ctx,
+			connectors.PreferredChain(task.ProviderID, inst.ProviderIDs),
+			protocol.RoleVision, connectors.Request{
 				System:   buildSystem(inst, mountedTools),
 				JSONOnly: true,
 				Messages: []connectors.Message{{

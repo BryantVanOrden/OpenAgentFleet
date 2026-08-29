@@ -81,14 +81,25 @@ func (rf *Refiner) RefineSkill(ctx context.Context, task *protocol.Task, skill *
 			s.Step, s.Action.Action, s.Action.Target, s.Action.Coordinates, s.Outcome)
 	}
 
-	resp, err := rf.models.Complete(ctx, task.ProviderID, connectors.Request{
-		System:   refineSystemPrompt,
-		JSONOnly: true,
-		Messages: []connectors.Message{{
-			Role: connectors.RoleUser,
-			Text: trace.String(),
-		}},
-	})
+	// Trajectory analysis is deduction over a text trace, so it goes to the
+	// reasoning model rather than to whichever model happens to have eyes.
+	resp, err := rf.models.CompleteRole(ctx, rf.chainFor(ctx, task), protocol.RoleRefine,
+		connectors.Request{
+			System:   refineSystemPrompt,
+			JSONOnly: true,
+			// A reasoning model spends its budget on a hidden thinking pass and
+			// then has nothing left to emit, so a JSON-only request comes back
+			// empty and the chain falls through to whatever is next. Here the
+			// structured answer IS the reasoning, so the hidden pass is pure
+			// waste — measured against ornith:latest, which returned "empty
+			// completion (done true)" on every refine until this was set.
+			DisableThinking: true,
+			MaxTokens:       1600,
+			Messages: []connectors.Message{{
+				Role: connectors.RoleUser,
+				Text: trace.String(),
+			}},
+		})
 	if err != nil {
 		return nil, fmt.Errorf("model refinement failed: %w", err)
 	}
@@ -144,14 +155,25 @@ func (rf *Refiner) SynthesizeSkill(ctx context.Context, task *protocol.Task, ste
 			s.Step, s.Action.Action, s.Action.Target, s.Action.Coordinates, s.Action.Text, s.Outcome)
 	}
 
-	resp, err := rf.models.Complete(ctx, task.ProviderID, connectors.Request{
-		System:   refineSystemPrompt,
-		JSONOnly: true,
-		Messages: []connectors.Message{{
-			Role: connectors.RoleUser,
-			Text: trace.String(),
-		}},
-	})
+	// Trajectory analysis is deduction over a text trace, so it goes to the
+	// reasoning model rather than to whichever model happens to have eyes.
+	resp, err := rf.models.CompleteRole(ctx, rf.chainFor(ctx, task), protocol.RoleRefine,
+		connectors.Request{
+			System:   refineSystemPrompt,
+			JSONOnly: true,
+			// A reasoning model spends its budget on a hidden thinking pass and
+			// then has nothing left to emit, so a JSON-only request comes back
+			// empty and the chain falls through to whatever is next. Here the
+			// structured answer IS the reasoning, so the hidden pass is pure
+			// waste — measured against ornith:latest, which returned "empty
+			// completion (done true)" on every refine until this was set.
+			DisableThinking: true,
+			MaxTokens:       1600,
+			Messages: []connectors.Message{{
+				Role: connectors.RoleUser,
+				Text: trace.String(),
+			}},
+		})
 	if err != nil {
 		return nil, fmt.Errorf("model skill synthesis failed: %w", err)
 	}
@@ -197,4 +219,18 @@ func (rf *Refiner) SynthesizeSkill(ctx context.Context, task *protocol.Task, ste
 	})
 	rf.log.Info("skill synthesized successfully", "skill_id", skill.ID, "name", skill.Name)
 	return skill, nil
+}
+
+// chainFor is the model chain to use for work on this task.
+//
+// Loaded from the instance rather than passed in: refinement runs after a task
+// finishes, often from an HTTP handler that has the task and nothing else, and
+// a bot's assigned models should govern its refinement too.
+func (rf *Refiner) chainFor(ctx context.Context, task *protocol.Task) []string {
+	inst, err := rf.db.Instance(ctx, task.InstanceID)
+	if err != nil {
+		// The per-task pin alone still beats the fleet default.
+		return connectors.PreferredChain(task.ProviderID, nil)
+	}
+	return connectors.PreferredChain(task.ProviderID, inst.ProviderIDs)
 }

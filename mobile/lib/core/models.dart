@@ -527,6 +527,71 @@ class ChatSession {
       );
 }
 
+/// Which model does what.
+///
+/// A combination assigns models to roles, so the model that reads the screen
+/// need not be the one that reasons about it. It is selectable anywhere a
+/// single provider is, including inside a bot's fallback chain.
+class ModelCombo {
+  const ModelCombo({
+    required this.id,
+    required this.name,
+    required this.roles,
+    this.description = '',
+  });
+
+  /// Roles, in the order a picker should offer them.
+  static const roleVision = 'vision';
+  static const roleReasoning = 'reasoning';
+  static const roleChat = 'chat';
+  static const roleSummarize = 'summarize';
+  static const roleRefine = 'refine';
+  static const allRoles = [
+    roleVision,
+    roleReasoning,
+    roleChat,
+    roleSummarize,
+    roleRefine,
+  ];
+
+  /// What each role is for, in the operator's terms rather than the code's.
+  static const roleLabels = {
+    roleVision: 'Hands — sees the screen and clicks',
+    roleReasoning: 'Brain — plans, deduces, writes code',
+    roleChat: 'Chat — talks to you',
+    roleSummarize: 'Summarise — compacts long threads',
+    roleRefine: 'Refine — hardens recorded skills',
+  };
+
+  static const roleShort = {
+    roleVision: 'Hands',
+    roleReasoning: 'Brain',
+    roleChat: 'Chat',
+    roleSummarize: 'Summarise',
+    roleRefine: 'Refine',
+  };
+
+  final String id;
+  final String name;
+  final String description;
+
+  /// role -> provider id.
+  final Map<String, String> roles;
+
+  /// A brain-and-hands pair rather than a full assignment.
+  bool get isSimple =>
+      roles.length <= 2 &&
+      roles.keys.every((r) => r == roleVision || r == roleReasoning);
+
+  factory ModelCombo.fromJson(Map<String, dynamic> j) => ModelCombo(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+        roles: ((j['roles'] as Map?) ?? const {})
+            .map((k, v) => MapEntry('$k', '$v')),
+      );
+}
+
 /// Something a bot decided was worth keeping.
 ///
 /// Agents choose what to remember; this is what that turned out to be. Worth

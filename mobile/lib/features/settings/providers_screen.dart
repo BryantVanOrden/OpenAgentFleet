@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'provider_edit_sheet.dart';
+import 'model_combo_sheet.dart';
 import 'provider_signin_sheet.dart';
 
 /// The AI engines the fleet can think with.
@@ -25,6 +26,7 @@ const _canSignIn = {'gemini', 'antigravity'};
 
 class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
   List<AIProvider> _providers = const [];
+  List<ModelCombo> _combos = const [];
   bool _loading = true;
   String? _error;
   String _probing = '';
@@ -37,10 +39,13 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
 
   Future<void> _refresh() async {
     try {
-      final list = await ref.read(apiProvider).providers();
+      final api = ref.read(apiProvider);
+      final list = await api.providers();
+      final combos = await api.modelCombos();
       if (!mounted) return;
       setState(() {
         _providers = list;
+        _combos = combos;
         _loading = false;
         _error = null;
       });
@@ -233,11 +238,114 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
       );
     }
 
-    return ReorderableListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-      itemCount: _providers.length,
-      onReorderItem: _reorder,
-      itemBuilder: (_, i) => _tile(_providers[i], i),
+    return Column(
+      children: [
+        Expanded(
+          child: ReorderableListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            itemCount: _providers.length,
+            onReorderItem: _reorder,
+            itemBuilder: (_, i) => _tile(_providers[i], i),
+          ),
+        ),
+        _combosSection(),
+      ],
+    );
+  }
+
+  /// Combinations: which model does what. Shown beside connections because a
+  /// combination is selectable anywhere a single connection is.
+  Widget _combosSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 84),
+      decoration: BoxDecoration(
+        color: Fleet.ink900,
+        border: Border(top: BorderSide(color: Fleet.ink800)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('COMBINATIONS',
+                    style: TextStyle(
+                        color: Fleet.ink400,
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w700)),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  if (await ModelComboSheet.show(context) == true) {
+                    await _refresh();
+                  }
+                },
+                icon: const Icon(Icons.add, size: 15),
+                label: const Text('New', style: TextStyle(fontSize: 11.5)),
+              ),
+            ],
+          ),
+          if (_combos.isEmpty)
+            Text(
+              'Pair a model that sees with one that reasons, then use the pair '
+              "in a bot's model list.",
+              style: TextStyle(color: Fleet.ink500, fontSize: 11, height: 1.4),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 150),
+              child: ListView(
+                shrinkWrap: true,
+                children: [for (final c in _combos) _comboTile(c)],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _comboTile(ModelCombo c) {
+    String nameOf(String id) => _providers
+        .where((p) => p.id == id)
+        .map((p) => p.model)
+        .firstOrNull ?? '—';
+
+    final summary = c.roles.entries
+        .map((e) => '${ModelCombo.roleShort[e.key] ?? e.key}: ${nameOf(e.value)}')
+        .join('  ·  ');
+
+    return Card(
+      color: Fleet.ink850,
+      margin: const EdgeInsets.only(bottom: 6),
+      child: ListTile(
+        dense: true,
+        leading: Icon(c.isSimple ? Icons.psychology_alt_outlined : Icons.hub,
+            size: 18, color: Fleet.cool),
+        title: Text(c.name, style: const TextStyle(fontSize: 13)),
+        subtitle: Text(summary,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Fleet.ink400, fontSize: 10.5)),
+        onTap: () async {
+          if (await ModelComboSheet.show(context, existing: c) == true) {
+            await _refresh();
+          }
+        },
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline, size: 18, color: Fleet.ink400),
+          onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await ref.read(apiProvider).deleteModelCombo(c.id);
+              await _refresh();
+            } catch (err) {
+              messenger.showSnackBar(SnackBar(content: Text('$err')));
+            }
+          },
+        ),
+      ),
     );
   }
 

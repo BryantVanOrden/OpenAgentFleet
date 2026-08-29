@@ -123,6 +123,13 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/vault/sessions", auth(roleOperator, s.handleSaveSharedSession))
 	mux.Handle("GET /api/vault/comms", auth(roleAny, s.handleListPeerMessages))
 	mux.Handle("POST /api/vault/comms", auth(roleOperator, s.handleSendPeerMessage))
+	// Combinations: which model does what.
+	mux.Handle("GET /api/model-combos", auth(roleAny, s.handleListModelCombos))
+	mux.Handle("POST /api/model-combos", auth(roleOperator, s.handleUpsertModelCombo))
+	mux.Handle("PUT /api/model-combos/{id}", auth(roleOperator, s.handleUpsertModelCombo))
+	mux.Handle("DELETE /api/model-combos/{id}", auth(roleOperator, s.handleDeleteModelCombo))
+	// What each role would actually resolve to for this bot.
+	mux.Handle("GET /api/instances/{id}/models/resolved", auth(roleAny, s.handleResolveChain))
 	// A bot's own model fallback chain.
 	mux.Handle("PUT /api/instances/{id}/models", auth(roleOperator, s.handleSetInstanceModels))
 	// What each bot has chosen to remember, and a way to take one back out.

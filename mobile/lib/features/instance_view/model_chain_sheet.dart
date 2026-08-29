@@ -33,6 +33,7 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
   /// failed action look like a control that did nothing.
 
   List<AIProvider> _all = const [];
+  List<ModelCombo> _combos = const [];
   late List<String> _chain = [...widget.instance.providerIds];
   bool _loading = true;
   bool _busy = false;
@@ -46,13 +47,20 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
 
   Future<void> _load() async {
     try {
-      final list = await ref.read(apiProvider).providers();
+      final api = ref.read(apiProvider);
+      final list = await api.providers();
+      final combos = await api.modelCombos();
       if (!mounted) return;
       setState(() {
         _all = list;
-        // Drop references to connections that no longer exist, so the sheet
-        // never shows a slot for something you cannot see or reorder.
-        _chain = _chain.where((id) => list.any((p) => p.id == id)).toList();
+        _combos = combos;
+        // Drop references to anything that no longer exists, so the sheet never
+        // shows a slot for something you cannot see or reorder. A chain entry
+        // is either a connection or a combination.
+        _chain = _chain
+            .where((id) =>
+                list.any((p) => p.id == id) || combos.any((c) => c.id == id))
+            .toList();
         _loading = false;
       });
     } catch (err) {
@@ -65,6 +73,31 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
   }
 
   AIProvider? _byId(String id) => _all.where((p) => p.id == id).firstOrNull;
+  ModelCombo? _comboById(String id) =>
+      _combos.where((c) => c.id == id).firstOrNull;
+
+  /// What to show for a chain entry, whichever kind it is.
+  ({String title, String subtitle, bool isCombo}) _describe(String id) {
+    final combo = _comboById(id);
+    if (combo != null) {
+      String modelOf(String pid) =>
+          _all.where((p) => p.id == pid).map((p) => p.model).firstOrNull ?? '—';
+      return (
+        title: combo.name,
+        subtitle: combo.roles.entries
+            .map((e) =>
+                '${ModelCombo.roleShort[e.key] ?? e.key}: ${modelOf(e.value)}')
+            .join(' · '),
+        isCombo: true,
+      );
+    }
+    final p = _byId(id);
+    return (
+      title: p?.name ?? id,
+      subtitle: p?.model ?? '',
+      isCombo: false,
+    );
+  }
 
   Future<void> _save() async {
     setState(() => _busy = true);
@@ -142,14 +175,17 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
       return Text('Could not load connections: $_error',
           style: TextStyle(color: Fleet.bad, fontSize: 12));
     }
-    if (_all.isEmpty) {
+    if (_all.isEmpty && _combos.isEmpty) {
       return Text(
         'No AI connections configured. Add one in Settings first.',
         style: TextStyle(color: Fleet.ink400, fontSize: 12.5),
       );
     }
 
-    final unchosen = _all.where((p) => !_chain.contains(p.id)).toList();
+    final unchosenProviders =
+        _all.where((p) => !_chain.contains(p.id)).toList();
+    final unchosenCombos =
+        _combos.where((c) => !_chain.contains(c.id)).toList();
 
     return SingleChildScrollView(
       child: Column(
@@ -165,20 +201,20 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
                 _chain.insert(n, _chain.removeAt(o));
               }),
               itemBuilder: (_, i) {
-                final p = _byId(_chain[i]);
+                final d = _describe(_chain[i]);
                 return Card(
                   key: ValueKey(_chain[i]),
                   color: Fleet.ink850,
                   margin: const EdgeInsets.only(bottom: 6),
                   child: ListTile(
                     dense: true,
-                    leading: Icon(Icons.drag_indicator,
-                        size: 17, color: Fleet.ink600),
-                    title: Text(p?.name ?? _chain[i],
-                        style: const TextStyle(fontSize: 13)),
+                    leading: Icon(
+                        d.isCombo ? Icons.hub : Icons.drag_indicator,
+                        size: 17,
+                        color: d.isCombo ? Fleet.cool : Fleet.ink600),
+                    title: Text(d.title, style: const TextStyle(fontSize: 13)),
                     subtitle: Text(
-                      i == 0 ? 'First choice · ${p?.model ?? ''}'
-                             : 'Fallback $i · ${p?.model ?? ''}',
+                      '${i == 0 ? 'First choice' : 'Fallback $i'} · ${d.subtitle}',
                       style: TextStyle(color: Fleet.ink400, fontSize: 10.5),
                     ),
                     trailing: IconButton(
@@ -193,9 +229,28 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
             ),
             const SizedBox(height: 8),
           ],
-          if (unchosen.isNotEmpty) ...[
-            _label(_chain.isEmpty ? 'AVAILABLE' : 'ADD AS FALLBACK'),
-            for (final p in unchosen)
+          if (unchosenCombos.isNotEmpty) ...[
+            _label('COMBINATIONS'),
+            for (final c in unchosenCombos)
+              Card(
+                color: Fleet.ink900,
+                margin: const EdgeInsets.only(bottom: 6),
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.hub, size: 17, color: Fleet.cool),
+                  title: Text(c.name, style: const TextStyle(fontSize: 13)),
+                  subtitle: Text(_describe(c.id).subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Fleet.ink400, fontSize: 10.5)),
+                  onTap: () => setState(() => _chain.add(c.id)),
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+          if (unchosenProviders.isNotEmpty) ...[
+            _label(_chain.isEmpty ? 'SINGLE MODELS' : 'ADD AS FALLBACK'),
+            for (final p in unchosenProviders)
               Card(
                 color: Fleet.ink900,
                 margin: const EdgeInsets.only(bottom: 6),

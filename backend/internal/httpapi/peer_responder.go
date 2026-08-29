@@ -134,26 +134,27 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// paraphrase of the question.
 	status := s.recentActivity(ctx, inst)
 
-	resp, err := s.models.CompleteFor(ctx, inst.ProviderIDs, connectors.Request{
-		System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
-			"desktop agents, reporting to your operator. " + scope +
-			" was messaged.\n\n" + status + "\n\n" +
-			"Reply in one or two short sentences, in the first person, as a status " +
-			"update. Say what you have actually been doing and whether you are free. " +
-			"Ground every claim in the history above: if it says you have run nothing, " +
-			"say you are idle and available. Never invent work, never claim to have " +
-			"started something, and do not offer a list of your capabilities unless " +
-			"you were asked what you can do.",
-		Messages: []connectors.Message{{
-			Role: connectors.RoleUser,
-			Text: msg.FromInstanceName + " asked: " + msg.Content,
-		}},
-		// A reasoning model would spend the whole budget thinking and return
-		// nothing; this is small talk between agents, not a plan.
-		DisableThinking: true,
-		MaxTokens:       220,
-		Temperature:     0.3,
-	})
+	resp, err := s.models.CompleteRole(ctx, inst.ProviderIDs, protocol.RoleChat,
+		connectors.Request{
+			System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
+				"desktop agents, reporting to your operator. " + scope +
+				" was messaged.\n\n" + status + "\n\n" +
+				"Reply in one or two short sentences, in the first person, as a status " +
+				"update. Say what you have actually been doing and whether you are free. " +
+				"Ground every claim in the history above: if it says you have run nothing, " +
+				"say you are idle and available. Never invent work, never claim to have " +
+				"started something, and do not offer a list of your capabilities unless " +
+				"you were asked what you can do.",
+			Messages: []connectors.Message{{
+				Role: connectors.RoleUser,
+				Text: msg.FromInstanceName + " asked: " + msg.Content,
+			}},
+			// A reasoning model would spend the whole budget thinking and return
+			// nothing; this is small talk between agents, not a plan.
+			DisableThinking: true,
+			MaxTokens:       220,
+			Temperature:     0.3,
+		})
 	if err != nil {
 		s.log.Warn("peer reply failed", "instance", inst.ID, "err", err)
 		return

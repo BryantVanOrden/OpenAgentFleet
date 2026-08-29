@@ -169,8 +169,12 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		maxTokens = 900
 	}
 
-	resp, err := s.models.CompleteFor(r.Context(),
-		connectors.PreferredChain(req.ProviderID, inst.ProviderIDs), connectors.Request{
+	// Chat carries a screenshot, so a combination should answer with a model
+	// that can see; RoleChat falls back to vision before reasoning for exactly
+	// that reason.
+	resp, err := s.models.CompleteRole(r.Context(),
+		connectors.PreferredChain(req.ProviderID, inst.ProviderIDs),
+		protocol.RoleChat, connectors.Request{
 			System:   system,
 			Messages: msgs,
 			// A reasoning model spends its budget on a hidden thinking pass and

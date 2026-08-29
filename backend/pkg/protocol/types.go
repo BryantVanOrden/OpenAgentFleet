@@ -320,6 +320,54 @@ type PeerMessage struct {
 	CreatedAt        time.Time      `json:"created_at"`
 }
 
+// Model roles. What a model is being asked to do, so a combination can send
+// each kind of thinking to the model suited to it.
+const (
+	// RoleVision is perception and action: reading the screen and deciding the
+	// next click. The hands.
+	RoleVision = "vision"
+	// RoleReasoning is planning, deduction and code. The brain.
+	RoleReasoning = "reasoning"
+	// RoleChat is talking to the operator.
+	RoleChat = "chat"
+	// RoleSummarize is compaction — cheap, high-volume, no judgement needed.
+	RoleSummarize = "summarize"
+	// RoleRefine is trajectory analysis and skill hardening.
+	RoleRefine = "refine"
+)
+
+// ModelRoles lists every role, in the order a picker should show them.
+var ModelRoles = []string{RoleVision, RoleReasoning, RoleChat, RoleSummarize, RoleRefine}
+
+// ModelCombo assigns models to roles.
+//
+// A combination is selectable anywhere a provider is, including inside a bot's
+// fallback chain — so "this pair of models, and if neither answers, that single
+// one" is expressible.
+type ModelCombo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Roles maps a role to the provider serving it. A role left unset falls
+	// back within the combination before the chain moves on.
+	Roles     map[string]string `json:"roles"`
+	CreatedAt time.Time         `json:"created_at"`
+}
+
+// Simple reports whether this is a brain-and-hands pair rather than a full
+// assignment, which is the distinction the UI draws.
+func (c ModelCombo) Simple() bool {
+	if len(c.Roles) > 2 {
+		return false
+	}
+	for role := range c.Roles {
+		if role != RoleVision && role != RoleReasoning {
+			return false
+		}
+	}
+	return true
+}
+
 // Conversation kinds. A conversation is an explicit, named thread rather than
 // something inferred from who happened to message whom: the operator creates
 // and deletes them, and agents talk inside them.

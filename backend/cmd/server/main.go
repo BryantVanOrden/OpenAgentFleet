@@ -77,6 +77,9 @@ func run(log *slog.Logger) error {
 
 	// --- model gateway ---
 	models := connectors.NewRegistry(db, v, log)
+	// Lets a chain entry name a combination rather than a single provider, so
+	// each kind of thinking reaches the model assigned to it.
+	models.AttachCombos(db)
 	if err := seedProviders(ctx, db, cfg, log); err != nil {
 		log.Warn("provider seeding skipped", "err", err)
 	}

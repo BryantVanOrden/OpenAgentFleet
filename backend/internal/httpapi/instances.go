@@ -229,8 +229,10 @@ func (s *Server) handleSetInstanceModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Reject unknown providers: a chain pointing at nothing looks configured
-	// and silently falls through to the fleet default.
+	// A chain entry names either a single provider or a combination — that is
+	// what lets "this pair of models, then that one" be written as one ordered
+	// list. Unknown entries are rejected: a chain pointing at nothing looks
+	// configured and silently falls through to the fleet default.
 	known, err := s.db.ListProviders(r.Context(), false)
 	if err != nil {
 		failErr(w, err)
@@ -240,11 +242,19 @@ func (s *Server) handleSetInstanceModels(w http.ResponseWriter, r *http.Request)
 	for _, p := range known {
 		byID[p.ID] = true
 	}
+	combos, err := s.db.ListModelCombos(r.Context())
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	for _, c := range combos {
+		byID[c.ID] = true
+	}
 	seen := make(map[string]bool, len(req.ProviderIDs))
 	chain := make([]string, 0, len(req.ProviderIDs))
 	for _, pid := range req.ProviderIDs {
 		if !byID[pid] {
-			fail(w, http.StatusBadRequest, "no such provider: "+pid)
+			fail(w, http.StatusBadRequest, "no such provider or combination: "+pid)
 			return
 		}
 		if seen[pid] {

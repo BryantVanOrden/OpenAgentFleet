@@ -301,6 +301,43 @@ class ApiClient {
     return PeerMessage.fromJson(data.cast<String, dynamic>());
   }
 
+  // ------------------------------------------------------ model combinations ---
+
+  Future<List<ModelCombo>> modelCombos() async {
+    final data = await _get('/api/model-combos') as List? ?? const [];
+    return data
+        .map((e) => ModelCombo.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<ModelCombo> saveModelCombo(ModelCombo c) async {
+    final body = {
+      'name': c.name,
+      'description': c.description,
+      'roles': c.roles,
+    };
+    final data = c.id.isEmpty
+        ? await _post('/api/model-combos', body) as Map
+        : await _put('/api/model-combos/${c.id}', body) as Map;
+    return ModelCombo.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteModelCombo(String id) => _delete('/api/model-combos/$id');
+
+  /// What each role actually resolves to for this bot, after combinations and
+  /// per-role fallbacks are applied.
+  Future<Map<String, List<String>>> resolvedModels(String instanceId) async {
+    final data =
+        await _get('/api/instances/$instanceId/models/resolved') as Map? ?? {};
+    return data.map((k, v) => MapEntry(
+          '$k',
+          ((v as List?) ?? const [])
+              .map((e) => '${(e as Map)['name'] ?? ''}')
+              .where((s) => s.isNotEmpty)
+              .toList(),
+        ));
+  }
+
   // ------------------------------------------------------------- memories ---
 
   /// What this bot has chosen to remember.

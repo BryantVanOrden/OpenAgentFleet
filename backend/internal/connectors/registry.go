@@ -36,6 +36,9 @@ type Registry struct {
 	mu       sync.Mutex
 	penalty  map[string]time.Time
 	failures map[string]int
+	// combos resolves a chain entry that names a combination rather than a
+	// provider. Optional: with none attached, entries are provider IDs.
+	combos ComboSource
 }
 
 const penaltyWindow = 60 * time.Second
