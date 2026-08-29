@@ -344,7 +344,10 @@ type Conversation struct {
 	Kind  string `json:"kind"`
 	Title string `json:"title"`
 	// Members are instance IDs, plus OperatorMemberID when you are in it.
-	Members   []string  `json:"members"`
+	Members []string `json:"members"`
+	// Pinned keeps a thread at the top of the list regardless of how recently
+	// anyone spoke in it.
+	Pinned    bool      `json:"pinned"`
 	CreatedAt time.Time `json:"created_at"`
 
 	// Populated on read for the conversation list; not stored.

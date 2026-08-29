@@ -209,10 +209,14 @@ func (b *Bus) ListConversations(ctx context.Context) []protocol.Conversation {
 		}
 	}
 
-	// Busiest-recently first, but the broadcast channel is pinned: it is the
-	// one thread that is always there and always where a stray message lands.
+	// Busiest-recently first, with pinned threads above the rest. The broadcast
+	// channel stays at the very top regardless: it is the one thread that is
+	// always there and always where a stray message lands.
 	rest := out[1:]
 	sort.Slice(rest, func(i, j int) bool {
+		if rest[i].Pinned != rest[j].Pinned {
+			return rest[i].Pinned
+		}
 		return rest[i].LastMessageAt.After(rest[j].LastMessageAt)
 	})
 	return out
@@ -381,4 +385,35 @@ func (b *Bus) IsMember(conversationID, memberID string) bool {
 		}
 	}
 	return false
+}
+
+// RenameConversation sets a thread's title. Naming a thread is how you find it
+// again once there are more than a handful.
+func (b *Bus) RenameConversation(ctx context.Context, id, title string) (protocol.Conversation, bool) {
+	return b.updateConversation(ctx, id, func(c *protocol.Conversation) { c.Title = title })
+}
+
+// PinConversation pins or unpins a thread.
+func (b *Bus) PinConversation(ctx context.Context, id string, pinned bool) (protocol.Conversation, bool) {
+	return b.updateConversation(ctx, id, func(c *protocol.Conversation) { c.Pinned = pinned })
+}
+
+func (b *Bus) updateConversation(ctx context.Context, id string, apply func(*protocol.Conversation)) (protocol.Conversation, bool) {
+	b.mu.Lock()
+	c, ok := b.conversations[id]
+	if !ok {
+		b.mu.Unlock()
+		return protocol.Conversation{}, false
+	}
+	apply(&c)
+	b.conversations[id] = c
+	st, log := b.convStore, b.log
+	b.mu.Unlock()
+
+	if st != nil {
+		if err := st.UpsertConversation(ctx, c); err != nil && log != nil {
+			log.Warn("conversation update not persisted", "id", id, "err", err)
+		}
+	}
+	return c, true
 }

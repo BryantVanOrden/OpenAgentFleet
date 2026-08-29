@@ -102,6 +102,52 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
         .then((_) => _refresh());
   }
 
+  Future<void> _rename(Conversation c) async {
+    final controller = TextEditingController(text: c.title);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Name this conversation'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(hintText: 'e.g. Release checks'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(apiProvider)
+          .updateConversation(c.id, title: name.trim());
+      await _refresh();
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _togglePin(Conversation c) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(apiProvider).updateConversation(c.id, pinned: !c.pinned);
+      await _refresh();
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
   Future<void> _delete(Conversation c) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -207,8 +253,20 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: Icon(icon, size: 20, color: Fleet.ink300),
-        title: Text(_titleOf(c, instances),
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        title: Row(
+          children: [
+            if (c.pinned) ...[
+              Icon(Icons.push_pin, size: 12, color: Fleet.warn),
+              const SizedBox(width: 5),
+            ],
+            Flexible(
+              child: Text(_titleOf(c, instances),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
         subtitle: Text(
           '$subtitle · ${c.messageCount} message'
           '${c.messageCount == 1 ? '' : 's'}',
@@ -218,10 +276,41 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
             // The broadcast channel is where an unaddressed message lands, so
             // there is nowhere for its traffic to go if it were removed.
             ? Icon(Icons.lock_outline, size: 15, color: Fleet.ink600)
-            : IconButton(
-                tooltip: 'Delete conversation',
-                icon: Icon(Icons.delete_outline, size: 19, color: Fleet.ink400),
-                onPressed: () => _delete(c),
+            : PopupMenuButton<String>(
+                color: Fleet.ink850,
+                icon: Icon(Icons.more_vert, size: 19, color: Fleet.ink400),
+                onSelected: (a) => switch (a) {
+                  'rename' => _rename(c),
+                  'pin' => _togglePin(c),
+                  _ => _delete(c),
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'rename',
+                    child: ListTile(
+                        dense: true,
+                        leading: Icon(Icons.edit_outlined),
+                        title: Text('Rename')),
+                  ),
+                  PopupMenuItem(
+                    value: 'pin',
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(
+                          c.pinned ? Icons.push_pin_outlined : Icons.push_pin),
+                      title: Text(c.pinned ? 'Unpin' : 'Pin to top'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(Icons.delete_outline, color: Fleet.bad),
+                      title:
+                          Text('Delete', style: TextStyle(color: Fleet.bad)),
+                    ),
+                  ),
+                ],
               ),
         onTap: () => _open(c),
       ),

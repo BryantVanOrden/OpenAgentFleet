@@ -641,7 +641,10 @@ type ChatMessage struct {
 	Kind string `json:"kind,omitempty"`
 	// PlanState is "" while a plan is still open, then "approved" or
 	// "discarded" -- so an answered plan stops offering its buttons.
-	PlanState string    `json:"plan_state,omitempty"`
+	PlanState string `json:"plan_state,omitempty"`
+	// SessionID is which chat with this bot the message belongs to. Empty means
+	// the original chat, from before chats could be separated.
+	SessionID string    `json:"session_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -656,9 +659,10 @@ func (s *Store) AppendChat(ctx context.Context, m *ChatMessage) error {
 		m.Kind = "message"
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO chat_messages(id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		m.ID, m.InstanceID, m.TaskID, m.Role, m.Body, m.ImageKey, m.Kind, m.PlanState, m.CreatedAt)
+		`INSERT INTO chat_messages(id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,session_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		m.ID, m.InstanceID, m.TaskID, m.Role, m.Body, m.ImageKey, m.Kind, m.PlanState, m.CreatedAt,
+		nullIfEmpty(m.SessionID))
 	return norm(err)
 }
 
@@ -672,21 +676,43 @@ func (s *Store) SetPlanState(ctx context.Context, id, state string) error {
 func (s *Store) ChatMessageByID(ctx context.Context, id string) (ChatMessage, error) {
 	var m ChatMessage
 	err := s.pool.QueryRow(ctx,
-		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at
+		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,COALESCE(session_id,'')
          FROM chat_messages WHERE id=$1`, id).
 		Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body,
-			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt)
+			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt, &m.SessionID)
 	return m, norm(err)
 }
 
 func (s *Store) ListChat(ctx context.Context, instanceID string, limit int) ([]ChatMessage, error) {
+	return s.ListChatSession(ctx, instanceID, "", limit)
+}
+
+// ListChatSession returns one chat with a bot. An empty sessionID means the
+// original chat, which is also where messages predating sessions live.
+//
+// Scoping matters beyond tidiness: this history is replayed into the model as
+// context, so an unscoped read would feed every past conversation back into a
+// chat the operator deliberately started fresh.
+func (s *Store) ListChatSession(ctx context.Context, instanceID, sessionID string, limit int) ([]ChatMessage, error) {
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.pool.Query(ctx,
-		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at
-         FROM chat_messages
-         WHERE instance_id=$1 ORDER BY created_at DESC LIMIT $2`, instanceID, limit)
+	q := `SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at,COALESCE(session_id,'')
+          FROM chat_messages
+          WHERE instance_id=$1 AND `
+	if sessionID == "" || sessionID == DefaultChatSessionID {
+		q += `session_id IS NULL`
+	} else {
+		q += `session_id=$3`
+	}
+	q += ` ORDER BY created_at DESC LIMIT $2`
+
+	args := []any{instanceID, limit}
+	if sessionID != "" && sessionID != DefaultChatSessionID {
+		args = append(args, sessionID)
+	}
+
+	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, norm(err)
 	}
@@ -695,7 +721,7 @@ func (s *Store) ListChat(ctx context.Context, instanceID string, limit int) ([]C
 	for rows.Next() {
 		var m ChatMessage
 		if err := rows.Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body,
-			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt); err != nil {
+			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt, &m.SessionID); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

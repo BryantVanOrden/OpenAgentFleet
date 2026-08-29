@@ -106,6 +106,7 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
           _ActivityTab(instanceId: instance.id),
           ChatScreen(
             instanceId: instance.id,
+            instanceName: instance.name,
             enabled: instance.isRunning,
             voice: instance.voice,
           ),

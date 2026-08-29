@@ -83,14 +83,19 @@ final tasksProvider =
   }
 });
 
+/// Which chat with which bot. A bot can hold several separate chats, and each
+/// one is its own context, so the history has to be fetched per chat rather
+/// than per bot.
+typedef ChatRef = ({String instanceId, String chatId});
+
 final chatProvider =
-    StreamProvider.family<List<ChatMessage>, String>((ref, instanceId) async* {
+    StreamProvider.family<List<ChatMessage>, ChatRef>((ref, key) async* {
   final api = ref.watch(apiProvider);
-  yield await api.chat(instanceId);
+  yield await api.chat(key.instanceId, chatId: key.chatId);
 
   await for (final event in ref.watch(fleetEventsProvider).events) {
-    if (event.type == 'chat' && event.instanceId == instanceId) {
-      yield await api.chat(instanceId);
+    if (event.type == 'chat' && event.instanceId == key.instanceId) {
+      yield await api.chat(key.instanceId, chatId: key.chatId);
     }
   }
 });

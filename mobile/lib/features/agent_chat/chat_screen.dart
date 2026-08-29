@@ -9,6 +9,7 @@ import '../../core/theme/theme.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../core/voice/voice_service.dart';
 import '../../core/voice/voice_prefs.dart';
+import 'chat_sessions_sheet.dart';
 
 /// Talking to a machine.
 ///
@@ -20,9 +21,14 @@ class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({
     super.key,
     required this.instanceId,
+    this.instanceName = 'this bot',
     this.enabled = true,
     this.voice = '',
   });
+
+  /// Shown when managing chats, so a confirmation names the bot rather than
+  /// saying "this bot".
+  final String instanceName;
 
   /// The voice this agent speaks in, from its own settings. Empty falls back
   /// to the app-wide default.
@@ -36,6 +42,13 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
+  /// Which chat with this bot is open. Empty is the original chat, which is
+  /// where history from before chats could be separated lives.
+  String _chatId = '';
+  String _chatTitle = '';
+
+  ChatRef get _chatRef => (instanceId: widget.instanceId, chatId: _chatId);
+
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   late final VoiceService _voice = VoiceService(api: ref.read(apiProvider));
@@ -138,9 +151,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(apiProvider).sendChat(widget.instanceId, text, mode: mode);
+      await ref
+          .read(apiProvider)
+          .sendChat(widget.instanceId, text, mode: mode, chatId: _chatId);
       _controller.clear();
-      ref.invalidate(chatProvider(widget.instanceId));
+      ref.invalidate(chatProvider(_chatRef));
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
     } finally {
@@ -148,11 +163,84 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// The chat you are in, and the way to get to the others.
+  ///
+  /// A bot holds several separate chats and each is its own context, so which
+  /// one you are in changes what the agent can see — that has to be on screen,
+  /// not buried in a menu.
+  Widget _chatBar() {
+    return InkWell(
+      onTap: _manageChats,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: Fleet.ink900,
+          border: Border(bottom: BorderSide(color: Fleet.ink800)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.forum_outlined, size: 15, color: Fleet.ink400),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _chatTitle.isEmpty ? 'Chat' : _chatTitle,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+            IconButton(
+              tooltip: 'New chat',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.add_comment_outlined,
+                  size: 18, color: Fleet.ink300),
+              onPressed: _startNewChat,
+            ),
+            Icon(Icons.expand_more, size: 18, color: Fleet.ink400),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _manageChats() async {
+    final picked = await ChatSessionsSheet.show(
+      context,
+      instanceId: widget.instanceId,
+      instanceName: widget.instanceName,
+      activeChatId: _chatId,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _chatId = picked.id == ChatSession.defaultId ? '' : picked.id;
+      _chatTitle = picked.id.isEmpty ? '' : picked.displayTitle;
+      _lastSpokenId = '';
+    });
+    ref.invalidate(chatProvider(_chatRef));
+  }
+
+  Future<void> _startNewChat() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final created =
+          await ref.read(apiProvider).createChatSession(widget.instanceId);
+      if (!mounted) return;
+      setState(() {
+        _chatId = created.id;
+        _chatTitle = created.displayTitle;
+        _lastSpokenId = '';
+      });
+      ref.invalidate(chatProvider(_chatRef));
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Speaking happens here rather than after sendChat: that call returns
     // nothing, and the agent's reply only exists once the chat reloads.
-    ref.listen(chatProvider(widget.instanceId), (_, next) {
+    ref.listen(chatProvider(_chatRef), (_, next) {
       if (!_speakReplies) return;
       final list = next.valueOrNull;
       if (list == null || list.isEmpty) return;
@@ -162,10 +250,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       unawaited(_speakReply(latest.body));
     });
 
-    final messages = ref.watch(chatProvider(widget.instanceId));
+    final messages = ref.watch(chatProvider(_chatRef));
 
     return Column(
       children: [
+        _chatBar(),
         Expanded(
           child: messages.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -199,7 +288,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 padding: const EdgeInsets.all(16),
                 itemCount: list.length,
                 itemBuilder: (context, i) =>
-                    _Bubble(message: list[i], instanceId: widget.instanceId),
+                    _Bubble(
+                        message: list[i],
+                        instanceId: widget.instanceId,
+                        chatId: _chatId),
               );
             },
           ),
@@ -287,9 +379,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 }
 
 class _Bubble extends ConsumerStatefulWidget {
-  const _Bubble({required this.message, required this.instanceId});
+  const _Bubble({
+    required this.message,
+    required this.instanceId,
+    required this.chatId,
+  });
   final ChatMessage message;
   final String instanceId;
+
+  /// Which chat this bubble is in, so approving a plan refreshes that chat
+  /// rather than the bot's original one.
+  final String chatId;
 
   @override
   ConsumerState<_Bubble> createState() => _BubbleState();
@@ -309,7 +409,8 @@ class _BubbleState extends ConsumerState<_Bubble> {
       } else {
         await api.discardPlan(widget.instanceId, msg.id);
       }
-      ref.invalidate(chatProvider(widget.instanceId));
+      ref.invalidate(chatProvider(
+          (instanceId: widget.instanceId, chatId: widget.chatId)));
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
     } finally {

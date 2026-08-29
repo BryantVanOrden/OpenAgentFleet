@@ -478,6 +478,47 @@ class PeerMessage {
       );
 }
 
+/// One chat with a single bot.
+///
+/// A bot used to have one unbounded history, so there was no way to start
+/// fresh or clear a chat that had gone somewhere unhelpful without losing
+/// every conversation you had ever had with it.
+class ChatSession {
+  const ChatSession({
+    required this.id,
+    required this.title,
+    required this.pinned,
+    required this.messageCount,
+    this.lastMessageAt,
+  });
+
+  /// The chat holding messages from before chats could be separated. It is not
+  /// a real row, so it cannot be renamed or pinned.
+  static const defaultId = 'default';
+
+  final String id;
+  final String title;
+  final bool pinned;
+  final int messageCount;
+  final DateTime? lastMessageAt;
+
+  bool get isDefault => id == defaultId;
+
+  /// What to show when the chat has no name of its own.
+  String get displayTitle {
+    if (title.isNotEmpty) return title;
+    return isDefault ? 'Earlier chat' : 'Untitled chat';
+  }
+
+  factory ChatSession.fromJson(Map<String, dynamic> j) => ChatSession(
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        pinned: j['pinned'] as bool? ?? false,
+        messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
+        lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
+      );
+}
+
 /// Something a bot decided was worth keeping.
 ///
 /// Agents choose what to remember; this is what that turned out to be. Worth
@@ -527,6 +568,7 @@ class Conversation {
     required this.members,
     required this.messageCount,
     this.lastMessageAt,
+    this.pinned = false,
   });
 
   /// The always-present channel every agent hears.
@@ -544,6 +586,9 @@ class Conversation {
   final int messageCount;
   final DateTime? lastMessageAt;
 
+  /// Keeps a thread at the top of the list however long it has been quiet.
+  final bool pinned;
+
   bool get isBroadcast => id == broadcastId;
 
   /// A pair thread is two agents talking with you watching, which is worth
@@ -559,6 +604,7 @@ class Conversation {
             .toList(growable: false),
         messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
         lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
+        pinned: j['pinned'] as bool? ?? false,
       );
 }
 

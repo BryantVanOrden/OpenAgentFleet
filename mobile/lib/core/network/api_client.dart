@@ -80,6 +80,12 @@ class ApiClient {
     return res.data;
   }
 
+  Future<dynamic> _patch(String path, [Object? body]) async {
+    final res = await _dio.patch(path, data: body, options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return res.data;
+  }
+
   // ------------------------------------------------------------------ auth ---
 
   Future<void> login(String email, String password) async {
@@ -327,6 +333,16 @@ class ApiClient {
   Future<void> deleteConversation(String id) =>
       _delete('/api/comms/conversations/$id');
 
+  /// Rename or pin a thread. Independent fields, so pinning keeps the name.
+  Future<Conversation> updateConversation(String id,
+      {String? title, bool? pinned}) async {
+    final data = await _patch('/api/comms/conversations/$id', {
+      if (title != null) 'title': title,
+      if (pinned != null) 'pinned': pinned,
+    }) as Map;
+    return Conversation.fromJson(data.cast<String, dynamic>());
+  }
+
   Future<List<PeerMessage>> conversationMessages(String id) async {
     final data =
         await _get('/api/comms/conversations/$id/messages') as List? ?? const [];
@@ -368,12 +384,45 @@ class ApiClient {
 
   // ------------------------------------------------------------------ chat ---
 
-  Future<List<ChatMessage>> chat(String instanceId) async {
-    final data = await _get('/api/chat/$instanceId') as List? ?? const [];
+  Future<List<ChatMessage>> chat(String instanceId, {String? chatId}) async {
+    final data = await _get('/api/chat/$instanceId',
+        query: chatId == null || chatId.isEmpty ? null : {'chat_id': chatId})
+        as List? ?? const [];
     return data
         .map((e) => ChatMessage.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
   }
+
+  // -------------------------------------------------------- chats with a bot ---
+
+  Future<List<ChatSession>> chatSessions(String instanceId) async {
+    final data =
+        await _get('/api/chat/$instanceId/chats') as List? ?? const [];
+    return data
+        .map((e) => ChatSession.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<ChatSession> createChatSession(String instanceId,
+      {String title = ''}) async {
+    final data =
+        await _post('/api/chat/$instanceId/chats', {'title': title}) as Map;
+    return ChatSession.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// Rename or pin a chat. Both are optional and independent, so pinning does
+  /// not clear the name.
+  Future<ChatSession> updateChatSession(String instanceId, String chatId,
+      {String? title, bool? pinned}) async {
+    final data = await _patch('/api/chat/$instanceId/chats/$chatId', {
+      if (title != null) 'title': title,
+      if (pinned != null) 'pinned': pinned,
+    }) as Map;
+    return ChatSession.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteChatSession(String instanceId, String chatId) =>
+      _delete('/api/chat/$instanceId/chats/$chatId');
 
   /// Talk to an agent.
   ///
@@ -381,8 +430,12 @@ class ApiClient {
   /// "task" (start work). Chat is the default deliberately: asking how a run is
   /// going must never start one.
   Future<void> sendChat(String instanceId, String body,
-          {String mode = 'chat'}) =>
-      _post('/api/chat/$instanceId', {'body': body, 'mode': mode});
+          {String mode = 'chat', String? chatId}) =>
+      _post('/api/chat/$instanceId', {
+        'body': body,
+        'mode': mode,
+        if (chatId != null && chatId.isNotEmpty) 'chat_id': chatId,
+      });
 
   /// Turn a proposed plan into a running task.
   Future<void> approvePlan(String instanceId, String planId) =>

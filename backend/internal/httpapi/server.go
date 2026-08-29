@@ -129,6 +129,7 @@ func (s *Server) Routes() http.Handler {
 	// Conversations: the named threads comms messages are filed into.
 	mux.Handle("GET /api/comms/conversations", auth(roleAny, s.handleListConversations))
 	mux.Handle("POST /api/comms/conversations", auth(roleOperator, s.handleCreateConversation))
+	mux.Handle("PATCH /api/comms/conversations/{id}", auth(roleOperator, s.handleUpdateConversation))
 	mux.Handle("DELETE /api/comms/conversations/{id}", auth(roleOperator, s.handleDeleteConversation))
 	mux.Handle("GET /api/comms/conversations/{id}/messages", auth(roleAny, s.handleListConversationMessages))
 	mux.Handle("POST /api/comms/conversations/{id}/compact", auth(roleOperator, s.handleCompactConversation))
@@ -190,6 +191,11 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("GET /api/chat/{instanceID}", auth(roleAny, s.handleChatHistory))
 	mux.Handle("POST /api/chat/{instanceID}", auth(roleOperator, s.handleChatSend))
+	// Separate chats with one bot: list, start, rename/pin, delete.
+	mux.Handle("GET /api/chat/{instanceID}/chats", auth(roleAny, s.handleListChatSessions))
+	mux.Handle("POST /api/chat/{instanceID}/chats", auth(roleOperator, s.handleCreateChatSession))
+	mux.Handle("PATCH /api/chat/{instanceID}/chats/{chatID}", auth(roleOperator, s.handleUpdateChatSession))
+	mux.Handle("DELETE /api/chat/{instanceID}/chats/{chatID}", auth(roleOperator, s.handleDeleteChatSession))
 	// A plan proposed in chat becomes a task only when the operator says so.
 	mux.Handle("POST /api/chat/{instanceID}/plans/{planID}/approve", auth(roleOperator, s.handleApprovePlan))
 	mux.Handle("POST /api/chat/{instanceID}/plans/{planID}/discard", auth(roleOperator, s.handleDiscardPlan))

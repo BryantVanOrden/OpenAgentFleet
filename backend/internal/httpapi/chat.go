@@ -12,7 +12,8 @@ import (
 )
 
 func (s *Server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
-	msgs, err := s.db.ListChat(r.Context(), r.PathValue("instanceID"), queryInt(r, "limit", 200))
+	msgs, err := s.db.ListChatSession(r.Context(), r.PathValue("instanceID"),
+		r.URL.Query().Get("chat_id"), queryInt(r, "limit", 200))
 	if err != nil {
 		failErr(w, err)
 		return
@@ -34,7 +35,10 @@ type chatRequest struct {
 	//   plan  - the agent works out how it would do something and proposes it.
 	//           Still touches nothing; the operator approves it into a task.
 	//   task  - start work now.
-	Mode       string `json:"mode,omitempty"`
+	Mode string `json:"mode,omitempty"`
+	// ChatID is which chat with this bot the message belongs to. Empty means
+	// the original chat.
+	ChatID     string `json:"chat_id,omitempty"`
 	ProviderID string `json:"provider_id,omitempty"`
 	SkillID    string `json:"skill_id,omitempty"`
 }
@@ -78,7 +82,9 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userMsg := &store.ChatMessage{InstanceID: instanceID, Role: "user", Body: req.Body}
+	userMsg := &store.ChatMessage{
+		InstanceID: instanceID, Role: "user", Body: req.Body, SessionID: req.ChatID,
+	}
 	if err := s.db.AppendChat(r.Context(), userMsg); err != nil {
 		failErr(w, err)
 		return
@@ -124,7 +130,10 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	history, _ := s.db.ListChat(r.Context(), instanceID, 20)
+	// Scoped to this chat on purpose: an unscoped read would replay every past
+	// conversation into a chat the operator deliberately started fresh, which
+	// is the one thing starting a new chat is supposed to prevent.
+	history, _ := s.db.ListChatSession(r.Context(), instanceID, req.ChatID, 20)
 	msgs := make([]connectors.Message, 0, len(history)+1)
 	for _, m := range history {
 		role := connectors.RoleUser
@@ -183,6 +192,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	}
 	reply := &store.ChatMessage{
 		InstanceID: instanceID, Role: "agent", Body: resp.Text, Kind: kind,
+		SessionID: req.ChatID,
 	}
 	if err := s.db.AppendChat(r.Context(), reply); err != nil {
 		failErr(w, err)

@@ -43,6 +43,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   /// Off by default: a fleet that talks constantly should not talk over you.
   bool _readAloud = false;
+
+  late bool _pinned = widget.conversation.pinned;
+  late String _title = widget.title;
   String _lastSpokenId = '';
   String _speakingId = '';
 
@@ -184,6 +187,88 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
   }
 
+  Future<void> _rename() async {
+    final controller = TextEditingController(text: widget.conversation.title);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Name this conversation'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(hintText: 'e.g. Release checks'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final updated = await ref
+          .read(apiProvider)
+          .updateConversation(widget.conversation.id, title: name.trim());
+      if (mounted) setState(() => _title = updated.title);
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _togglePin() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final updated = await ref
+          .read(apiProvider)
+          .updateConversation(widget.conversation.id, pinned: !_pinned);
+      if (mounted) setState(() => _pinned = updated.pinned);
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this conversation?'),
+        content: const Text(
+          'The thread is removed from your comms list. What was said in it is '
+          'kept on the server — closing a thread should not destroy the record '
+          'of what your agents agreed.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      await ref.read(apiProvider).deleteConversation(widget.conversation.id);
+      navigator.pop();
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -191,7 +276,19 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.title, style: const TextStyle(fontSize: 15)),
+            Row(
+              children: [
+                if (_pinned) ...[
+                  Icon(Icons.push_pin, size: 13, color: Fleet.warn),
+                  const SizedBox(width: 5),
+                ],
+                Flexible(
+                  child: Text(_title,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15)),
+                ),
+              ],
+            ),
             Text(
               widget.conversation.isPair
                   ? 'Two agents talking — you are watching'
@@ -220,6 +317,45 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               });
               if (!_readAloud) unawaited(_voice.stopSpeaking());
             },
+          ),
+          PopupMenuButton<String>(
+            color: Fleet.ink850,
+            icon: const Icon(Icons.more_vert),
+            onSelected: (a) => switch (a) {
+              'rename' => _rename(),
+              'pin' => _togglePin(),
+              _ => _delete(),
+            },
+            itemBuilder: (_) => [
+              if (!widget.conversation.isBroadcast) ...[
+                const PopupMenuItem(
+                  value: 'rename',
+                  child: ListTile(
+                      dense: true,
+                      leading: Icon(Icons.edit_outlined),
+                      title: Text('Rename')),
+                ),
+                PopupMenuItem(
+                  value: 'pin',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(_pinned
+                        ? Icons.push_pin_outlined
+                        : Icons.push_pin),
+                    title: Text(_pinned ? 'Unpin' : 'Pin to top'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.delete_outline, color: Fleet.bad),
+                    title: Text('Delete conversation',
+                        style: TextStyle(color: Fleet.bad)),
+                  ),
+                ),
+              ],
+            ],
           ),
           IconButton(
             tooltip: 'Compact conversation',

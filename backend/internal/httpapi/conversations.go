@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
@@ -58,6 +59,48 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusCreated,
 		vault.GlobalBus.CreateConversation(r.Context(), req.Title, req.Members))
+}
+
+// handleUpdateConversation renames or pins a thread.
+func (s *Server) handleUpdateConversation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == protocol.BroadcastConversationID {
+		fail(w, http.StatusBadRequest, "the broadcast channel cannot be renamed or pinned")
+		return
+	}
+
+	var req struct {
+		Title  string `json:"title"`
+		Pinned *bool  `json:"pinned"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Independent fields: pinning a thread must not clear its name because the
+	// request did not repeat it.
+	var updated protocol.Conversation
+	var ok bool
+	if title := strings.TrimSpace(req.Title); title != "" {
+		updated, ok = vault.GlobalBus.RenameConversation(r.Context(), id, title)
+		if !ok {
+			fail(w, http.StatusNotFound, "no such conversation")
+			return
+		}
+	}
+	if req.Pinned != nil {
+		updated, ok = vault.GlobalBus.PinConversation(r.Context(), id, *req.Pinned)
+		if !ok {
+			fail(w, http.StatusNotFound, "no such conversation")
+			return
+		}
+	}
+	if updated.ID == "" {
+		fail(w, http.StatusBadRequest, "nothing to update: send a title or pinned")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
