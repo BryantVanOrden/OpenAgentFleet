@@ -108,6 +108,18 @@ func (s *Server) instanceIsBusy(ctx context.Context, instanceID string) bool {
 func (s *Server) nextUnanswered(ctx context.Context, instanceID string, since time.Time) (protocol.PeerMessage, bool) {
 	msgs := vault.GlobalBus.ListMessages(ctx, instanceID, 10)
 
+	// An agent's own most recent reply is a high-water mark that survives a
+	// restart, unlike the in-memory one: having already replied after a
+	// message is proof of having answered it. Without this every deploy made
+	// the whole fleet answer the same question again, which is visible in any
+	// channel that has been through a few.
+	for _, m := range msgs {
+		if m.FromInstanceID == instanceID && m.Kind == peerReplyKind &&
+			m.CreatedAt.After(since) {
+			since = m.CreatedAt
+		}
+	}
+
 	var best protocol.PeerMessage
 	found := false
 	// Anything older than this is not worth answering. The high-water mark is
@@ -123,6 +135,13 @@ func (s *Server) nextUnanswered(ctx context.Context, instanceID string, since ti
 	for _, m := range msgs {
 		switch {
 		case m.FromInstanceID == instanceID: // never answer yourself
+		case !s.mayAnswer(instanceID, m):
+			// Not in that room. A message the operator writes into a thread
+			// between two other agents is addressed to the fleet, because a
+			// message carries one recipient and a thread has several — so it
+			// lands in every inbox. Without this check a third agent answered
+			// into a pair thread it was not part of, which is exactly what a
+			// private thread is supposed to prevent.
 		case m.Kind == peerReplyKind: // replies do not beget replies
 		case m.Kind == peerSummaryKind:
 			// A summary is a record of what was said, not something said to
@@ -216,6 +235,22 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	}
 	vault.GlobalBus.SendMessageIn(ctx, conv, inst.ID, inst.Name, to, peerReplyKind, body, nil)
 	s.log.Info("agent answered a peer message", "instance", inst.Name, "to", to, "conversation", conv)
+}
+
+// mayAnswer reports whether this agent belongs in the message's thread.
+//
+// The broadcast channel and unfiled messages are open to everyone; a named
+// conversation is not.
+func (s *Server) mayAnswer(instanceID string, m protocol.PeerMessage) bool {
+	conv := m.ConversationID
+	if conv == "" || conv == protocol.BroadcastConversationID {
+		return true
+	}
+	// A message addressed to this agent is for it whatever thread it sits in.
+	if m.ToInstanceID == instanceID {
+		return true
+	}
+	return vault.GlobalBus.IsMember(conv, instanceID)
 }
 
 // isOperator reports whether a message came from a human rather than an agent.
