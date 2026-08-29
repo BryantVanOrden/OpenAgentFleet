@@ -24,11 +24,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _busy = false;
   String? _error;
 
+  /// Prefilled orchestrator endpoint. The `10.0.2.2` fallback is the Android
+  /// emulator's alias for the host loopback; it resolves to nothing on a real
+  /// handset, so anyone shipping an APK to a physical phone should bake in a
+  /// reachable address at build time instead:
+  ///   flutter build apk --dart-define=AGENTFLEET_SERVER=http://host:8080
+  /// A tailnet name works from any network with no port forward and no pinned
+  /// LAN address, which makes it a good choice for that value.
+  static const _defaultServer = String.fromEnvironment(
+    'AGENTFLEET_SERVER',
+    defaultValue: 'http://10.0.2.2:8080',
+  );
+
   @override
   void initState() {
     super.initState();
     final api = ref.read(apiProvider);
-    _server.text = api.baseUrl.isEmpty ? 'http://10.0.2.2:8080' : api.baseUrl;
+    _server.text = api.baseUrl.isEmpty ? _defaultServer : api.baseUrl;
   }
 
   @override
