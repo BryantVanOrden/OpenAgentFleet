@@ -9,12 +9,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_cef/webview_cef.dart' as cef;
+
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../agent_chat/chat_screen.dart';
+import 'voice_picker.dart';
 
 /// One machine, three views: what it looks like, what it is doing, and talking
 /// to it. Everything an operator needs while standing somewhere else.
@@ -29,6 +31,9 @@ class InstanceScreen extends ConsumerStatefulWidget {
 
 class _InstanceScreenState extends ConsumerState<InstanceScreen>
     with SingleTickerProviderStateMixin {
+  /// True while the Desktop tab is expanded; hides this screen's own chrome.
+  bool _desktopFullscreen = false;
+
   late final TabController _tabs = TabController(length: 3, vsync: this);
 
   @override
@@ -49,42 +54,54 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(instance.name, overflow: TextOverflow.ellipsis),
-            Text(
-              '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
-              style: TextStyle(fontSize: 11, color: Fleet.ink400),
+      // In full screen the app's own chrome goes too: with the title bar and
+      // the tab strip still showing, "expand" only reclaimed the button row
+      // and the desktop stayed a letterboxed strip.
+      appBar: _desktopFullscreen
+          ? null
+          : AppBar(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(instance.name, overflow: TextOverflow.ellipsis),
+                  Text(
+                    '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
+                    style: TextStyle(fontSize: 11, color: Fleet.ink400),
+                  ),
+                ],
+              ),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                      child: StateChip(
+                          state: instance.state, live: instance.isRunning)),
+                ),
+                _ControlMenu(instance: instance),
+              ],
+              bottom: TabBar(
+                controller: _tabs,
+                indicatorColor: Fleet.live,
+                labelColor: Fleet.ink100,
+                unselectedLabelColor: Fleet.ink400,
+                tabs: const [
+                  Tab(text: 'Desktop'),
+                  Tab(text: 'Activity'),
+                  Tab(text: 'Chat'),
+                ],
+              ),
             ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-                child:
-                    StateChip(state: instance.state, live: instance.isRunning)),
-          ),
-          _ControlMenu(instance: instance),
-        ],
-        bottom: TabBar(
-          controller: _tabs,
-          indicatorColor: Fleet.live,
-          labelColor: Fleet.ink100,
-          unselectedLabelColor: Fleet.ink400,
-          tabs: const [
-            Tab(text: 'Desktop'),
-            Tab(text: 'Activity'),
-            Tab(text: 'Chat'),
-          ],
-        ),
-      ),
       body: TabBarView(
         controller: _tabs,
         children: [
-          _DesktopTab(instance: instance),
+          _DesktopTab(
+            instance: instance,
+            onFullscreenChanged: (v) {
+              if (_desktopFullscreen != v) {
+                setState(() => _desktopFullscreen = v);
+              }
+            },
+          ),
           _ActivityTab(instanceId: instance.id),
           ChatScreen(instanceId: instance.id, enabled: instance.isRunning),
         ],
@@ -141,6 +158,11 @@ class _ControlMenu extends ConsumerWidget {
         } catch (err) {
           messenger.showSnackBar(SnackBar(content: Text('$err')));
         }
+        return;
+      }
+
+      if (action == 'voice') {
+        await VoicePicker.show(context, instance);
         return;
       }
 
@@ -208,6 +230,17 @@ class _ControlMenu extends ConsumerWidget {
           ),
         const PopupMenuDivider(),
         PopupMenuItem(
+          value: 'voice',
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('Voice'),
+            subtitle: Text(
+              instance.voice.isEmpty ? 'App default' : instance.voice,
+            ),
+          ),
+        ),
+        PopupMenuItem(
           value: 'shell',
           child: ListTile(
             dense: true,
@@ -260,8 +293,16 @@ class _ControlMenu extends ConsumerWidget {
 /// Two ways to look at a machine, because bandwidth is not free on a phone:
 /// a single frame on demand, or the full interactive stream.
 class _DesktopTab extends ConsumerStatefulWidget {
-  const _DesktopTab({required this.instance});
+  const _DesktopTab({
+    required this.instance,
+    required this.onFullscreenChanged,
+  });
+
   final Instance instance;
+
+  /// Lets the parent drop its app bar and tab strip, which this widget cannot
+  /// reach from inside the TabBarView.
+  final ValueChanged<bool> onFullscreenChanged;
 
   @override
   ConsumerState<_DesktopTab> createState() => _DesktopTabState();
@@ -553,7 +594,6 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
         try {
           await api.startRecording(widget.instance.id, name);
           setState(() => _recording = true);
-          if (!_streaming && _canEmbedWebView) _startStream();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -647,8 +687,10 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                             icon: Icon(_fullscreen
                                 ? Icons.fullscreen_exit
                                 : Icons.fullscreen),
-                            onPressed: () =>
-                                setState(() => _fullscreen = !_fullscreen),
+                            onPressed: () {
+                              setState(() => _fullscreen = !_fullscreen);
+                              widget.onFullscreenChanged(_fullscreen);
+                            },
                           ),
                         ),
                       ),
@@ -747,24 +789,31 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _toggleRecording,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _recording ? Fleet.bad : Fleet.ink800,
+                  // Only once you have taken over. A demonstration is a
+                  // recording of you driving the desktop, so offering it over
+                  // a still frame invites starting a recording of nothing —
+                  // which is what it used to do.
+                  if (_streaming) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _toggleRecording,
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              _recording ? Fleet.bad : Fleet.ink800,
+                        ),
+                        icon: Icon(
+                            _recording
+                                ? Icons.stop_circle
+                                : Icons.fiber_manual_record,
+                            size: 18),
+                        label: Text(_recording
+                            ? 'Stop and save demonstration'
+                            : 'Record a demonstration'),
                       ),
-                      icon: Icon(
-                          _recording
-                              ? Icons.stop_circle
-                              : Icons.fiber_manual_record,
-                          size: 18),
-                      label: Text(_recording
-                          ? 'Stop & Compile Demonstration'
-                          : '🎬 Teach Bot (Record Demonstration)'),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

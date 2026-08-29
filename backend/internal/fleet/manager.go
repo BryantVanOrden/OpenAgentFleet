@@ -582,3 +582,42 @@ func envOr(k, def string) string {
 	}
 	return def
 }
+
+// SetSudo turns sudo on or off inside a running sandbox.
+//
+// It works by setting or clearing the setuid bit on the sudo binary, executed
+// as root inside the container. That is a live change to a real mechanism: with
+// the bit cleared sudo cannot escalate at all, and the agent — which runs
+// unprivileged — cannot put it back, because doing so needs the very privilege
+// it is being denied.
+//
+// This exists because the alternative was worse. Sudo used to be decided by the
+// container's no-new-privileges option, which the kernel applies at creation
+// and cannot be changed afterwards; changing your mind meant recreating the
+// container, and these sandboxes have no volume, so recreating one throws away
+// everything the agent has done. Being unable to revoke sudo without destroying
+// the workspace is a bad place to be during an incident.
+//
+// The trade is stated plainly: containers are no longer created with
+// no-new-privileges, so the setuid bit is what stands between the agent and
+// root rather than a kernel-level refusal on top of it. In exchange the grant
+// can be withdrawn in seconds, on a running agent, without losing its work.
+func (m *Manager) SetSudo(ctx context.Context, inst *protocol.Instance, allowed bool) error {
+	if inst.Runtime == "" {
+		return fmt.Errorf("instance has no container")
+	}
+	mode := "u-s"
+	if allowed {
+		mode = "u+s"
+	}
+	out, err := m.docker.ExecAs(ctx, inst.Runtime, "0",
+		[]string{"chmod", mode, "/usr/bin/sudo"})
+	if err != nil {
+		return fmt.Errorf("could not change sudo: %w", err)
+	}
+	if trimmed := strings.TrimSpace(out); trimmed != "" {
+		// chmod is silent on success; anything it printed is a problem.
+		return fmt.Errorf("could not change sudo: %s", trimmed)
+	}
+	return nil
+}

@@ -353,10 +353,21 @@ func (c *DockerClient) PullImage(ctx context.Context, ref string) error {
 
 // Exec runs a command inside a container and returns the multiplexed output.
 func (c *DockerClient) Exec(ctx context.Context, id string, cmd []string) (string, error) {
-	var created createResponse
-	err := c.do(ctx, http.MethodPost, "/containers/"+id+"/exec", map[string]any{
+	return c.ExecAs(ctx, id, "", cmd)
+}
+
+// ExecAs runs a command as a specific user. An empty user keeps the image's
+// default, which is the unprivileged agent; "0" is how the platform changes
+// something the agent itself must not be able to change.
+func (c *DockerClient) ExecAs(ctx context.Context, id, user string, cmd []string) (string, error) {
+	payload := map[string]any{
 		"AttachStdout": true, "AttachStderr": true, "Cmd": cmd, "Tty": false,
-	}, &created)
+	}
+	if user != "" {
+		payload["User"] = user
+	}
+	var created createResponse
+	err := c.do(ctx, http.MethodPost, "/containers/"+id+"/exec", payload, &created)
 	if err != nil {
 		return "", err
 	}

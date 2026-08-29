@@ -32,26 +32,15 @@ static void my_application_activate(GApplication* application) {
   // If running on X and not using GNOME then just use a traditional title bar
   // in case the window manager does more exotic layout, e.g. tiling.
   // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
-#ifdef GDK_WINDOWING_X11
-  GdkScreen* screen = gtk_window_get_screen(window);
-  if (GDK_IS_X11_SCREEN(screen)) {
-    const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
-      use_header_bar = FALSE;
-    }
-  }
-#endif
-  if (use_header_bar) {
-    GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
-    gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "AgentFleet");
-    gtk_header_bar_set_show_close_button(header_bar, TRUE);
-    gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "AgentFleet");
-  }
+  // No client-side header bar.
+  //
+  // The scaffold template adds a GtkHeaderBar carrying the app name and a
+  // close button. On a tiling compositor that is a second title bar stacked on
+  // top of the one the compositor already draws, eating vertical space the
+  // remote desktop needs and leaving the app looking like it has two chromes.
+  // The window title is still set, so anything that lists windows still names
+  // it properly.
+  gtk_window_set_title(window, "AgentFleet");
 
   gtk_window_set_default_size(window, 1280, 720);
 

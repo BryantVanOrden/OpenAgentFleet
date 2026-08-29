@@ -336,6 +336,15 @@ class ApiClient {
   Future<void> discardPlan(String instanceId, String planId) =>
       _post('/api/chat/$instanceId/plans/$planId/discard');
 
+  /// Set the voice a particular agent speaks in. Empty returns it to the
+  /// app-wide default.
+  Future<Instance> setInstanceVoice(String instanceId, String voice) async {
+    final res = await _dio.put('/api/instances/$instanceId/access',
+        data: {'voice': voice}, options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return Instance.fromJson((res.data as Map).cast<String, dynamic>());
+  }
+
   /// Turn shell access on or off for a running agent. Takes effect on its next
   /// step. Sudo is not settable here — it is fixed when the instance is built.
   Future<Instance> setShellAccess(String instanceId, bool allowed) async {

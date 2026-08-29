@@ -39,6 +39,7 @@ class Instance {
     required this.profile,
     required this.shellAccess,
     this.sudoAccess = false,
+    this.voice = '',
     required this.createdAt,
     this.lastError = '',
   });
@@ -50,9 +51,12 @@ class Instance {
   final TierProfile profile;
   final bool shellAccess;
 
-  /// Whether sudo works inside this sandbox. Fixed at creation: it depends on
-  /// a container option the kernel applies when the container starts.
+  /// Whether sudo works inside this sandbox.
   final bool sudoAccess;
+
+  /// Voice this agent speaks in. Empty uses the app-wide default. Per agent so
+  /// a fleet is legible by ear rather than every bot sounding identical.
+  final String voice;
   final DateTime createdAt;
   final String lastError;
 
@@ -68,6 +72,7 @@ class Instance {
         ),
         shellAccess: j['shell_access'] as bool? ?? false,
         sudoAccess: j['sudo_access'] as bool? ?? false,
+        voice: j['voice'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
         lastError: j['last_error'] as String? ?? '',

@@ -136,3 +136,8 @@ final cronTriggersProvider = FutureProvider<List<CronTrigger>>(
 
 final webhookTriggersProvider = FutureProvider<List<WebhookTrigger>>(
     (ref) => ref.watch(apiProvider).webhookTriggers());
+
+/// Voices the server's speech service offers. Empty when no TTS service is
+/// deployed, which is a supported configuration rather than an error.
+final serverVoicesProvider = FutureProvider<List<ServerVoice>>(
+    (ref) => ref.watch(apiProvider).serverVoices());
