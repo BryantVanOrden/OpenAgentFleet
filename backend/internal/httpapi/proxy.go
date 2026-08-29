@@ -46,18 +46,34 @@ func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusForbidden, "insufficient role")
 		return
 	}
-	// Auditors may watch; only operators and admins get input. This is decided
-	// here and enforced by which SERVER we splice them to — the sandbox runs a
-	// second, `-viewonly` x11vnc for exactly this. noVNC's own `view_only`
-	// parameter is client-side and survives only until someone edits the URL,
-	// so it would not make the claim in docs/SECURITY.md true.
-	readOnly := !roleAllows(claims.Role, roleOperator)
 
 	inst, err := s.db.Instance(r.Context(), id)
 	if err != nil {
 		failErr(w, err)
 		return
 	}
+
+	// This route is registered outside requireAuth — a browser loading noVNC
+	// cannot set headers — so the caller's org access is resolved here rather
+	// than read off the context.
+	acc, err := s.accessForClaims(r.Context(), claims)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+		// 404, not 403: confirming a bot exists but is not yours is itself a
+		// disclosure, and a desktop URL is easy to guess at.
+		fail(w, http.StatusNotFound, "no such instance")
+		return
+	}
+
+	// Watching and driving are different permissions. Enforced by which SERVER
+	// the connection is spliced to — the sandbox runs a second, `-viewonly`
+	// x11vnc for exactly this. noVNC's own `view_only` parameter is
+	// client-side and survives only until someone edits the URL, so it would
+	// not make the claim in docs/SECURITY.md true.
+	readOnly := !acc.Can(protocol.PermDesktop, inst.OrgID, inst.ID)
 	if inst.State != protocol.InstanceRunning {
 		fail(w, http.StatusConflict, "instance is "+string(inst.State))
 		return

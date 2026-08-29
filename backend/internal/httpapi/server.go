@@ -206,6 +206,22 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /api/secrets/{ref}", auth(roleAdmin, s.handlePutSecret))
 	mux.Handle("DELETE /api/secrets/{ref}", auth(roleAdmin, s.handleDeleteSecret))
 
+	// Organisations and departments. Gated at roleOperator rather than
+	// roleAdmin: an org owner is not necessarily a deployment administrator,
+	// and the per-org checks inside each handler are what actually decide.
+	mux.Handle("GET /api/orgs", auth(roleAny, s.handleListOrgs))
+	mux.Handle("POST /api/orgs", auth(roleOperator, s.handleUpsertOrg))
+	mux.Handle("PUT /api/orgs/{id}", auth(roleOperator, s.handleUpsertOrg))
+	mux.Handle("DELETE /api/orgs/{id}", auth(roleOperator, s.handleDeleteOrg))
+	mux.Handle("GET /api/orgs/{id}/members", auth(roleAny, s.handleListOrgMembers))
+	mux.Handle("POST /api/orgs/{id}/members", auth(roleOperator, s.handleUpsertOrgMember))
+	mux.Handle("DELETE /api/orgs/{id}/members/{userID}", auth(roleOperator, s.handleRemoveOrgMember))
+	// Which department a bot belongs to, and per-bot exceptions.
+	mux.Handle("PUT /api/instances/{id}/org", auth(roleOperator, s.handleSetInstanceOrg))
+	mux.Handle("GET /api/instances/{id}/grants", auth(roleOperator, s.handleListBotGrants))
+	mux.Handle("PUT /api/instances/{id}/grants", auth(roleOperator, s.handleSetBotGrant))
+	// What the caller may do, so the app can hide what it must.
+	mux.Handle("GET /api/me/permissions", auth(roleAny, s.handleMyPermissions))
 	mux.Handle("GET /api/users", auth(roleAdmin, s.handleListUsers))
 	mux.Handle("POST /api/users", auth(roleAdmin, s.handleCreateUser))
 	mux.Handle("PUT /api/users/{id}/role", auth(roleAdmin, s.handleSetRole))

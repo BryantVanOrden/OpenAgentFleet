@@ -12,6 +12,9 @@ import (
 )
 
 func (s *Server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermRead); !ok {
+		return
+	}
 	msgs, err := s.db.ListChatSession(r.Context(), r.PathValue("instanceID"),
 		r.URL.Query().Get("chat_id"), queryInt(r, "limit", 200))
 	if err != nil {
@@ -67,9 +70,11 @@ func (r chatRequest) resolvedMode() string {
 //     do — look, report, touch nothing.
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	instanceID := r.PathValue("instanceID")
-	inst, err := s.db.Instance(r.Context(), instanceID)
-	if err != nil {
-		failErr(w, err)
+	// Talking to a bot can make it act, so this is PermChat rather than
+	// PermRead — an auditor reads the transcript without being able to add to
+	// it.
+	inst, ok := s.requirePerm(w, r, instanceID, protocol.PermChat)
+	if !ok {
 		return
 	}
 	var req chatRequest

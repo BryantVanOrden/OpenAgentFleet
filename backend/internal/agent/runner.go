@@ -431,9 +431,11 @@ func (r *Runner) execute(
 		if key == "" || val == "" {
 			return "failed: share_secret needs a key and a value", terminalNone
 		}
-		// Scope to this instance's originator so an audit can see who published
-		// the token; default scope inside the bus is fleet-wide readability.
-		vault.GlobalBus.PutSecret(ctx, key, val, "fleet", a.Thought, inst.Name)
+		// Scoped to the bot's own department: a secret an agent discovers
+		// belongs to the org that agent works for, not to everyone with an
+		// account. Scope stays "fleet" so it remains readable by that org's
+		// bots, which is what sharing is for.
+		vault.GlobalBus.PutSecret(ctx, key, val, "fleet", a.Thought, inst.Name, inst.OrgID)
 		return "shared secret to the fleet vault: " + clip(key, 120), terminalNone
 
 	case protocol.ActShareSession:
@@ -443,7 +445,7 @@ func (r *Runner) execute(
 			return "failed: share_session needs a domain and cookies", terminalNone
 		}
 		title := firstNonEmpty(a.Thought, clip(domain, 60))
-		sess := vault.GlobalBus.SaveSession(ctx, domain, title, cookies, "", inst.ID)
+		sess := vault.GlobalBus.SaveSession(ctx, domain, title, cookies, "", inst.ID, inst.OrgID)
 		return "shared session for " + clip(domain, 80) + " (" + sess.ID + ")", terminalNone
 
 	// Peer messaging. Deliberately not gated behind a swarm: every instance can

@@ -200,7 +200,7 @@ func TestConcurrentSendAndListLosesNoMessage(t *testing.T) {
 func TestSharedSecretRoundTrip(t *testing.T) {
 	b := NewBus()
 
-	put := b.PutSecret(ctx(), "stripe.key", "sk_live_abc123", "fleet", "billing", "inst-a")
+	put := b.PutSecret(ctx(), "stripe.key", "sk_live_abc123", "fleet", "billing", "inst-a", "")
 	if put.Key != "stripe.key" || put.Value != "sk_live_abc123" {
 		t.Fatalf("PutSecret returned %+v", put)
 	}
@@ -234,7 +234,7 @@ func TestSharedSecretRoundTrip(t *testing.T) {
 
 func TestEmptyScopeDefaultsToFleet(t *testing.T) {
 	b := NewBus()
-	sec := b.PutSecret(ctx(), "k", "v", "", "", "")
+	sec := b.PutSecret(ctx(), "k", "v", "", "", "", "")
 	if sec.Scope != "fleet" {
 		t.Errorf("Scope = %q, want the %q default", sec.Scope, "fleet")
 	}
@@ -257,7 +257,7 @@ func TestMissingSecretIsACleanNotFound(t *testing.T) {
 		t.Errorf("miss returned a populated struct: %+v", sec)
 	}
 
-	b.PutSecret(ctx(), "temp", "v", "fleet", "", "")
+	b.PutSecret(ctx(), "temp", "v", "fleet", "", "", "")
 	b.DeleteSecret(ctx(), "temp")
 	if sec, ok := b.GetSecret(ctx(), "temp"); ok {
 		t.Errorf("deleted key still reports ok: %+v", sec)
@@ -307,7 +307,7 @@ func TestConcurrentUpdatesToOneKeyLandOnAWholeValue(t *testing.T) {
 			defer writeWG.Done()
 			val := fmt.Sprintf("value-from-writer-%d", w)
 			for i := 0; i < rounds; i++ {
-				b.PutSecret(ctx(), "hot.key", val, "fleet", "", fmt.Sprintf("inst-%d", w))
+				b.PutSecret(ctx(), "hot.key", val, "fleet", "", fmt.Sprintf("inst-%d", w), "")
 			}
 		}(w)
 	}
@@ -370,7 +370,7 @@ func TestSessionBlobRoundTripsUnchanged(t *testing.T) {
 			b := NewBus()
 
 			// export -> import
-			saved := b.SaveSession(ctx(), "example.com", tc.name, tc.cookies, tc.local, "inst-a")
+			saved := b.SaveSession(ctx(), "example.com", tc.name, tc.cookies, tc.local, "inst-a", "")
 			if saved.ID == "" {
 				t.Fatal("SaveSession returned an empty id")
 			}
@@ -387,7 +387,7 @@ func TestSessionBlobRoundTripsUnchanged(t *testing.T) {
 			}
 
 			// -> export again: a second hop must be identical to the first.
-			again := b.SaveSession(ctx(), got.Domain, got.Title, got.CookiesJSON, got.LocalStorageJSON, got.CreatedByInstance)
+			again := b.SaveSession(ctx(), got.Domain, got.Title, got.CookiesJSON, got.LocalStorageJSON, got.CreatedByInstance, "")
 			final, ok := b.GetSession(ctx(), again.ID)
 			if !ok {
 				t.Fatal("second-hop session missing")
@@ -408,9 +408,9 @@ func TestSessionBlobRoundTripsUnchanged(t *testing.T) {
 
 func TestListSessionsFiltersByDomain(t *testing.T) {
 	b := NewBus()
-	b.SaveSession(ctx(), "example.com", "a", `[]`, "", "inst-a")
-	b.SaveSession(ctx(), "example.com", "b", `[]`, "", "inst-a")
-	b.SaveSession(ctx(), "other.test", "c", `[]`, "", "inst-b")
+	b.SaveSession(ctx(), "example.com", "a", `[]`, "", "inst-a", "")
+	b.SaveSession(ctx(), "example.com", "b", `[]`, "", "inst-a", "")
+	b.SaveSession(ctx(), "other.test", "c", `[]`, "", "inst-b", "")
 
 	if n := len(b.ListSessions(ctx(), "example.com")); n != 2 {
 		t.Errorf("example.com returned %d sessions, want 2", n)
@@ -443,7 +443,7 @@ func TestSecretValueIsNotExposedByFormattingTheStructs(t *testing.T) {
 	const secret = "sk_live_SUPERSECRET_ABC123"
 
 	b := NewBus()
-	b.PutSecret(ctx(), "stripe.key", secret, "fleet", "billing key", "inst-a")
+	b.PutSecret(ctx(), "stripe.key", secret, "fleet", "billing key", "inst-a", "")
 
 	// The API projection is the thing that must be clean. Marshalling the raw
 	// storage record is expected to contain the value — that is why
@@ -468,7 +468,7 @@ func TestSecretValueIsNotExposedByFormattingTheStructs(t *testing.T) {
 
 	// Sessions likewise: the id is derived from the domain and a timestamp, so
 	// it can never embed credential material.
-	sess := b.SaveSession(ctx(), "example.com", "t", `[]`, "", "inst-a")
+	sess := b.SaveSession(ctx(), "example.com", "t", `[]`, "", "inst-a", "")
 	if strings.Contains(sess.ID, secret) {
 		t.Errorf("session id leaked the secret value: %s", sess.ID)
 	}

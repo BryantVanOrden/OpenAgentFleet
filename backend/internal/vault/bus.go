@@ -18,6 +18,13 @@ import (
 type PeerStore interface {
 	InsertPeerMessage(ctx context.Context, m protocol.PeerMessage) error
 	ListPeerMessages(ctx context.Context, instanceID string, limit int) ([]protocol.PeerMessage, error)
+
+	UpsertSharedSecret(ctx context.Context, s protocol.SharedSecret) error
+	ListSharedSecrets(ctx context.Context) ([]protocol.SharedSecret, error)
+	DeleteSharedSecret(ctx context.Context, key string) error
+
+	UpsertSharedSession(ctx context.Context, s protocol.SharedSession) error
+	ListSharedSessions(ctx context.Context) ([]protocol.SharedSession, error)
 }
 
 // peerHydrateLimit is how much conversation history is pulled back into memory
@@ -60,16 +67,27 @@ func NewBus() *Bus {
 // AttachStore makes the bus durable: recent peer messages are loaded back into
 // the in-memory working set, and everything sent afterwards is written through.
 //
-// Shared secrets and browser sessions deliberately stay in memory. Their tables
-// exist, but they hold credential plaintext and live cookie jars, and writing
-// those to an unencrypted table is a decision for the operator to make
-// explicitly rather than something persistence should acquire by accident --
-// the encrypted vault (internal/vault.Vault) is the place for them.
+// Shared secrets and browser sessions are persisted too, in plaintext, at the
+// operator's explicit direction. That is a real trade: anyone with database
+// access reads every fleet credential and live cookie jar. It was made because
+// this fleet is single-tenant on the operator's own hardware and a shared
+// secret that evaporates on every deploy is worse than one at rest. For a
+// deployment where that is not true, the encrypted vault
+// (internal/vault.Vault) is the place for them.
 func (b *Bus) AttachStore(ctx context.Context, st PeerStore, log *slog.Logger) error {
 	if log == nil {
 		log = slog.Default()
 	}
 	history, err := st.ListPeerMessages(ctx, "", peerHydrateLimit)
+	if err != nil {
+		return err
+	}
+
+	secrets, err := st.ListSharedSecrets(ctx)
+	if err != nil {
+		return err
+	}
+	sessions, err := st.ListSharedSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -81,12 +99,18 @@ func (b *Bus) AttachStore(ctx context.Context, st PeerStore, log *slog.Logger) e
 	// ListPeerMessages returns oldest first, which is the order this slice is
 	// appended in and the order ListMessages walks backwards from.
 	b.messages = append(history, b.messages...)
+	for _, s := range secrets {
+		b.secrets[s.Key] = s
+	}
+	for _, s := range sessions {
+		b.sessions[s.ID] = s
+	}
 	return nil
 }
 
 // -------------------------------------------------------------- Shared Secrets ---
 
-func (b *Bus) PutSecret(ctx context.Context, key, value, scope, note, createdBy string) protocol.SharedSecret {
+func (b *Bus) PutSecret(ctx context.Context, key, value, scope, note, createdBy, orgID string) protocol.SharedSecret {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -96,12 +120,22 @@ func (b *Bus) PutSecret(ctx context.Context, key, value, scope, note, createdBy 
 		Scope:     scope,
 		Note:      note,
 		CreatedBy: createdBy,
+		OrgID:     orgID,
 		UpdatedAt: time.Now().UTC(),
 	}
 	if sec.Scope == "" {
 		sec.Scope = "fleet"
 	}
 	b.secrets[key] = sec
+	st, log := b.store, b.log
+	if st != nil {
+		// Written under the lock, unlike peer messages: a secret is written
+		// rarely and read constantly, so the round trip costs nothing here,
+		// and a caller that gets the secret back must not then find it missing.
+		if err := st.UpsertSharedSecret(ctx, sec); err != nil && log != nil {
+			log.Warn("shared secret not persisted", "key", key, "err", err)
+		}
+	}
 	return sec
 }
 
@@ -123,6 +157,11 @@ func (b *Bus) ListSecrets(ctx context.Context) []protocol.SharedSecret {
 }
 
 func (b *Bus) DeleteSecret(ctx context.Context, key string) {
+	if b.store != nil {
+		if err := b.store.DeleteSharedSecret(ctx, key); err != nil && b.log != nil {
+			b.log.Warn("shared secret not deleted", "key", key, "err", err)
+		}
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.secrets, key)
@@ -130,7 +169,7 @@ func (b *Bus) DeleteSecret(ctx context.Context, key string) {
 
 // ------------------------------------------------------------- Shared Sessions ---
 
-func (b *Bus) SaveSession(ctx context.Context, domain, title, cookiesJSON, localStorageJSON, createdBy string) protocol.SharedSession {
+func (b *Bus) SaveSession(ctx context.Context, domain, title, cookiesJSON, localStorageJSON, createdBy, orgID string) protocol.SharedSession {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -142,9 +181,15 @@ func (b *Bus) SaveSession(ctx context.Context, domain, title, cookiesJSON, local
 		CookiesJSON:       cookiesJSON,
 		LocalStorageJSON:  localStorageJSON,
 		CreatedByInstance: createdBy,
+		OrgID:             orgID,
 		CreatedAt:         time.Now().UTC(),
 	}
 	b.sessions[id] = sess
+	if b.store != nil {
+		if err := b.store.UpsertSharedSession(ctx, sess); err != nil && b.log != nil {
+			b.log.Warn("shared session not persisted", "id", id, "err", err)
+		}
+	}
 	return sess
 }
 

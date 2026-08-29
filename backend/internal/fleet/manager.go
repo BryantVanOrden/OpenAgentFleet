@@ -65,7 +65,9 @@ type CreateRequest struct {
 	ShellAccess       bool                       `json:"shell_access"`
 	SudoAccess        bool                       `json:"sudo_access"`
 	Labels            map[string]string          `json:"labels,omitempty"`
-	OwnerID           string                     `json:"-"`
+	// OrgID is the department the bot is created into.
+	OrgID   string `json:"org_id,omitempty"`
+	OwnerID string `json:"-"`
 }
 
 // Create provisions a sandbox and blocks until its agent daemon answers, so the
@@ -101,6 +103,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		ID:                id,
 		Name:              name,
 		OwnerID:           req.OwnerID,
+		OrgID:             req.OrgID,
 		ArchetypeID:       req.ArchetypeID,
 		SystemPrompt:      req.SystemPrompt,
 		PreinstalledTools: req.PreinstalledTools,

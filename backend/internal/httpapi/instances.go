@@ -20,13 +20,15 @@ func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, redactAll(list))
+	// Filtered, not merely gated: someone who may see two of twenty bots gets
+	// two. Returning all of them and hiding the rest in the client would put
+	// every org's bot names on the wire.
+	writeJSON(w, http.StatusOK, redactAll(visibleInstances(accessFrom(r.Context()), list)))
 }
 
 func (s *Server) handleGetInstance(w http.ResponseWriter, r *http.Request) {
-	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
-	if err != nil {
-		failErr(w, err)
+	inst, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermView)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, redact(*inst))
@@ -36,6 +38,12 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	var req fleet.CreateRequest
 	if err := readJSON(r, &req); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Creating into an org you are not in would put a machine somewhere you
+	// cannot then see it — and would let anyone seed bots into any department.
+	if !accessFrom(r.Context()).CanInOrg(protocol.PermCreate, req.OrgID) {
+		fail(w, http.StatusForbidden, "you cannot create bots in that organisation")
 		return
 	}
 	req.OwnerID = userFrom(r.Context()).Subject
@@ -58,6 +66,9 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInstanceAction(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermEdit); !ok {
+		return
+	}
 	id := r.PathValue("id")
 	action := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 
@@ -89,6 +100,9 @@ func (s *Server) handleInstanceAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteInstance(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermDelete); !ok {
+		return
+	}
 	id := r.PathValue("id")
 	// Cancel anything still driving the sandbox before pulling it out.
 	if tasks, err := s.db.ListTasks(r.Context(), id, 50); err == nil {
@@ -214,6 +228,9 @@ func redactAll(list []protocol.Instance) []protocol.Instance {
 // Replaces the list rather than merging: the order IS the setting, and a merge
 // would make "move this model to the top" impossible to express.
 func (s *Server) handleSetInstanceModels(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermEdit); !ok {
+		return
+	}
 	id := r.PathValue("id")
 	inst, err := s.db.Instance(r.Context(), id)
 	if err != nil {
@@ -273,6 +290,9 @@ func (s *Server) handleSetInstanceModels(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermEdit); !ok {
+		return
+	}
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)

@@ -83,7 +83,16 @@ func (s *Server) requireAuth(minRole string, next http.HandlerFunc) http.Handler
 			fail(w, http.StatusForbidden, "your role ("+c.Role+") cannot perform this action")
 			return
 		}
-		next(w, r.WithContext(context.WithValue(r.Context(), userKey, c)))
+		ctx := context.WithValue(r.Context(), userKey, c)
+		// Resolved here rather than per handler: every route that touches a
+		// bot needs it, and doing it once keeps a list endpoint from issuing a
+		// query per row it is about to filter.
+		ctx, err = s.withAccess(ctx, c)
+		if err != nil {
+			failErr(w, err)
+			return
+		}
+		next(w, r.WithContext(ctx))
 	})
 }
 

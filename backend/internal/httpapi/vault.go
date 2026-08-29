@@ -42,8 +42,33 @@ func redactSharedSecret(sec protocol.SharedSecret) sharedSecretView {
 	}
 }
 
+// visibleSecrets filters shared credentials to the orgs the caller belongs to.
+//
+// Credentials are the most sensitive thing the fleet holds, so this is a
+// whitelist: an unassigned secret (no org) is visible only to a global admin,
+// rather than to everyone because nobody has filed it yet.
+func visibleSecrets(acc protocol.Access, all []protocol.SharedSecret) []protocol.SharedSecret {
+	out := make([]protocol.SharedSecret, 0, len(all))
+	for _, sec := range all {
+		if acc.CanInOrg(protocol.PermSecrets, sec.OrgID) {
+			out = append(out, sec)
+		}
+	}
+	return out
+}
+
+func visibleSessions(acc protocol.Access, all []protocol.SharedSession) []protocol.SharedSession {
+	out := make([]protocol.SharedSession, 0, len(all))
+	for _, sess := range all {
+		if acc.CanInOrg(protocol.PermSecrets, sess.OrgID) {
+			out = append(out, sess)
+		}
+	}
+	return out
+}
+
 func (s *Server) handleListSharedSecrets(w http.ResponseWriter, r *http.Request) {
-	list := vault.GlobalBus.ListSecrets(r.Context())
+	list := visibleSecrets(accessFrom(r.Context()), vault.GlobalBus.ListSecrets(r.Context()))
 	out := make([]sharedSecretView, 0, len(list))
 	for _, sec := range list {
 		out = append(out, redactSharedSecret(sec))
@@ -52,6 +77,8 @@ func (s *Server) handleListSharedSecrets(w http.ResponseWriter, r *http.Request)
 }
 
 type PutSharedSecretReq struct {
+	// OrgID scopes the secret to a department.
+	OrgID string `json:"org_id"`
 	Key   string `json:"key"`
 	Value string `json:"value"`
 	Scope string `json:"scope"`
@@ -68,7 +95,11 @@ func (s *Server) handlePutSharedSecret(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "key and value are required")
 		return
 	}
-	sec := vault.GlobalBus.PutSecret(r.Context(), req.Key, req.Value, req.Scope, req.Note, "operator")
+	if !accessFrom(r.Context()).CanInOrg(protocol.PermSecrets, req.OrgID) {
+		fail(w, http.StatusForbidden, "you cannot manage secrets in that organisation")
+		return
+	}
+	sec := vault.GlobalBus.PutSecret(r.Context(), req.Key, req.Value, req.Scope, req.Note, "operator", req.OrgID)
 	// Echo the metadata only — the response body is the kind of thing that ends
 	// up in proxy logs and browser history, so the plaintext does not go back
 	// out even to the caller that just supplied it.
@@ -85,11 +116,14 @@ func (s *Server) handleDeleteSharedSecret(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleListSharedSessions(w http.ResponseWriter, r *http.Request) {
 	domain := r.URL.Query().Get("domain")
-	list := vault.GlobalBus.ListSessions(r.Context(), domain)
+	list := visibleSessions(accessFrom(r.Context()),
+		vault.GlobalBus.ListSessions(r.Context(), domain))
 	writeJSON(w, http.StatusOK, list)
 }
 
 type SaveSharedSessionReq struct {
+	// OrgID scopes the session to a department.
+	OrgID            string `json:"org_id"`
 	Domain           string `json:"domain"`
 	Title            string `json:"title"`
 	CookiesJSON      string `json:"cookies_json"`
@@ -107,7 +141,11 @@ func (s *Server) handleSaveSharedSession(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusBadRequest, "domain and cookies_json are required")
 		return
 	}
-	sess := vault.GlobalBus.SaveSession(r.Context(), req.Domain, req.Title, req.CookiesJSON, req.LocalStorageJSON, req.CreatedBy)
+	if !accessFrom(r.Context()).CanInOrg(protocol.PermSecrets, req.OrgID) {
+		fail(w, http.StatusForbidden, "you cannot manage sessions in that organisation")
+		return
+	}
+	sess := vault.GlobalBus.SaveSession(r.Context(), req.Domain, req.Title, req.CookiesJSON, req.LocalStorageJSON, req.CreatedBy, req.OrgID)
 	writeJSON(w, http.StatusCreated, sess)
 }
 

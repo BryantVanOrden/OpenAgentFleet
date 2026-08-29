@@ -12,9 +12,11 @@ import (
 // fakePeerStore stands in for the database: enough to prove the bus writes
 // through and reads back, without a live Postgres.
 type fakePeerStore struct {
-	mu      sync.Mutex
-	rows    []protocol.PeerMessage
-	failNew bool
+	mu       sync.Mutex
+	rows     []protocol.PeerMessage
+	secrets  map[string]protocol.SharedSecret
+	sessions map[string]protocol.SharedSession
+	failNew  bool
 }
 
 func (f *fakePeerStore) InsertPeerMessage(_ context.Context, m protocol.PeerMessage) error {
@@ -25,6 +27,53 @@ func (f *fakePeerStore) InsertPeerMessage(_ context.Context, m protocol.PeerMess
 	}
 	f.rows = append(f.rows, m)
 	return nil
+}
+
+func (f *fakePeerStore) UpsertSharedSecret(_ context.Context, s protocol.SharedSecret) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.secrets == nil {
+		f.secrets = map[string]protocol.SharedSecret{}
+	}
+	f.secrets[s.Key] = s
+	return nil
+}
+
+func (f *fakePeerStore) ListSharedSecrets(_ context.Context) ([]protocol.SharedSecret, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]protocol.SharedSecret, 0, len(f.secrets))
+	for _, s := range f.secrets {
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func (f *fakePeerStore) DeleteSharedSecret(_ context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.secrets, key)
+	return nil
+}
+
+func (f *fakePeerStore) UpsertSharedSession(_ context.Context, s protocol.SharedSession) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sessions == nil {
+		f.sessions = map[string]protocol.SharedSession{}
+	}
+	f.sessions[s.ID] = s
+	return nil
+}
+
+func (f *fakePeerStore) ListSharedSessions(_ context.Context) ([]protocol.SharedSession, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]protocol.SharedSession, 0, len(f.sessions))
+	for _, s := range f.sessions {
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 func (f *fakePeerStore) ListPeerMessages(_ context.Context, instanceID string, limit int) ([]protocol.PeerMessage, error) {

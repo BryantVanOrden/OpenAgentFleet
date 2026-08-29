@@ -16,7 +16,7 @@ import (
 // so each test cleans up the keys it writes.
 func withSecret(t *testing.T, key, value, scope, note string) {
 	t.Helper()
-	vault.GlobalBus.PutSecret(context.Background(), key, value, scope, note, "inst-a")
+	vault.GlobalBus.PutSecret(context.Background(), key, value, scope, note, "inst-a", "")
 	t.Cleanup(func() { vault.GlobalBus.DeleteSecret(context.Background(), key) })
 }
 
@@ -31,7 +31,7 @@ func TestSharedSecretValueNeverReachesTheAPI(t *testing.T) {
 
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	s.handleListSharedSecrets(rec, httptest.NewRequest(http.MethodGet, "/api/vault/secrets", nil))
+	s.handleListSharedSecrets(rec, asAdmin(httptest.NewRequest(http.MethodGet, "/api/vault/secrets", nil)))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -70,6 +70,7 @@ func TestPutSharedSecretResponseIsRedacted(t *testing.T) {
 
 	body := `{"key":"test.echo.key","value":"` + canarySecret + `","scope":"fleet","note":"n"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/vault/secrets", strings.NewReader(body))
+	req = asAdmin(req)
 	rec := httptest.NewRecorder()
 
 	s := &Server{}
@@ -139,6 +140,7 @@ func TestSharedSecretErrorsDoNotEchoTheValue(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/vault/secrets", strings.NewReader(tc.body))
+			req = asAdmin(req)
 			rec := httptest.NewRecorder()
 
 			s := &Server{}
@@ -159,6 +161,7 @@ func TestSharedSecretErrorsDoNotEchoTheValue(t *testing.T) {
 func TestSendPeerMessageDefaultsToBroadcast(t *testing.T) {
 	body := `{"from_instance_id":"inst-a","content":"hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/vault/comms", strings.NewReader(body))
+	req = asAdmin(req)
 	rec := httptest.NewRecorder()
 
 	s := &Server{}
@@ -183,6 +186,7 @@ func TestSendPeerMessageDefaultsToBroadcast(t *testing.T) {
 
 func TestSendPeerMessageRequiresContent(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/vault/comms", strings.NewReader(`{"from_instance_id":"inst-a"}`))
+	req = asAdmin(req)
 	rec := httptest.NewRecorder()
 
 	s := &Server{}
@@ -209,6 +213,7 @@ func TestSaveSharedSessionRequiresDomainAndCookies(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/vault/sessions", strings.NewReader(tc.body))
+			req = asAdmin(req)
 			rec := httptest.NewRecorder()
 
 			s := &Server{}
@@ -236,6 +241,7 @@ func TestSharedSessionBlobSurvivesTheHTTPLayer(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/vault/sessions", strings.NewReader(string(payload)))
+	req = asAdmin(req)
 	rec := httptest.NewRecorder()
 
 	s := &Server{}

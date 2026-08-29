@@ -90,6 +90,9 @@ type Instance struct {
 	// Voice this agent speaks in. Empty falls back to the operator's default.
 	// Distinct voices are what make a fleet legible by ear.
 	Voice string `json:"voice,omitempty"`
+	// OrgID is the department this bot belongs to. Empty means unassigned,
+	// which only a global admin can see.
+	OrgID string `json:"org_id,omitempty"`
 	// ProviderIDs is this bot's own model fallback chain, most preferred first.
 	// Empty means the fleet-wide order, which is what every bot had before.
 	ProviderIDs []string          `json:"provider_ids,omitempty"`
@@ -408,6 +411,8 @@ type Conversation struct {
 
 // SharedSecret represents a variable or secret accessible across the fleet.
 type SharedSecret struct {
+	// OrgID scopes the secret to a department. Empty is admin-only.
+	OrgID     string    `json:"org_id,omitempty"`
 	Key       string    `json:"key"`
 	Value     string    `json:"value"`
 	Scope     string    `json:"scope"` // "fleet", "instance:<id>", "swarm:<id>"
@@ -418,6 +423,8 @@ type SharedSecret struct {
 
 // SharedSession represents browser cookies and session storage exported by an agent.
 type SharedSession struct {
+	// OrgID scopes the session to a department. Empty is admin-only.
+	OrgID             string    `json:"org_id,omitempty"`
 	ID                string    `json:"id"`
 	Domain            string    `json:"domain"`
 	Title             string    `json:"title"`
