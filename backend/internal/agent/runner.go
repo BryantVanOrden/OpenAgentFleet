@@ -15,6 +15,7 @@ import (
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/telemetry"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
@@ -289,6 +290,22 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			PromptTokens: resp.PromptTokens,
 			OutTokens:    resp.OutputTokens,
 		})
+		// Record the financial telemetry for this turn. The token counts already
+		// flow into the step audit row above; RecordTurn is what turns them into
+		// fleet-wide cost and latency figures. It had zero callers, so the whole
+		// financial dashboard read as free — every model call cost $0. Priced by
+		// resp.Model inside the tracker so mixed-model fleets bill correctly.
+		telemetry.GlobalTracker.RecordTurn(ctx, protocol.TokenTelemetryRecord{
+			TaskID:           task.ID,
+			InstanceID:       inst.ID,
+			ArchetypeID:      inst.ArchetypeID,
+			ProviderID:       task.ProviderID,
+			ModelName:        resp.Model,
+			PromptTokens:     resp.PromptTokens,
+			CompletionTokens: resp.OutputTokens,
+			LatencyMS:        int(resp.Latency.Milliseconds()),
+		})
+
 		history = append(history, turnSummary{Step: task.Step, Action: summarise(action), Outcome: outcome})
 		if len(history) > 24 {
 			history = history[len(history)-24:]
@@ -384,6 +401,31 @@ func (r *Runner) execute(
 			fmt.Fprintf(&sb, "\n- %s: %s", m.Title, clip(m.Content, 200))
 		}
 		return sb.String(), terminalNone
+
+	// share_secret / share_session publish to the fleet vault, which — like
+	// episodic memory — is process-wide, not per-sandbox, so agentd can't hold it.
+	// Both were advertised in the prompt (with dedicated rules) but rejected by
+	// the parser, so an obedient model got "unknown action" and burned a step.
+	case protocol.ActShareSecret:
+		key := firstNonEmpty(a.SecretKey, a.Target)
+		val := firstNonEmpty(a.SecretVal, a.Text)
+		if key == "" || val == "" {
+			return "failed: share_secret needs a key and a value", terminalNone
+		}
+		// Scope to this instance's originator so an audit can see who published
+		// the token; default scope inside the bus is fleet-wide readability.
+		vault.GlobalBus.PutSecret(ctx, key, val, "fleet", a.Thought, inst.Name)
+		return "shared secret to the fleet vault: " + clip(key, 120), terminalNone
+
+	case protocol.ActShareSession:
+		domain := firstNonEmpty(a.SessionDomain, a.Target)
+		cookies := firstNonEmpty(a.SessionCookies, a.Text)
+		if domain == "" || cookies == "" {
+			return "failed: share_session needs a domain and cookies", terminalNone
+		}
+		title := firstNonEmpty(a.Thought, clip(domain, 60))
+		sess := vault.GlobalBus.SaveSession(ctx, domain, title, cookies, "", inst.ID)
+		return "shared session for " + clip(domain, 80) + " (" + sess.ID + ")", terminalNone
 
 	// Peer messaging. Deliberately not gated behind a swarm: every instance can
 	// reach every other one, or broadcast, with no team declared up front. The
@@ -547,6 +589,13 @@ func (r *Runner) execute(
 			return fmt.Sprintf("deep_search error: %s", clip(res.Stdout, 500)), terminalNone
 		}
 		return fmt.Sprintf("deep_search output:\n%s", clip(res.Stdout, 1200)), terminalNone
+	// snapshot/rollback are workspace-only (a tar of /home/agent/workspace), not
+	// code execution, so they are not behind the ShellAccess gate; they fall
+	// through to sc.Act and agentd's SnapshotEngine does the work.
+	case a.Action == protocol.ActSnapshot:
+		return "snapshot: " + clip(firstNonEmpty(res.Detail, "created"), 200), terminalNone
+	case a.Action == protocol.ActRollback:
+		return "rollback: " + clip(firstNonEmpty(res.Detail, "restored"), 200), terminalNone
 	default:
 		return firstNonEmpty(res.Detail, "ok"), terminalNone
 	}

@@ -22,6 +22,12 @@ var validActions = map[protocol.ActionKind]bool{
 	// got "unknown action" back. Fleet-wide collaboration needs no swarm to be
 	// declared first -- any instance can address any other, or broadcast.
 	protocol.ActMsgPeer: true, protocol.ActDelegateTask: true,
+	// Fleet sharing and workspace time-machine. These were declared in the
+	// protocol and advertised in the prompt (share_secret/share_session in prose,
+	// all four in the action enum) with nothing accepting them, so a model that
+	// obeyed the prompt got "unknown action" and burned a step.
+	protocol.ActShareSecret: true, protocol.ActShareSession: true,
+	protocol.ActSnapshot: true, protocol.ActRollback: true,
 	protocol.ActAssert:   true,
 	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,
 }
@@ -156,6 +162,46 @@ func ParseAction(raw string) (protocol.Action, error) {
 		}
 		if strings.TrimSpace(a.Query) == "" {
 			return a, fmt.Errorf("recall needs query in query or text")
+		}
+	case protocol.ActShareSecret:
+		// The prompt names secret_key/secret_val; accept target/text as the
+		// near-misses models produce for the key and the value respectively.
+		if a.SecretKey == "" && a.Target != "" {
+			a.SecretKey = a.Target
+		}
+		if a.SecretVal == "" && a.Text != "" {
+			a.SecretVal = a.Text
+		}
+		if strings.TrimSpace(a.SecretKey) == "" {
+			return a, fmt.Errorf("share_secret needs a secret_key")
+		}
+		if strings.TrimSpace(a.SecretVal) == "" {
+			return a, fmt.Errorf("share_secret needs a secret_val")
+		}
+	case protocol.ActShareSession:
+		if a.SessionDomain == "" && a.Target != "" {
+			a.SessionDomain = a.Target
+		}
+		if a.SessionCookies == "" && a.Text != "" {
+			a.SessionCookies = a.Text
+		}
+		if strings.TrimSpace(a.SessionDomain) == "" {
+			return a, fmt.Errorf("share_session needs a session_domain")
+		}
+		if strings.TrimSpace(a.SessionCookies) == "" {
+			return a, fmt.Errorf("share_session needs session_cookies")
+		}
+	case protocol.ActSnapshot:
+		// Naming a checkpoint is optional: the engine auto-ids every snapshot, so
+		// a bare "snapshot" is a valid "checkpoint now". Accept target/text as the
+		// label when the model supplies one.
+		if a.SnapshotName == "" {
+			a.SnapshotName = firstNonEmpty(a.Target, a.Text)
+		}
+	case protocol.ActRollback:
+		// An id is optional too: no id means "restore the most recent snapshot".
+		if a.RollbackID == "" {
+			a.RollbackID = firstNonEmpty(a.Target, a.Text)
 		}
 	case protocol.ActAskHuman:
 		if a.Question == "" {

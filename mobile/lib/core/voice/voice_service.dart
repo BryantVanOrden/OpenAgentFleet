@@ -26,6 +26,13 @@ class VoiceService {
   bool _unavailable = false;
   String _lastError = '';
 
+  /// Words-per-minute feel. flutter_tts takes 0.0-1.0 on Android where 0.5 is
+  /// normal, so this is stored as the platform value rather than a multiplier
+  /// to avoid a lossy round trip through the settings UI.
+  double _rate = 0.5;
+  double _pitch = 1.0;
+  String? _voiceName;
+
   bool get isListening => _speech.isListening;
 
   /// Why voice is unusable, or empty when it is fine. Surfaced verbatim so a
@@ -105,11 +112,52 @@ class VoiceService {
 
   /// Reads a reply aloud. Failures are swallowed: not speaking is a degraded
   /// experience, but throwing here would break the chat that produced the text.
+  /// Available system voices, as {name, locale} maps. Empty on a device with
+  /// no synthesiser installed.
+  Future<List<Map<String, String>>> voices() async {
+    try {
+      final raw = await _tts.getVoices as List?;
+      return (raw ?? [])
+          .map((v) => (v as Map).map((k, val) => MapEntry('$k', '$val')))
+          .where((v) => (v['name'] ?? '').isNotEmpty)
+          .toList();
+    } catch (e) {
+      _lastError = '$e';
+      return const [];
+    }
+  }
+
+  /// Applied before every utterance rather than once at startup: the engine
+  /// resets between speakers on some Android builds, and a rate that silently
+  /// reverts is worse than one that never changed.
+  Future<void> configure({double? rate, double? pitch, String? voiceName}) async {
+    if (rate != null) _rate = rate.clamp(0.1, 1.0);
+    if (pitch != null) _pitch = pitch.clamp(0.5, 2.0);
+    if (voiceName != null) _voiceName = voiceName.isEmpty ? null : voiceName;
+  }
+
+  Future<void> _applySettings() async {
+    await _tts.setSpeechRate(_rate);
+    await _tts.setPitch(_pitch);
+    final name = _voiceName;
+    if (name != null) {
+      // setVoice needs the locale too; look the chosen name back up so a
+      // stored preference keeps working across reboots.
+      for (final v in await voices()) {
+        if (v['name'] == name) {
+          await _tts.setVoice({'name': name, 'locale': v['locale'] ?? ''});
+          break;
+        }
+      }
+    }
+  }
+
   Future<void> speak(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     try {
       await _tts.stop();
+      await _applySettings();
       await _tts.speak(trimmed);
     } catch (e) {
       _lastError = '$e';

@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show Factory, kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -139,6 +140,22 @@ class _ControlMenu extends ConsumerWidget {
         return;
       }
 
+      if (action == 'shell') {
+        try {
+          final updated =
+              await api.setShellAccess(instance.id, !instance.shellAccess);
+          ref.invalidate(instancesProvider);
+          messenger.showSnackBar(SnackBar(
+            content: Text(updated.shellAccess
+                ? 'Shell access allowed'
+                : 'Shell access revoked'),
+          ));
+        } catch (err) {
+          messenger.showSnackBar(SnackBar(content: Text('$err')));
+        }
+        return;
+      }
+
       try {
         await api.instanceAction(instance.id, action);
         ref.invalidate(instancesProvider);
@@ -185,6 +202,39 @@ class _ControlMenu extends ConsumerWidget {
                 leading: Icon(Icons.power_settings_new),
                 title: Text('Start')),
           ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'shell',
+          child: ListTile(
+            dense: true,
+            leading: Icon(
+              instance.shellAccess ? Icons.terminal : Icons.terminal_outlined,
+              color: instance.shellAccess ? Fleet.warn : null,
+            ),
+            title: Text(
+                instance.shellAccess ? 'Revoke shell access' : 'Allow shell access'),
+            subtitle: Text(
+              instance.shellAccess
+                  ? 'Takes effect on the next step'
+                  : 'Lets this agent run commands directly',
+            ),
+          ),
+        ),
+        PopupMenuItem(
+          enabled: false,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.admin_panel_settings_outlined,
+                color: Fleet.ink500),
+            title: Text('Sudo: ${instance.sudoAccess ? "on" : "off"}',
+                style: TextStyle(color: Fleet.ink400)),
+            // Not a toggle, and saying so beats a switch that does nothing:
+            // sudo depends on a container option the kernel applies at
+            // creation, so it can only be chosen when the agent is built.
+            subtitle: Text('Fixed when the agent was created',
+                style: TextStyle(color: Fleet.ink500)),
+          ),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'delete',
@@ -376,7 +426,18 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
             color: Colors.black,
             width: double.infinity,
             child: _streaming && _webView != null
-                ? WebViewWidget(controller: _webView!)
+                ? WebViewWidget(
+                    controller: _webView!,
+                    // Without this the enclosing TabBarView wins the arena for
+                    // every horizontal drag, so dragging on the desktop swipes
+                    // to the next tab instead of moving the mouse. Eager
+                    // recognition hands all touch straight to noVNC, which
+                    // does its own touch-to-mouse translation.
+                    gestureRecognizers: {
+                      Factory<OneSequenceGestureRecognizer>(
+                          EagerGestureRecognizer.new),
+                    },
+                  )
                 : _error != null
                     ? Center(
                         child: Padding(

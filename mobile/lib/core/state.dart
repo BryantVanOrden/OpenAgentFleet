@@ -127,3 +127,12 @@ final hostStatsProvider = StreamProvider<HostStats>((ref) async* {
     await Future<void>.delayed(const Duration(seconds: 5));
   }
 });
+
+/// Scheduled wakeups and inbound hooks. Polled rather than streamed: schedules
+/// change rarely, and a websocket topic for them would be more machinery than
+/// the data justifies.
+final cronTriggersProvider = FutureProvider<List<CronTrigger>>(
+    (ref) => ref.watch(apiProvider).cronTriggers());
+
+final webhookTriggersProvider = FutureProvider<List<WebhookTrigger>>(
+    (ref) => ref.watch(apiProvider).webhookTriggers());

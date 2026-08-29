@@ -18,7 +18,7 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|mount_tool|unmount_tool|call_tool|deep_search|remember|recall|speak|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|snapshot|rollback|deep_search|remember|recall|speak|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "mark": 1,
   "coordinates": [x, y],
@@ -32,6 +32,12 @@ Schema:
   "tool_description": "short explanation of what the tool does (for mount_tool)",
   "tool_parameters": {"param1": "value1"},
   "tool_handler": "python function definition (for mount_tool)",
+  "secret_key": "key name (for share_secret)",
+  "secret_val": "value to publish (for share_secret)",
+  "session_domain": "domain (for share_session)",
+  "session_cookies": "cookies JSON (for share_session)",
+  "snapshot_name": "label for the checkpoint (for snapshot)",
+  "rollback_id": "snapshot id to restore (for rollback; omit for the latest)",
   "key": "ctrl+shift+p",
   "amount": 3,
   "timeout": 120,
@@ -62,6 +68,10 @@ Rules:
 - Use "delegate_task" with "peer_id" and "sub_goal" to assign a sub-task to a specialist peer bot.
 - Use "share_secret" with "secret_key" and "secret_val" to publish a token/variable to the fleet vault.
 - Use "share_session" with "session_domain" and "session_cookies" to export cookies/auth to other bots.
+- Use "snapshot" with an optional "snapshot_name" to checkpoint the workspace
+  before a risky step (a bulk file write, a package install, a build script).
+- Use "rollback" with an optional "rollback_id" to restore the workspace to a
+  snapshot when a step went wrong; omit the id to restore the most recent one.
 - Use "python" to execute code in the persistent REPL when you need programmatic
   data processing, querying the accessibility tree via a11y, or complex logic.
 - Use "mount_tool" when you want to synthesize a reusable helper tool (defining a
@@ -104,7 +114,14 @@ func buildSystem(inst *protocol.Instance, mounted map[string]protocol.MountedToo
 		fmt.Fprintf(&sb, "- archetype: %s\n", inst.ArchetypeID)
 	}
 	if len(inst.PreinstalledTools) > 0 {
-		fmt.Fprintf(&sb, "- preinstalled tools: %s\n", strings.Join(inst.PreinstalledTools, ", "))
+		// Do not claim these are installed. The archetype only writes the list
+		// into an ARCHETYPE_README; nothing in the image (see sandbox/Dockerfile)
+		// actually installs metasploit, ghidra, burpsuite and friends. Asserting
+		// "preinstalled" made agents plan whole runs around tools that were not
+		// there. State them as requested-but-unverified so the model checks (and,
+		// with sudo available in these archetypes, installs) before relying on one.
+		fmt.Fprintf(&sb, "- tools requested for this archetype (NOT guaranteed installed — verify each with e.g. `which`, and install on demand, before relying on it): %s\n",
+			strings.Join(inst.PreinstalledTools, ", "))
 	}
 	if strings.TrimSpace(inst.SystemPrompt) != "" {
 		sb.WriteString("\nSpecialized Bot Persona & Guidelines:\n")

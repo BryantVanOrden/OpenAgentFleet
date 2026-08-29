@@ -38,6 +38,7 @@ class Instance {
     required this.state,
     required this.profile,
     required this.shellAccess,
+    this.sudoAccess = false,
     required this.createdAt,
     this.lastError = '',
   });
@@ -48,6 +49,10 @@ class Instance {
   final String state;
   final TierProfile profile;
   final bool shellAccess;
+
+  /// Whether sudo works inside this sandbox. Fixed at creation: it depends on
+  /// a container option the kernel applies when the container starts.
+  final bool sudoAccess;
   final DateTime createdAt;
   final String lastError;
 
@@ -62,6 +67,7 @@ class Instance {
           (j['profile'] as Map?)?.cast<String, dynamic>() ?? const {},
         ),
         shellAccess: j['shell_access'] as bool? ?? false,
+        sudoAccess: j['sudo_access'] as bool? ?? false,
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
         lastError: j['last_error'] as String? ?? '',
@@ -183,6 +189,8 @@ class ChatMessage {
     required this.role,
     required this.body,
     required this.createdAt,
+    this.kind = 'message',
+    this.planState = '',
   });
 
   final String id;
@@ -190,12 +198,26 @@ class ChatMessage {
   final String body;
   final DateTime createdAt;
 
+  /// "message" for ordinary talk, "plan" for a proposal awaiting approval.
+  final String kind;
+
+  /// "" while a plan is still open, then "approved" or "discarded".
+  final String planState;
+
   bool get isUser => role == 'user';
+
+  /// A plan the operator has not answered yet — the only case that should
+  /// render Approve / Discard controls.
+  bool get isOpenPlan => kind == 'plan' && planState.isEmpty;
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
         id: j['id'] as String? ?? '',
         role: j['role'] as String? ?? 'agent',
         body: j['body'] as String? ?? '',
+        // Older rows predate these columns and come back absent, which must
+        // read as an ordinary message rather than an unanswered plan.
+        kind: j['kind'] as String? ?? 'message',
+        planState: j['plan_state'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
       );
@@ -467,12 +489,18 @@ class WorkflowPipeline {
     required this.name,
     this.description = '',
     required this.nodes,
+    this.edges = const [],
   });
 
   final String id;
   final String name;
   final String description;
   final List<PipelineNode> nodes;
+
+  /// Which stage feeds which. The API has always returned these; the app
+  /// simply never read them, so a pipeline rendered as a flat list and the
+  /// actual shape of the graph was invisible.
+  final List<PipelineEdge> edges;
 
   factory WorkflowPipeline.fromJson(Map<String, dynamic> j) => WorkflowPipeline(
         id: j['id'] as String? ?? '',
@@ -482,7 +510,45 @@ class WorkflowPipeline {
                 ?.map((n) => PipelineNode.fromJson(n as Map<String, dynamic>))
                 .toList() ??
             [],
+        edges: (j['edges'] as List?)
+                ?.map((e) => PipelineEdge.fromJson(
+                    (e as Map).cast<String, dynamic>()))
+                .toList() ??
+            const [],
       );
+
+  /// Stages grouped into dependency layers: everything in layer 0 can start at
+  /// once, layer 1 waits on layer 0, and so on. With no edges the pipeline is
+  /// a straight line, which is what the flat list used to imply for every
+  /// pipeline whether it was true or not.
+  List<List<PipelineNode>> get layers {
+    if (edges.isEmpty) return nodes.map((n) => [n]).toList();
+
+    final incoming = <String, Set<String>>{for (final n in nodes) n.id: {}};
+    for (final e in edges) {
+      if (incoming.containsKey(e.toNodeId) &&
+          incoming.containsKey(e.fromNodeId)) {
+        incoming[e.toNodeId]!.add(e.fromNodeId);
+      }
+    }
+
+    final out = <List<PipelineNode>>[];
+    final placed = <String>{};
+    var guard = 0;
+    while (placed.length < nodes.length && guard++ < nodes.length + 1) {
+      final layer = nodes
+          .where((n) =>
+              !placed.contains(n.id) && incoming[n.id]!.every(placed.contains))
+          .toList();
+      // A cycle leaves nothing schedulable; show the rest rather than looping.
+      if (layer.isEmpty) break;
+      out.add(layer);
+      placed.addAll(layer.map((n) => n.id));
+    }
+    final leftover = nodes.where((n) => !placed.contains(n.id)).toList();
+    if (leftover.isNotEmpty) out.add(leftover);
+    return out;
+  }
 }
 
 class PipelineRun {
@@ -665,5 +731,86 @@ class BotTemplate {
         tagline: j['tagline'] as String? ?? '',
         category: j['category'] as String? ?? '',
         recommendedTier: j['recommended_tier'] as String? ?? '',
+      );
+}
+
+
+class PipelineEdge {
+  const PipelineEdge({
+    required this.fromNodeId,
+    required this.toNodeId,
+    this.condition = '',
+  });
+
+  final String fromNodeId;
+  final String toNodeId;
+
+  /// e.g. "success" — the edge is only taken when the upstream stage ends that
+  /// way. Empty means unconditional.
+  final String condition;
+
+  factory PipelineEdge.fromJson(Map<String, dynamic> j) => PipelineEdge(
+        fromNodeId: j['from_node_id'] as String? ?? '',
+        toNodeId: j['to_node_id'] as String? ?? '',
+        condition: j['condition'] as String? ?? '',
+      );
+}
+
+/// A scheduled wakeup: the fleet starting work on its own, on a cron.
+class CronTrigger {
+  const CronTrigger({
+    required this.id,
+    required this.name,
+    required this.scheduleCron,
+    required this.goalTemplate,
+    required this.active,
+    this.targetArchetype = '',
+    this.targetInstanceId = '',
+    this.lastRunAt,
+  });
+
+  final String id;
+  final String name;
+  final String scheduleCron;
+  final String goalTemplate;
+  final bool active;
+  final String targetArchetype;
+  final String targetInstanceId;
+  final DateTime? lastRunAt;
+
+  factory CronTrigger.fromJson(Map<String, dynamic> j) => CronTrigger(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        scheduleCron: j['schedule_cron'] as String? ?? '',
+        goalTemplate: j['goal_template'] as String? ?? '',
+        active: j['active'] as bool? ?? false,
+        targetArchetype: j['target_archetype'] as String? ?? '',
+        targetInstanceId: j['target_instance_id'] as String? ?? '',
+        lastRunAt: DateTime.tryParse(j['last_run_at'] as String? ?? ''),
+      );
+}
+
+/// An inbound hook that starts work when something outside calls in.
+class WebhookTrigger {
+  const WebhookTrigger({
+    required this.id,
+    required this.name,
+    required this.goalTemplate,
+    this.targetArchetype = '',
+    this.targetInstanceId = '',
+  });
+
+  final String id;
+  final String name;
+  final String goalTemplate;
+  final String targetArchetype;
+  final String targetInstanceId;
+
+  factory WebhookTrigger.fromJson(Map<String, dynamic> j) => WebhookTrigger(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        goalTemplate: j['goal_template'] as String? ?? '',
+        targetArchetype: j['target_archetype'] as String? ?? '',
+        targetInstanceId: j['target_instance_id'] as String? ?? '',
       );
 }

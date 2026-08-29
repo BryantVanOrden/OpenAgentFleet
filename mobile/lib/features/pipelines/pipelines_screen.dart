@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'schedules_screen.dart';
 
 class PipelinesScreen extends ConsumerStatefulWidget {
   const PipelinesScreen({super.key});
@@ -64,8 +65,17 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('⛓️ Workflow DAG Pipelines'),
+        title: const Text('Pipelines'),
         actions: [
+          // Schedules are the other half of "what runs without me": a pipeline
+          // is the shape of the work, a cron trigger is when it wakes up.
+          IconButton(
+            tooltip: 'Schedules & wakeups',
+            icon: const Icon(Icons.schedule),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SchedulesScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
@@ -149,21 +159,10 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
                                   style: TextStyle(color: Fleet.ink400, fontSize: 12)),
                             ],
                             const SizedBox(height: 12),
-                            // Stages
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: p.nodes.map((n) {
-                                return Chip(
-                                  backgroundColor: Fleet.ink950,
-                                  side: BorderSide(color: Fleet.ink800),
-                                  label: Text(
-                                    '${n.name} (${n.archetypeId})',
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
+                            // The graph, laid out by dependency depth. A flat
+                            // chip list implied every pipeline was a straight
+                            // line regardless of what its edges actually said.
+                            _DagView(pipeline: p),
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
@@ -179,6 +178,99 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+/// Renders a pipeline as dependency layers.
+///
+/// Stages on the same row have no dependency between them and start together;
+/// each row waits on the one above. Conditional edges are labelled, because
+/// "runs only on success" changes what the graph means.
+class _DagView extends StatelessWidget {
+  const _DagView({required this.pipeline});
+  final WorkflowPipeline pipeline;
+
+  @override
+  Widget build(BuildContext context) {
+    final layers = pipeline.layers;
+    if (layers.isEmpty) {
+      return Text('No stages defined.',
+          style: TextStyle(color: Fleet.ink400, fontSize: 12));
+    }
+
+    final conditions = <String, String>{
+      for (final e in pipeline.edges)
+        if (e.condition.isNotEmpty) e.toNodeId: e.condition,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < layers.length; i++) ...[
+          if (i > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
+              child: Icon(Icons.arrow_downward_rounded,
+                  size: 14, color: Fleet.ink600),
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 22,
+                child: Text('${i + 1}',
+                    style: TextStyle(color: Fleet.ink600, fontSize: 11)),
+              ),
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final n in layers[i])
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Fleet.ink950,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Fleet.ink800),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(n.name,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                            Text(n.archetypeId,
+                                style: TextStyle(
+                                    color: Fleet.ink400, fontSize: 10)),
+                            if (conditions[n.id] != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Text('only on ${conditions[n.id]}',
+                                    style: TextStyle(
+                                        color: Fleet.warn, fontSize: 9)),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (layers.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Stages on a row run together; each row waits on the one above.',
+              style: TextStyle(color: Fleet.ink400, fontSize: 10),
+            ),
+          ),
+      ],
     );
   }
 }

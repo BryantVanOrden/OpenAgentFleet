@@ -84,6 +84,10 @@ func TestEveryAdvertisedActionParses(t *testing.T) {
 		protocol.ActRemember:     `{"action":"remember","text":"the build flag is -tags prod"}`,
 		protocol.ActRecall:       `{"action":"recall","query":"how did we log in last time"}`,
 		protocol.ActSpeak:        `{"action":"speak","text":"the deploy finished"}`,
+		protocol.ActShareSecret:  `{"action":"share_secret","secret_key":"API_KEY","secret_val":"sk-123"}`,
+		protocol.ActShareSession: `{"action":"share_session","session_domain":"example.com","session_cookies":"[{\"name\":\"sid\"}]"}`,
+		protocol.ActSnapshot:     `{"action":"snapshot","snapshot_name":"before-install"}`,
+		protocol.ActRollback:     `{"action":"rollback","rollback_id":"snap-1"}`,
 		protocol.ActAssert:       `{"action":"assert","text":"test -f /tmp/out"}`,
 		protocol.ActAskHuman:     `{"action":"ask_human","question":"which account?"}`,
 		protocol.ActDone:         `{"action":"done","summary":"finished"}`,
@@ -105,6 +109,54 @@ func TestEveryAdvertisedActionParses(t *testing.T) {
 				t.Errorf("Action = %q, want %q", got.Action, kind)
 			}
 		})
+	}
+}
+
+// share_secret/share_session and snapshot/rollback were declared in the
+// protocol and advertised in the prompt while the parser rejected them, so an
+// obedient model got "unknown action". These pin the shapes the runner relies on.
+func TestShareAndSnapshotActions(t *testing.T) {
+	// share_secret accepts target/text as near-misses for key/value.
+	got, err := ParseAction(`{"action":"share_secret","target":"API_KEY","text":"sk-9"}`)
+	if err != nil {
+		t.Fatalf("share_secret with target/text should parse: %v", err)
+	}
+	if got.SecretKey != "API_KEY" || got.SecretVal != "sk-9" {
+		t.Fatalf("share_secret fields not carried: %+v", got)
+	}
+
+	// share_session accepts target/text as near-misses for domain/cookies.
+	got, err = ParseAction(`{"action":"share_session","target":"example.com","text":"[]"}`)
+	if err != nil {
+		t.Fatalf("share_session with target/text should parse: %v", err)
+	}
+	if got.SessionDomain != "example.com" || got.SessionCookies != "[]" {
+		t.Fatalf("share_session fields not carried: %+v", got)
+	}
+
+	// A bare snapshot is "checkpoint now" — no name required.
+	if _, err := ParseAction(`{"action":"snapshot"}`); err != nil {
+		t.Fatalf("bare snapshot should parse: %v", err)
+	}
+	// A snapshot label can arrive via target or text.
+	got, err = ParseAction(`{"action":"snapshot","text":"pre-build"}`)
+	if err != nil {
+		t.Fatalf("snapshot with text should parse: %v", err)
+	}
+	if got.SnapshotName != "pre-build" {
+		t.Errorf("SnapshotName = %q, want %q", got.SnapshotName, "pre-build")
+	}
+
+	// A bare rollback restores the most recent snapshot — no id required.
+	if _, err := ParseAction(`{"action":"rollback"}`); err != nil {
+		t.Fatalf("bare rollback should parse: %v", err)
+	}
+	got, err = ParseAction(`{"action":"rollback","target":"snap-7"}`)
+	if err != nil {
+		t.Fatalf("rollback with target should parse: %v", err)
+	}
+	if got.RollbackID != "snap-7" {
+		t.Errorf("RollbackID = %q, want %q", got.RollbackID, "snap-7")
 	}
 }
 
@@ -325,6 +377,10 @@ func TestParseActionRejectsNewActionsMissingFields(t *testing.T) {
 		{"remember with nothing", `{"action":"remember"}`, "remember needs text"},
 		{"remember with blank text", `{"action":"remember","text":"   "}`, "remember needs text"},
 		{"speak with nothing", `{"action":"speak"}`, "speak needs text"},
+		{"share_secret with no value", `{"action":"share_secret","secret_key":"K"}`, "share_secret needs a secret_val"},
+		{"share_secret with no key", `{"action":"share_secret","secret_val":"v"}`, "share_secret needs a secret_key"},
+		{"share_session with no cookies", `{"action":"share_session","session_domain":"x.com"}`, "share_session needs session_cookies"},
+		{"share_session with no domain", `{"action":"share_session","session_cookies":"[]"}`, "share_session needs a session_domain"},
 	}
 
 	for _, tc := range cases {

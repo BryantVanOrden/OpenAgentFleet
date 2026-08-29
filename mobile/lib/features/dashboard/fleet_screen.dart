@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../fleet_comms/comms_screen.dart';
 import 'provision_sheet.dart';
 import '../instance_view/instance_screen.dart';
 
@@ -33,6 +34,15 @@ class FleetScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Fleet'),
         actions: [
+          // The agents' own conversation belongs beside the agents, not filed
+          // under Vault with the credentials.
+          IconButton(
+            tooltip: 'Fleet comms',
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CommsScreen()),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Row(

@@ -154,9 +154,18 @@ func (s *Server) handleManualAct(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if a.Action == protocol.ActShell && !inst.ShellAccess {
-		fail(w, http.StatusForbidden, "shell is disabled for this instance")
-		return
+	// Gate every code-execution action, not just shell. python runs against a
+	// live interpreter and mount_tool/call_tool define then invoke a Python
+	// function body — all three are code execution by another name, so gating
+	// only shell here let an operator on a shell-disabled instance run arbitrary
+	// code through python. This mirrors the runner's gate (see runner.go) so the
+	// manual-takeover path and the agent path enforce the same boundary.
+	switch a.Action {
+	case protocol.ActShell, protocol.ActPython, protocol.ActMountTool, protocol.ActCallTool:
+		if !inst.ShellAccess {
+			fail(w, http.StatusForbidden, "code execution ("+string(a.Action)+") is disabled for this instance")
+			return
+		}
 	}
 	res, err := agent.NewSandboxClient(inst.AgentdURL).Act(r.Context(), a)
 	if err != nil {

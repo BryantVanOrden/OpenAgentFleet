@@ -186,6 +186,8 @@ class ActRequest(BaseModel):
     tool_parameters: dict[str, Any] | None = None
     tool_handler: str | None = None
     key: str | None = None
+    snapshot_name: str | None = None
+    rollback_id: str | None = None
     amount: int = 0
     timeout: int = 120
     # Present in the shared action schema but meaningless to agentd.
@@ -337,6 +339,28 @@ def act(req: ActRequest) -> dict:
             return {"ok": False, "detail": "deep_search requires a query"}
         ok, out = search_web(q)
         return {"ok": ok, "detail": "search completed", "stdout": out}
+
+    # snapshot/rollback are workspace time-machine operations, not code
+    # execution: they tar and restore /home/agent/workspace, so they run
+    # regardless of ALLOW_SHELL. The orchestrator leaves them ungated for the
+    # same reason. SnapshotEngine is a long-lived singleton so its in-memory
+    # history survives across /act calls within a run.
+    if kind == "snapshot":
+        from snapshot import SNAPSHOT_ENGINE
+        meta = SNAPSHOT_ENGINE.create_snapshot(req.snapshot_name or "checkpoint")
+        return {
+            "ok": True,
+            "detail": f"snapshot {meta.id} ({meta.file_count} files, {meta.size_bytes} bytes)",
+            "stdout": meta.id,
+        }
+
+    if kind == "rollback":
+        from snapshot import SNAPSHOT_ENGINE
+        ok = SNAPSHOT_ENGINE.rollback(req.rollback_id or None)
+        if not ok:
+            return {"ok": False, "detail": "rollback failed: no matching snapshot to restore"}
+        target = req.rollback_id or "most recent snapshot"
+        return {"ok": True, "detail": f"workspace restored to {target}"}
 
     if kind == "speak":
         from voice import VOICE, DEFAULT_VOICE

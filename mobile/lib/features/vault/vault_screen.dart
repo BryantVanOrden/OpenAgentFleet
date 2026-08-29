@@ -13,7 +13,8 @@ class VaultScreen extends ConsumerStatefulWidget {
 }
 
 class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  // Two tabs now: comms moved to Fleet, where the agents are.
+  late final TabController _tabs = TabController(length: 2, vsync: this);
   final TextEditingController _broadcastCtrl = TextEditingController();
 
   List<PeerMessage> _messages = [];
@@ -56,27 +57,6 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
       if (mounted) setState(() => _error = '$err');
     } finally {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _broadcast() async {
-    final text = _broadcastCtrl.text.trim();
-    if (text.isEmpty) return;
-    try {
-      final api = ref.read(apiProvider);
-      await api.sendPeerMessage(
-        content: text,
-        fromInstanceName: 'Mobile Operator',
-        toInstanceId: 'broadcast',
-      );
-      _broadcastCtrl.clear();
-      _load();
-    } catch (err) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $err'), backgroundColor: Fleet.bad),
-        );
-      }
     }
   }
 
@@ -180,7 +160,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🔐 Fleet Vault & P2P Comms'),
+        title: const Text('Vault'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -198,7 +178,6 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
           labelColor: Fleet.ink100,
           unselectedLabelColor: Fleet.ink400,
           tabs: [
-            Tab(text: 'Comms (${_messages.length})'),
             Tab(text: 'Secrets (${_secrets.length})'),
             Tab(text: 'Sessions (${_sessions.length})'),
           ],
@@ -211,102 +190,10 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
               : TabBarView(
                   controller: _tabs,
                   children: [
-                    _buildCommsTab(),
                     _buildSecretsTab(),
                     _buildSessionsTab(),
                   ],
                 ),
-    );
-  }
-
-  Widget _buildCommsTab() {
-    return Column(
-      children: [
-        Expanded(
-          child: _messages.isEmpty
-              ? Center(
-                  child: Text('No inter-agent messages recorded yet.',
-                      style: TextStyle(color: Fleet.ink400)),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _messages.length,
-                  itemBuilder: (ctx, i) {
-                    final m = _messages[i];
-                    final isOperator = m.fromInstanceName.contains('Operator') ||
-                        m.fromInstanceName.contains('Admin');
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isOperator ? Fleet.live.withValues(alpha: 0.1) : Fleet.ink900,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isOperator ? Fleet.live.withValues(alpha: 0.3) : Fleet.ink800,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${m.fromInstanceName} ➔ ${m.toInstanceId}',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Fleet.ink800,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  m.kind.toUpperCase(),
-                                  style: TextStyle(fontSize: 9, color: Fleet.ink300),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(m.content, style: const TextStyle(fontSize: 13)),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Fleet.ink900,
-            border: Border(top: BorderSide(color: Fleet.ink800)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _broadcastCtrl,
-                  decoration: const InputDecoration(
-                    hintText: 'Broadcast directive to all agents...',
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  onSubmitted: (_) => _broadcast(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _broadcast,
-                child: const Icon(Icons.send, size: 18),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

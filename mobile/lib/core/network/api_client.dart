@@ -288,9 +288,47 @@ class ApiClient {
         .toList();
   }
 
+  /// Talk to an agent.
+  ///
+  /// mode is "chat" (talk, no actions), "plan" (propose, still no actions) or
+  /// "task" (start work). Chat is the default deliberately: asking how a run is
+  /// going must never start one.
   Future<void> sendChat(String instanceId, String body,
-          {bool asTask = false}) =>
-      _post('/api/chat/$instanceId', {'body': body, 'as_task': asTask});
+          {String mode = 'chat'}) =>
+      _post('/api/chat/$instanceId', {'body': body, 'mode': mode});
+
+  /// Turn a proposed plan into a running task.
+  Future<void> approvePlan(String instanceId, String planId) =>
+      _post('/api/chat/$instanceId/plans/$planId/approve');
+
+  Future<void> discardPlan(String instanceId, String planId) =>
+      _post('/api/chat/$instanceId/plans/$planId/discard');
+
+  /// Turn shell access on or off for a running agent. Takes effect on its next
+  /// step. Sudo is not settable here — it is fixed when the instance is built.
+  Future<Instance> setShellAccess(String instanceId, bool allowed) async {
+    final res = await _dio.put('/api/instances/$instanceId/access',
+        data: {'shell_access': allowed}, options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return Instance.fromJson((res.data as Map).cast<String, dynamic>());
+  }
+
+  // ------------------------------------------------------------- schedules ---
+
+  /// Scheduled wakeups: the fleet starting work on its own.
+  Future<List<CronTrigger>> cronTriggers() async {
+    final data = await _get('/api/triggers/cron') as List? ?? const [];
+    return data
+        .map((e) => CronTrigger.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<List<WebhookTrigger>> webhookTriggers() async {
+    final data = await _get('/api/webhooks') as List? ?? const [];
+    return data
+        .map((e) => WebhookTrigger.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
 
   // --------------------------------------------------------------- swarms ---
 
@@ -357,8 +395,15 @@ class ApiClient {
     final encoded = Uri.encodeComponent(token ?? '');
     final query = {
       'autoconnect': 'true',
-      'resize': 'scale',
+      // 'remote' asks the desktop to resize to the client instead of scaling a
+      // fixed 1920x1080 frame down to a phone: text stays legible and, more
+      // importantly, a tap lands where you touched. Under 'scale' the pointer
+      // mapping is off by the scale factor on some clients.
+      'resize': 'remote',
       'reconnect': 'true',
+      // A visible cursor. On a touch screen there is no hover, so without this
+      // there is no way to tell where the pointer actually is.
+      'show_dot': 'true',
       'path': 'vnc/$instanceId/websockify?token=$encoded',
       'token': token ?? '',
     };

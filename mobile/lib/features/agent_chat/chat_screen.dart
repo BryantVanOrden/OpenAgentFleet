@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/theme/theme_controller.dart';
 import '../../core/voice/voice_service.dart';
+import '../settings/voice_settings_card.dart';
 
 /// Talking to a machine.
 ///
@@ -80,11 +82,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         TextSelection.collapsed(offset: _controller.text.length);
   }
 
-  Future<void> _send({required bool asTask}) async {
+  Future<void> _send({required String mode}) async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    if (asTask) {
+    if (mode == 'task') {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -115,7 +117,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     try {
       await ref
           .read(apiProvider)
-          .sendChat(widget.instanceId, text, asTask: asTask);
+          .sendChat(widget.instanceId, text, mode: mode);
       _controller.clear();
       ref.invalidate(chatProvider(widget.instanceId));
     } catch (err) {
@@ -136,7 +138,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final latest = list.last;
       if (latest.isUser || latest.id == _lastSpokenId) return;
       _lastSpokenId = latest.id;
-      unawaited(_voice.speak(latest.body));
+      // Pick up the speed and voice chosen in settings rather than whatever
+      // the engine defaults to.
+      unawaited(applyStoredVoiceSettings(
+              _voice, ref.read(sharedPreferencesProvider))
+          .then((_) => _voice.speak(latest.body)));
     });
 
     final messages = ref.watch(chatProvider(widget.instanceId));
@@ -175,7 +181,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 controller: _scroll,
                 padding: const EdgeInsets.all(16),
                 itemCount: list.length,
-                itemBuilder: (context, i) => _Bubble(message: list[i]),
+                itemBuilder: (context, i) =>
+                    _Bubble(message: list[i], instanceId: widget.instanceId),
               );
             },
           ),
@@ -200,7 +207,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     hintText: _listening
                         ? 'Listening...'
                         : widget.enabled
-                            ? 'What is on screen right now?'
+                            ? 'Talk to this agent'
                             : 'Instance is not running',
                   ),
                 ),
@@ -235,20 +242,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: widget.enabled && !_busy
-                            ? () => _send(asTask: false)
+                            ? () => _send(mode: 'plan')
                             : null,
-                        icon: const Icon(Icons.visibility_outlined, size: 18),
-                        label: const Text('Ask'),
+                        icon: const Icon(Icons.checklist_rtl, size: 18),
+                        label: const Text('Plan'),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: widget.enabled && !_busy
-                            ? () => _send(asTask: true)
+                            ? () => _send(mode: 'chat')
                             : null,
-                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                        label: const Text('Run'),
+                        icon: const Icon(Icons.send_rounded, size: 18),
+                        label: const Text('Send'),
                       ),
                     ),
                   ],
@@ -262,12 +269,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 }
 
-class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message});
+class _Bubble extends ConsumerStatefulWidget {
+  const _Bubble({required this.message, required this.instanceId});
   final ChatMessage message;
+  final String instanceId;
+
+  @override
+  ConsumerState<_Bubble> createState() => _BubbleState();
+}
+
+class _BubbleState extends ConsumerState<_Bubble> {
+  bool _busy = false;
+
+  Future<void> _answerPlan(bool approve) async {
+    final msg = widget.message;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiProvider);
+      if (approve) {
+        await api.approvePlan(widget.instanceId, msg.id);
+      } else {
+        await api.discardPlan(widget.instanceId, msg.id);
+      }
+      ref.invalidate(chatProvider(widget.instanceId));
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final message = widget.message;
     final mine = message.isUser;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -293,8 +328,63 @@ class _Bubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (message.kind == 'plan') ...[
+                    Row(
+                      children: [
+                        Icon(Icons.checklist_rtl,
+                            size: 14, color: Fleet.live),
+                        const SizedBox(width: 6),
+                        Text('Proposed plan',
+                            style: TextStyle(
+                                color: Fleet.live,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   Text(message.body,
                       style: const TextStyle(fontSize: 14, height: 1.35)),
+                  // Only an unanswered plan offers the buttons; once approved
+                  // or discarded it is history, and re-approving would start
+                  // the same work twice.
+                  if (message.isOpenPlan) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _busy ? null : () => _answerPlan(false),
+                            child: const Text('Discard'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _busy ? null : () => _answerPlan(true),
+                            icon: _busy
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.play_arrow_rounded,
+                                    size: 18),
+                            label: const Text('Approve'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (message.kind == 'plan') ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      message.planState == 'approved'
+                          ? 'Approved — this became a task.'
+                          : 'Discarded.',
+                      style: TextStyle(color: Fleet.ink400, fontSize: 11),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     humanAgo(message.createdAt),
