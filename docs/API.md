@@ -209,6 +209,16 @@ Configures a model endpoint (OpenAI, Anthropic, Gemini, Ollama, or OpenAI-compat
   }
   ```
 
+### `POST /api/providers/reorder`
+Atomically reorders the multi-tier fallback priority chain in a single database transaction.
+* **Request**: `{"ids": ["prov-claude", "prov-antigravity", "prov-ollama"]}`
+* **Response `200`**: Updated list of `Provider` objects sorted by `priority ASC`.
+
+### `GET /api/providers/models`
+Discovers and lists available models dynamically for any provider kind (Ollama, OpenAI, Anthropic, Gemini, Google Antigravity, OpenAI-compatible).
+* **Query Params**: `kind=antigravity|openai|anthropic|gemini|ollama|openai-compatible`, `base_url=...`, `api_key=...`
+* **Response `200`**: `{"models": [ModelDescriptor], "live": true}`
+
 ### `POST /api/providers/{id}/probe`
 Sends a test probe to confirm connectivity, latency, and multimodal capabilities.
 

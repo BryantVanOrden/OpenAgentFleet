@@ -84,9 +84,12 @@ mobile: ## Run the Flutter companion app
 	cd mobile && flutter pub get && flutter run
 
 .PHONY: test
-test: ## Run every test suite
+test: ## Run every test suite across Go, Python agentd, Python SDK, React Admin, and Flutter
 	cd backend && go test ./...
+	cd sandbox/agentd && python -m unittest discover -p "test_*.py"
+	cd sdk/python && python -m unittest discover -s tests -p "test_*.py"
 	cd admin && npm run build
+	cd mobile && flutter analyze
 
 .PHONY: fmt
 fmt: ## Format Go and Dart sources
