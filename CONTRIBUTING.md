@@ -1,10 +1,11 @@
-# Contributing to AgentFleet 🤝
+# Contributing to AgentFleet
 
-Thank you for your interest in contributing to **AgentFleet**! We welcome bug fixes, documentation improvements, performance optimizations, and new features from the community.
+Bug fixes, documentation improvements, performance work and new features are all
+welcome.
 
 ---
 
-## 🚨 Cardinal Rule: Responsible Security Disclosure
+## Cardinal rule: responsible security disclosure
 
 > [!CAUTION]
 > **DO NOT open public GitHub Issues or public Pull Requests for security vulnerabilities, sandbox breakout vectors, or credential leaks.**
@@ -13,35 +14,45 @@ Thank you for your interest in contributing to **AgentFleet**! We welcome bug fi
 
 ---
 
-## 📜 Pull Request (PR) Quality Standards
+## Pull request standards
 
-To ensure fast reviews and high software quality, every Pull Request must meet these standards:
-
-### 1. 📝 High-Quality PR Notes & Description
+### 1. PR notes and description
 Your PR description must clearly answer:
 * **What changed?**: A bulleted summary of specific modifications across backend, frontend, SDK, or sandbox.
 * **Why?**: The problem or motivation behind this change (link related GitHub issues if applicable).
 * **Testing Performed**: Exact commands executed and confirmation that automated tests passed.
 * **Visual Evidence (Required for UI PRs)**: Before/After screenshots or a short GIF/video demonstrating changes to the React Admin Console (`admin/`) or Flutter Mobile App (`mobile/`).
 
-### 2. 🧪 Pre-PR Verification Checklist
-Before submitting a PR, verify that all test suites pass locally:
+### 2. Pre-PR verification
+
+Run all five suites locally. The Go suite is the largest component and CI runs it
+first, so a change that has not been through it will fail before anything else
+is looked at.
 
 ```bash
-# 1. Test Python Sandbox Daemon (66 tests)
-cd sandbox/agentd && python -m unittest discover -p "test_*.py"
+# 1. Go orchestrator — the backend test suite
+cd backend && go test ./...
 
-# 2. Test Python SDK & CLI (7 tests)
+# 2. Python sandbox daemon
+cd ../sandbox/agentd && python -m unittest discover -p "test_*.py"
+
+# 3. Python SDK and CLI
 cd ../../sdk/python && python -m unittest discover -s tests -p "test_*.py"
 
-# 3. Verify React Admin Console Build (0 TypeScript errors)
+# 4. React admin console build (must produce no TypeScript errors)
 cd ../../admin && npm run build
 
-# 4. Verify Flutter Companion App (0 warnings / errors)
-cd ../mobile && flutter analyze
+# 5. Flutter companion app
+cd ../mobile && flutter analyze && flutter test
 ```
 
-### 3. 🌿 Git & Commit Message Conventions
+`make test` runs all of these together, but it needs Go, Python, Node and Flutter
+all present; running them individually is easier to debug when one is missing.
+
+Some backend store tests need a reachable Postgres and skip themselves without
+one. A green run that skipped them is not a full run.
+
+### 3. Git and commit message conventions
 Follow standard [Conventional Commits](https://www.conventionalcommits.org/):
 * `feat:` A new user-facing feature or API capability
 * `fix:` A bug fix or runtime patch
@@ -52,11 +63,11 @@ Follow standard [Conventional Commits](https://www.conventionalcommits.org/):
 
 ---
 
-## 🛠️ Architecture & Code Standards
+## Architecture and code standards
 
 | Component Layer | Technology | Primary Principles |
 | :--- | :--- | :--- |
-| **Backend Orchestrator** | Go 1.23+ | Clean interfaces, explicit error handling, race-condition safety with `sync.RWMutex`, zero plaintext credential leakage. |
+| **Backend Orchestrator** | Go 1.25+ | Clean interfaces, explicit error handling, race-condition safety with `sync.RWMutex`, zero plaintext credential leakage. |
 | **Sandbox Engine** | Python 3.10+ | Strict cgroup isolation, Set-of-Marks visual coordinate transformation, fallback-safe imports. |
 | **Python SDK & CLI** | Python 3.10+ | Zero external dependencies outside standard library (`urllib.request`), UTF-8 terminal safety across Windows/Linux/macOS. |
 | **Admin Console** | React 19 + TypeScript + Vite | Strict TypeScript typing, responsive dark theme styling with Tailwind CSS, clean API abstraction. |
@@ -64,6 +75,6 @@ Follow standard [Conventional Commits](https://www.conventionalcommits.org/):
 
 ---
 
-## ⚖️ Licensing Notice
+## Licensing notice
 
 By contributing to AgentFleet, you agree that your contributions will be licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
