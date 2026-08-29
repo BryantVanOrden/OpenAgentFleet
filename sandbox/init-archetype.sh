@@ -28,10 +28,34 @@ echo "[init-archetype] Initializing workspace for archetype: ${ARCHETYPE}"
 # never claimed to the agent.
 RECIPES="/etc/agentfleet/tools.conf"
 
+# Recipes the operator supplied with this bot, in the same format as the file.
+# Written out so both sources are looked up the same way, and so an operator's
+# addition behaves exactly like a built-in one.
+OPERATOR_RECIPES="/run/agentfleet/custom-tools.conf"
+if [[ -n "${CUSTOM_TOOL_RECIPES:-}" ]]; then
+    mkdir -p "$(dirname "${OPERATOR_RECIPES}")"
+    printf '%s\n' "${CUSTOM_TOOL_RECIPES}" > "${OPERATOR_RECIPES}"
+fi
+
 recipe_for() {
-    local tool="$1"
-    [[ -r "${RECIPES}" ]] || return 1
-    sed -n "s/^[[:space:]]*${tool}[[:space:]]*=[[:space:]]*\\(.*\\)$/\\1/p" "${RECIPES}" | head -1
+    local tool="$1" file
+    # The operator's own recipes win, so a bot can override a built-in.
+    for file in "${OPERATOR_RECIPES}" "${RECIPES}"; do
+        [[ -r "${file}" ]] || continue
+        # Fixed-string match on the key rather than a regex built from the
+        # tool name: the name comes from a request, and building a pattern out
+        # of it is how a sed expression ends up meaning something else.
+        local line
+        line="$(awk -F= -v want="${tool}" '
+            { key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)
+              if (key == want) { sub(/^[^=]*=[ \t]*/, ""); print; exit } }
+        ' "${file}")"
+        if [[ -n "${line}" ]]; then
+            printf '%s' "${line}"
+            return 0
+        fi
+    done
+    return 1
 }
 
 install_one() {
@@ -56,7 +80,17 @@ install_one() {
                    && tar -xzf "${tmp}/a.tgz" -C "${tmp}" >/dev/null 2>&1 \
                    && install -m755 "${tmp}/${path}" "/usr/local/bin/${tool}" >/dev/null 2>&1
                local rc=$?; rm -rf "${tmp}"; return $rc ;;
-        sh)    timeout 420 bash -c "${arg}" >/dev/null 2>&1 ;;
+        github)
+               # Clone into the workspace. Named tools that are really source
+               # trees — wordlists, templates — are useful to have on disk even
+               # though nothing lands on PATH.
+               local dest="/home/agent/work/${tool}"
+               [[ -d "${dest}" ]] && return 0
+               su - agent -c "git clone --depth 1 'https://github.com/${arg}' '${dest}'" >/dev/null 2>&1 ;;
+        sh)    # Only ever from the image's own recipe file, never from a
+               # request: the operator-supplied methods are the fixed set
+               # validated server-side, and sh is not among them.
+               timeout 420 bash -c "${arg}" >/dev/null 2>&1 ;;
         *)     timeout 180 apt-get install -y --no-install-recommends "${tool}" >/dev/null 2>&1 ;;
     esac
 }
@@ -91,6 +125,7 @@ install_tools() {
 }
 
 install_tools "${TOOLS}"
+install_tools "${CUSTOM_TOOLS:-}"
 # The orchestrator waits for this before deciding which tools the agent has,
 # so it must be written once installation is finished either way.
 date -u +%FT%TZ > "${WORK_DIR}/.tools-ready" 2>/dev/null || true

@@ -67,6 +67,9 @@ type CreateRequest struct {
 	Labels            map[string]string          `json:"labels,omitempty"`
 	// OrgID is the department the bot is created into.
 	OrgID string `json:"org_id,omitempty"`
+	// CustomTools are tools the operator added by hand, with how to fetch
+	// them. The archetype catalogue cannot know about an internal CLI.
+	CustomTools []protocol.CustomTool `json:"custom_tools,omitempty"`
 	// Voice this bot speaks in. Empty takes the archetype's default.
 	Voice   string `json:"voice,omitempty"`
 	OwnerID string `json:"-"`
@@ -79,6 +82,17 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 	// them. Repositories already worked this way; tools did not, so creating a
 	// cyber_ops bot without spelling out a tool list got its wordlists and none
 	// of its tooling — and the app has no reason to know the list.
+	// Validated before anything is provisioned: these names and specs reach a
+	// shell inside the sandbox, and refusing at the door beats sanitising deep
+	// in a script.
+	for _, c := range req.CustomTools {
+		if err := c.Validate(); err != nil {
+			// Wrapped so the API answers 400 rather than 500: a malformed tool
+			// name is the caller's mistake, not the server's.
+			return nil, fmt.Errorf("%w: %s", ErrInvalidRequest, err)
+		}
+	}
+
 	if req.ArchetypeID != "" {
 		if tmpl := protocol.BotTemplateByID(req.ArchetypeID); tmpl != nil {
 			if len(req.PreinstalledTools) == 0 {
@@ -138,6 +152,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		Override:          req.Override,
 		Egress:            req.Egress,
 		Voice:             req.Voice,
+		CustomTools:       req.CustomTools,
 		ShellAccess:       req.ShellAccess && m.cfg.AllowShell,
 		SudoAccess:        req.SudoAccess,
 		Labels:            req.Labels,
@@ -288,7 +303,11 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	// so agents were being told to reach for commands that do not exist and
 	// burning steps discovering it one at a time. Now the prompt only ever
 	// names tools that answered.
-	inst.PreinstalledTools = m.verifyTools(ctx, inst, inst.PreinstalledTools)
+	// Custom tools are verified alongside the archetype's, so an operator who
+	// added one that could not be fetched is told by its absence rather than
+	// by an agent failing to run it later.
+	wanted := append(append([]string{}, inst.PreinstalledTools...), customToolNames(inst.CustomTools)...)
+	inst.PreinstalledTools = m.verifyTools(ctx, inst, wanted)
 
 	inst.State = protocol.InstanceRunning
 	inst.LastError = ""
@@ -380,6 +399,19 @@ func (m *Manager) sandboxEnv(inst *protocol.Instance, p protocol.TierProfile) []
 	}
 	if len(inst.PreinstalledTools) > 0 {
 		env = append(env, "PREINSTALLED_TOOLS="+strings.Join(inst.PreinstalledTools, ","))
+	}
+	if len(inst.CustomTools) > 0 {
+		// Same `tool=method:spec` shape the recipe file uses, so the sandbox
+		// has one code path for both and an operator's addition behaves
+		// exactly like a built-in one.
+		recipes := make([]string, 0, len(inst.CustomTools))
+		names := make([]string, 0, len(inst.CustomTools))
+		for _, c := range inst.CustomTools {
+			recipes = append(recipes, c.Name+"="+c.Method+":"+c.Spec)
+			names = append(names, c.Name)
+		}
+		env = append(env, "CUSTOM_TOOL_RECIPES="+strings.Join(recipes, "\n"))
+		env = append(env, "CUSTOM_TOOLS="+strings.Join(names, ","))
 	}
 	if tmpl := protocol.BotTemplateByID(inst.ArchetypeID); tmpl != nil {
 		if len(tmpl.PreinstalledRepos) > 0 {
@@ -760,4 +792,12 @@ func (m *Manager) waitForTools(ctx context.Context, inst *protocol.Instance, bud
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+func customToolNames(tools []protocol.CustomTool) []string {
+	out := make([]string, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, t.Name)
+	}
+	return out
 }

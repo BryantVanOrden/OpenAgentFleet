@@ -227,13 +227,15 @@ func (s *Store) CreateInstance(ctx context.Context, in *protocol.Instance) error
 	labels, _ := json.Marshal(orEmptyMap(in.Labels))
 	tools, _ := json.Marshal(in.PreinstalledTools)
 	providers, _ := json.Marshal(orEmptySlice(in.ProviderIDs))
+	custom, _ := json.Marshal(in.CustomTools)
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO instances(id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
-             vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,voice,labels,last_error,created_at,updated_at,provider_ids,org_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+             vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,voice,labels,last_error,created_at,updated_at,provider_ids,org_id,custom_tools)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
 		in.ID, in.Name, in.OwnerID, in.ArchetypeID, in.SystemPrompt, string(tools), string(in.Tier), string(in.Driver), string(in.State), in.Runtime,
 		profile, override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, in.SudoAccess, in.Voice, labels,
-		in.LastError, in.CreatedAt, in.UpdatedAt, string(providers), nullIfEmpty(in.OrgID))
+		in.LastError, in.CreatedAt, in.UpdatedAt, string(providers), nullIfEmpty(in.OrgID),
+		string(custom))
 	return norm(err)
 }
 
@@ -244,16 +246,17 @@ func (s *Store) UpdateInstance(ctx context.Context, in *protocol.Instance) error
 	labels, _ := json.Marshal(orEmptyMap(in.Labels))
 	tools, _ := json.Marshal(in.PreinstalledTools)
 	providers, _ := json.Marshal(orEmptySlice(in.ProviderIDs))
+	custom, _ := json.Marshal(in.CustomTools)
 	in.UpdatedAt = time.Now().UTC()
 	_, err := s.pool.Exec(ctx,
 		`UPDATE instances SET name=$2,tier=$3,driver=$4,state=$5,runtime_id=$6,profile=$7,override=$8,
              vnc_url=$9,stream_url=$10,agentd_url=$11,egress=$12,shell_access=$13,sudo_access=$14,voice=$15,labels=$16,
              last_error=$17,archetype_id=$18,system_prompt=$19,preinstalled_tools=$20,updated_at=$21,
-             provider_ids=$22,org_id=$23 WHERE id=$1`,
+             provider_ids=$22,org_id=$23,custom_tools=$24 WHERE id=$1`,
 		in.ID, in.Name, string(in.Tier), string(in.Driver), string(in.State), in.Runtime, profile,
 		override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, in.SudoAccess, in.Voice, labels,
 		in.LastError, in.ArchetypeID, in.SystemPrompt, string(tools), in.UpdatedAt, string(providers),
-		nullIfEmpty(in.OrgID))
+		nullIfEmpty(in.OrgID), string(custom))
 	return norm(err)
 }
 
@@ -303,7 +306,7 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 
 const instanceSelect = `SELECT id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
     vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,voice,labels,last_error,created_at,updated_at,
-    COALESCE(provider_ids,''),COALESCE(org_id,'') FROM instances`
+    COALESCE(provider_ids,''),COALESCE(org_id,''),COALESCE(custom_tools,'') FROM instances`
 
 func scanInstances(rows interface {
 	Next() bool
@@ -314,13 +317,13 @@ func scanInstances(rows interface {
 	for rows.Next() {
 		var in protocol.Instance
 		var archID, sysPrompt, toolsStr *string
-		var providerIDs string
+		var providerIDs, customTools string
 		var tier, driver, state string
 		var profile, override, egress, labels []byte
 		if err := rows.Scan(&in.ID, &in.Name, &in.OwnerID, &archID, &sysPrompt, &toolsStr, &tier, &driver, &state, &in.Runtime,
 			&profile, &override, &in.VNCURL, &in.StreamURL, &in.AgentdURL, &egress,
 			&in.ShellAccess, &in.SudoAccess, &in.Voice, &labels, &in.LastError, &in.CreatedAt, &in.UpdatedAt,
-			&providerIDs, &in.OrgID); err != nil {
+			&providerIDs, &in.OrgID, &customTools); err != nil {
 			return nil, err
 		}
 		if archID != nil {
@@ -341,6 +344,9 @@ func scanInstances(rows interface {
 		_ = json.Unmarshal(labels, &in.Labels)
 		if providerIDs != "" {
 			_ = json.Unmarshal([]byte(providerIDs), &in.ProviderIDs)
+		}
+		if customTools != "" {
+			_ = json.Unmarshal([]byte(customTools), &in.CustomTools)
 		}
 		out = append(out, in)
 	}

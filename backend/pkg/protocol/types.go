@@ -2,7 +2,12 @@
 // in-sandbox agent daemon, the admin panel and the Flutter companion app.
 package protocol
 
-import "time"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
 
 // ---------------------------------------------------------------- hardware ---
 
@@ -93,6 +98,8 @@ type Instance struct {
 	// OrgID is the department this bot belongs to. Empty means unassigned,
 	// which only a global admin can see.
 	OrgID string `json:"org_id,omitempty"`
+	// CustomTools are operator-added tools with how to fetch them.
+	CustomTools []CustomTool `json:"custom_tools,omitempty"`
 	// ProviderIDs is this bot's own model fallback chain, most preferred first.
 	// Empty means the fleet-wide order, which is what every bot had before.
 	ProviderIDs []string          `json:"provider_ids,omitempty"`
@@ -372,6 +379,57 @@ func (c ModelCombo) Simple() bool {
 		}
 	}
 	return true
+}
+
+// CustomTool is a tool the operator added by hand, with how to fetch it.
+//
+// The archetype catalogue cannot know about a company's internal CLI, and
+// making someone edit a file inside the image to add one is not a workflow.
+type CustomTool struct {
+	Name string `json:"name"`
+	// Method is how to get it: apt, pip, npm, go, url or github.
+	Method string `json:"method"`
+	// Spec is the argument for that method — a package name, a module path, a
+	// download URL, or an owner/repo.
+	Spec string `json:"spec"`
+}
+
+// ToolMethods are the ways a custom tool can be fetched.
+var ToolMethods = []string{"apt", "pip", "npm", "go", "url", "github"}
+
+// toolNameOK matches a name safe to use as a command and a filename. Deliberate
+// allowlist: this value reaches a shell, and the last injection here came from
+// assuming a tool name was well behaved.
+var toolNameOK = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
+
+// specOK is permissive enough for URLs, module paths and owner/repo, and
+// refuses the characters that give a shell or a URL fetch new meaning.
+// The leading @ is for scoped npm packages, which are ordinary and would
+// otherwise be refused.
+var specOK = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9._+:/@#-]{0,255}$`)
+
+// Validate reports whether a custom tool is safe and complete.
+func (c CustomTool) Validate() error {
+	if !toolNameOK.MatchString(c.Name) {
+		return fmt.Errorf("tool name %q must be letters, digits, dot, underscore, plus or dash", c.Name)
+	}
+	known := false
+	for _, m := range ToolMethods {
+		if m == c.Method {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return fmt.Errorf("unknown install method %q", c.Method)
+	}
+	if !specOK.MatchString(c.Spec) {
+		return fmt.Errorf("install spec for %q contains characters that are not allowed", c.Name)
+	}
+	if c.Method == "github" && !strings.Contains(c.Spec, "/") {
+		return fmt.Errorf("a github tool needs owner/repo, got %q", c.Spec)
+	}
+	return nil
 }
 
 // Conversation kinds. A conversation is an explicit, named thread rather than

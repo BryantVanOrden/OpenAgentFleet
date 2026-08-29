@@ -277,6 +277,10 @@ func failErr(w http.ResponseWriter, err error) {
 		fail(w, http.StatusNotFound, "not found")
 	case errors.Is(err, connectors.ErrNoProvider):
 		fail(w, http.StatusPreconditionFailed, err.Error())
+	case errors.Is(err, fleet.ErrInvalidRequest):
+		// The caller asked for something malformed. Answering 500 would make
+		// their mistake look like ours, and hide it from them.
+		fail(w, http.StatusBadRequest, err.Error())
 	default:
 		fail(w, http.StatusInternalServerError, err.Error())
 	}
