@@ -222,6 +222,18 @@ Discovers and lists available models dynamically for any provider kind (Ollama, 
 ### `POST /api/providers/{id}/probe`
 Sends a test probe to confirm connectivity, latency, and multimodal capabilities.
 
+### `PUT /api/instances/{id}/providers`
+Assigns a tailored, per-bot tiered fallback chain (e.g. `["prov-claude", "prov-antigravity", "prov-ollama"]`).
+
+### `GET /api/providers/oauth/{kind}/start`
+Initiates OAuth + PKCE authentication flow for cloud providers (Google Antigravity, OpenAI, etc.).
+* **Response `200`**: `{"auth_url": "...", "state": "..."}`
+
+### `POST /api/providers/oauth/{kind}/exchange`
+Exchanges the authorization code for tokens and seals them into the vault.
+* **Request**: `{"code": "...", "state": "...", "code_verifier": "..."}`
+* **Response `200`**: Created `Provider` object.
+
 ### `GET /api/secrets`
 Lists secret reference names and notes (plaintext secrets are never returned).
 
@@ -230,7 +242,35 @@ Stores or rotates an AES-256-GCM encrypted secret in the orchestrator vault (`{"
 
 ---
 
-## 7. Real-Time WebSocket Event Stream
+## 7. Chat Sessions & Comms Threads
+
+### `GET /api/chat/{instanceId}/sessions`
+Lists isolated, named chat sessions for an instance.
+
+### `POST /api/chat/{instanceId}/sessions`
+Creates a fresh scoped chat session (`{"name": "Database Migration Planning"}`).
+
+### `PATCH /api/chat/{instanceId}/sessions/{sessionId}`
+Renames or pins a chat session (`{"name": "...", "pinned": true}`).
+
+### `DELETE /api/chat/{instanceId}/sessions/{sessionId}`
+Deletes a chat session and purges its conversation context.
+
+### `GET /api/instances/{id}/memories`
+Retrieves long-term episodic vector memories for an instance.
+
+---
+
+## 8. Voice & Pocket TTS Co-Pilot
+
+### `POST /voice/speak`
+Synthesizes speech using Kyutai Labs' Pocket TTS across 6 curated voice models.
+* **Request**: `{"text": "Task execution finished.", "voice": "shadow"}`
+* **Response `200`**: `{"status": "spoken", "voice": "shadow"}`
+
+---
+
+## 9. Real-Time WebSocket Event Stream
 
 Connect via WebSocket to `/api/events` with your bearer token:
 
@@ -270,3 +310,4 @@ ws://localhost:8080/api/events?token=<jwt-token>
 | `alert` | Emitted when an agent hits a stall or requires operator intervention. |
 | `record.started` / `record.stopped` | Fired during demonstration recording sessions. |
 | `stats` | Periodic CPU, memory, and bandwidth utilization samples. |
+
