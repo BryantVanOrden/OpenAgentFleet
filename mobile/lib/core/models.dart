@@ -897,10 +897,13 @@ class WorkflowPipeline {
             const [],
       );
 
-  /// Stages grouped into dependency layers: everything in layer 0 can start at
-  /// once, layer 1 waits on layer 0, and so on. With no edges the pipeline is
-  /// a straight line, which is what the flat list used to imply for every
-  /// pipeline whether it was true or not.
+  /// Stages grouped into dependency layers: nothing in layer 0 depends on
+  /// anything else, layer 1 waits on layer 0, and so on. This describes the
+  /// dependency structure, not the execution schedule — the engine runs stages
+  /// one at a time in topological order, so a layer is a set of stages whose
+  /// relative order does not matter, not a set that runs at once. With no edges
+  /// the pipeline is a straight line, which is what the flat list used to imply
+  /// for every pipeline whether it was true or not.
   List<List<PipelineNode>> get layers {
     if (edges.isEmpty) return nodes.map((n) => [n]).toList();
 
@@ -1164,8 +1167,10 @@ class PipelineEdge {
   final String fromNodeId;
   final String toNodeId;
 
-  /// e.g. "success" — the edge is only taken when the upstream stage ends that
-  /// way. Empty means unconditional.
+  /// e.g. "success". Stored and round-tripped, and shown in the DAG view, but
+  /// the backend engine does not evaluate it yet: every stage in topological
+  /// order runs regardless of how its upstream ended, and the only branching is
+  /// the run-wide abort on error. Empty means unconditional.
   final String condition;
 
   factory PipelineEdge.fromJson(Map<String, dynamic> j) => PipelineEdge(

@@ -184,9 +184,11 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
 
 /// Renders a pipeline as dependency layers.
 ///
-/// Stages on the same row have no dependency between them and start together;
-/// each row waits on the one above. Conditional edges are labelled, because
-/// "runs only on success" changes what the graph means.
+/// Stages on the same row have no dependency between them, so the engine is
+/// free to order them however it likes; each row waits on the one above. The
+/// engine runs stages one at a time, in topological order — a row is not a
+/// parallel batch. Edge conditions are recorded and shown, but the engine does
+/// not yet evaluate them, so the badge says so rather than implying a branch.
 class _DagView extends StatelessWidget {
   const _DagView({required this.pipeline});
   final WorkflowPipeline pipeline;
@@ -249,7 +251,8 @@ class _DagView extends StatelessWidget {
                             if (conditions[n.id] != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 3),
-                                child: Text('only on ${conditions[n.id]}',
+                                child: Text(
+                                    'wants ${conditions[n.id]} — not enforced',
                                     style: TextStyle(
                                         color: Fleet.warn, fontSize: 9)),
                               ),
@@ -266,7 +269,8 @@ class _DagView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Text(
-              'Stages on a row run together; each row waits on the one above.',
+              'Stages run one at a time, down the rows. Stages sharing a row '
+              'have no dependency on each other.',
               style: TextStyle(color: Fleet.ink400, fontSize: 10),
             ),
           ),
