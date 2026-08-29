@@ -237,6 +237,14 @@ func (s *Server) Routes() http.Handler {
 	// orphans what they made.
 	mux.Handle("PUT /api/users/{id}/disabled", auth(roleAdmin, s.handleSetUserDisabled))
 
+	// The shared work catalog: what the agents have made, for each other and
+	// for you. Reading is open to anyone who may read the department it is
+	// filed under; publishing and deleting are checked per item.
+	mux.Handle("GET /api/work", auth(roleAny, s.handleListWork))
+	mux.Handle("GET /api/work/{id}", auth(roleAny, s.handleGetWork))
+	mux.Handle("POST /api/work", auth(roleOperator, s.handlePutWork))
+	mux.Handle("DELETE /api/work/{id}", auth(roleOperator, s.handleDeleteWork))
+
 	// Long-lived access keys for scripts and CI.
 	mux.Handle("GET /api/api-keys", auth(roleAdmin, s.handleListAPIKeys))
 	mux.Handle("POST /api/api-keys", auth(roleAdmin, s.handleCreateAPIKey))

@@ -27,6 +27,10 @@ var validActions = map[protocol.ActionKind]bool{
 	// all four in the action enum) with nothing accepting them, so a model that
 	// obeyed the prompt got "unknown action" and burned a step.
 	protocol.ActShareSecret: true, protocol.ActShareSession: true,
+	// The shared work catalog. Agents could message each other and share
+	// credentials but had nowhere to put the work itself, so anything one
+	// produced died with its container.
+	protocol.ActPublishWork: true, protocol.ActReadWork: true,
 	protocol.ActSnapshot: true, protocol.ActRollback: true,
 	protocol.ActAssert:   true,
 	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,

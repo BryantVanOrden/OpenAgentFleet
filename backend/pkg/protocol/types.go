@@ -308,6 +308,8 @@ const (
 	ActSnapshot     ActionKind = "snapshot"      // create OS container workspace snapshot checkpoint
 	ActRollback     ActionKind = "rollback"      // rollback OS container to a previous snapshot
 	ActCallMCP      ActionKind = "call_mcp"      // invoke tool on a Model Context Protocol (MCP) server
+	ActPublishWork  ActionKind = "publish_work"  // publish a file, app or workspace to the shared catalog
+	ActReadWork     ActionKind = "read_work"     // read another agent's published work by name
 	ActAssert       ActionKind = "assert"        // file exists / size / exit code
 	ActAskHuman     ActionKind = "ask_human"     // hand control back to the operator
 	ActDone         ActionKind = "done"
@@ -657,6 +659,12 @@ type Action struct {
 	SecretKey      string         `json:"secret_key,omitempty"`      // key for share_secret
 	SecretVal      string         `json:"secret_val,omitempty"`      // value for share_secret
 	SessionDomain  string         `json:"session_domain,omitempty"`  // domain for share_session
+	// Shared work catalog. WorkName is what other agents refer to the item
+	// by, so a second publish under the same name is an edit rather than a
+	// duplicate; WorkKind is "file", "app" or "workspace".
+	WorkName      string `json:"work_name,omitempty"`
+	WorkKind      string `json:"work_kind,omitempty"`
+	WorkWorkspace string `json:"work_workspace,omitempty"`
 	SessionCookies string         `json:"session_cookies,omitempty"` // cookies JSON for share_session
 	SnapshotName   string         `json:"snapshot_name,omitempty"`   // for snapshot action
 	RollbackID     string         `json:"rollback_id,omitempty"`     // for rollback action
@@ -866,3 +874,60 @@ type APIKey struct {
 
 // Revoked reports whether this key has been turned off.
 func (k APIKey) Revoked() bool { return !k.RevokedAt.IsZero() }
+
+// Work item kinds. They differ in what the app does with the content, not in
+// how it is stored.
+const (
+	// WorkFile is text: notes, code, data. Shown as text.
+	WorkFile = "file"
+	// WorkApp is a self-contained HTML document the app renders and runs.
+	// Self-contained on purpose: it is rendered in an isolated web view with
+	// no network of its own, so anything it needs has to be in the document.
+	WorkApp = "app"
+	// WorkWorkspace groups related items so several agents can work on one
+	// thing without inventing a naming convention for it.
+	WorkWorkspace = "workspace"
+)
+
+// WorkItem is something an agent published for the fleet, and for you.
+//
+// Agents could already message each other and share credentials; this is
+// where the work itself goes. Without it, anything a bot produced lived in
+// its own container and died with it, so a second bot asked to build on it
+// had to be told what to rebuild rather than handed the thing.
+type WorkItem struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Description string `json:"description,omitempty"`
+	Content     string `json:"content,omitempty"`
+	MIME        string `json:"mime,omitempty"`
+
+	// CreatedBy is an instance id for a bot, empty for the operator.
+	CreatedBy     string `json:"created_by,omitempty"`
+	CreatedByName string `json:"created_by_name,omitempty"`
+
+	// OrgID scopes it to a department. Empty is admin-only, matching how an
+	// unfiled secret behaves.
+	OrgID string `json:"org_id,omitempty"`
+
+	// ParentID puts this item inside a workspace.
+	ParentID string `json:"parent_id,omitempty"`
+
+	// Version is bumped on every write. Two agents editing one item is the
+	// normal case in a catalog like this, so a writer can tell whether what
+	// it read is still what is there.
+	Version   int       `json:"version"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ValidWorkKind reports whether a kind is one this system knows. An unknown
+// kind stored today is a kind that might mean something tomorrow.
+func ValidWorkKind(kind string) bool {
+	switch kind {
+	case WorkFile, WorkApp, WorkWorkspace:
+		return true
+	}
+	return false
+}

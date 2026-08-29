@@ -433,6 +433,88 @@ func (r *Runner) execute(
 	// episodic memory — is process-wide, not per-sandbox, so agentd can't hold it.
 	// Both were advertised in the prompt (with dedicated rules) but rejected by
 	// the parser, so an obedient model got "unknown action" and burned a step.
+	case protocol.ActPublishWork:
+		name := firstNonEmpty(a.WorkName, a.Target)
+		if name == "" {
+			return "failed: publish_work needs a work_name", terminalNone
+		}
+		kind := firstNonEmpty(a.WorkKind, protocol.WorkFile)
+		if !protocol.ValidWorkKind(kind) {
+			return "failed: work_kind must be file, app or workspace", terminalNone
+		}
+		body := a.Text
+		if kind != protocol.WorkWorkspace && strings.TrimSpace(body) == "" {
+			return "failed: publish_work needs the content in \"text\"", terminalNone
+		}
+		mime := "text/plain"
+		if kind == protocol.WorkApp {
+			mime = "text/html"
+		}
+
+		// Resolve the workspace by name so agents can group work without
+		// inventing ids and telling each other what they are.
+		parentID := ""
+		if ws := strings.TrimSpace(a.WorkWorkspace); ws != "" {
+			if parent, err := r.workspaceNamed(ctx, ws, inst); err == nil {
+				parentID = parent
+			}
+		}
+
+		item := protocol.WorkItem{
+			Name:          name,
+			Kind:          kind,
+			Description:   clip(a.Thought, 300),
+			Content:       body,
+			MIME:          mime,
+			CreatedBy:     inst.ID,
+			CreatedByName: inst.Name,
+			OrgID:         protocol.SoleOrg(inst.OrgIDs),
+			ParentID:      parentID,
+		}
+		if err := r.db.PutWorkItem(ctx, &item); err != nil {
+			return "failed to publish: " + err.Error(), terminalNone
+		}
+		r.bus.Emit("work", inst.ID, "", item)
+		return fmt.Sprintf("published %s %q to the shared catalog (version %d)",
+			kind, name, item.Version), terminalNone
+
+	case protocol.ActReadWork:
+		name := firstNonEmpty(a.WorkName, a.Target)
+		if name == "" {
+			return "failed: read_work needs a work_name", terminalNone
+		}
+		all, err := r.db.ListWorkItems(ctx)
+		if err != nil {
+			return "failed to read the catalog: " + err.Error(), terminalNone
+		}
+		for _, w := range all {
+			if !strings.EqualFold(w.Name, name) {
+				continue
+			}
+			// Truncated rather than refused: a partial read of a large file is
+			// more use to the model than an error, and it is told it happened.
+			body := w.Content
+			suffix := ""
+			if len(body) > 12000 {
+				body = body[:12000]
+				suffix = "\n\n[truncated: the item is " +
+					fmt.Sprint(len(w.Content)) + " bytes]"
+			}
+			return fmt.Sprintf("%s %q by %s (version %d):\n%s%s",
+				w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix), terminalNone
+		}
+
+		// Say what IS there. "Not found" sends a model guessing at names.
+		var names []string
+		for _, w := range all {
+			names = append(names, w.Name)
+		}
+		if len(names) == 0 {
+			return "the shared catalog is empty", terminalNone
+		}
+		return "no work item called " + name + ". The catalog holds: " +
+			strings.Join(names, ", "), terminalNone
+
 	case protocol.ActShareSecret:
 		key := firstNonEmpty(a.SecretKey, a.Target)
 		val := firstNonEmpty(a.SecretVal, a.Text)
@@ -952,4 +1034,35 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+
+// workspaceNamed finds a workspace by name, creating it if no one has yet.
+//
+// Agents refer to a workspace by what it is called, because that is what they
+// tell each other. Creating on demand means the first agent to publish into a
+// workspace does not have to be the one that made it -- which otherwise turns
+// into a round of "who is making the folder".
+func (r *Runner) workspaceNamed(ctx context.Context, name string, inst *protocol.Instance) (string, error) {
+	all, err := r.db.ListWorkItems(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, w := range all {
+		if w.Kind == protocol.WorkWorkspace && strings.EqualFold(w.Name, name) {
+			return w.ID, nil
+		}
+	}
+	ws := protocol.WorkItem{
+		Name:          name,
+		Kind:          protocol.WorkWorkspace,
+		Description:   "created by " + inst.Name,
+		CreatedBy:     inst.ID,
+		CreatedByName: inst.Name,
+		OrgID:         protocol.SoleOrg(inst.OrgIDs),
+	}
+	if err := r.db.PutWorkItem(ctx, &ws); err != nil {
+		return "", err
+	}
+	return ws.ID, nil
 }

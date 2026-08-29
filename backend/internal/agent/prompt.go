@@ -18,7 +18,7 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|snapshot|rollback|deep_search|remember|recall|speak|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "mark": 1,
   "coordinates": [x, y],
@@ -32,6 +32,9 @@ Schema:
   "tool_description": "short explanation of what the tool does (for mount_tool)",
   "tool_parameters": {"param1": "value1"},
   "tool_handler": "python function definition (for mount_tool)",
+  "work_name": "what other agents refer to this item by (for publish_work/read_work)",
+  "work_kind": "file|app|workspace (for publish_work)",
+  "work_workspace": "name of the workspace this belongs in (optional)",
   "secret_key": "key name (for share_secret)",
   "secret_val": "value to publish (for share_secret)",
   "session_domain": "domain (for share_session)",
@@ -71,6 +74,17 @@ Rules:
 - Use "speak" with "text" to verbally communicate updates to the operator via Pocket TTS.
 - Use "message_peer" with "peer_id" and "text" to coordinate, query, or report to another bot.
 - Use "delegate_task" with "peer_id" and "sub_goal" to assign a sub-task to a specialist peer bot.
+- Use "publish_work" with "work_name", "work_kind" and "text" to put something in the
+  shared catalog for the other agents and the operator. This is where work goes: a file
+  the next agent builds on, or an "app" the operator's phone can actually run.
+  An "app" must be ONE self-contained HTML document -- inline every script and style,
+  no external URLs, no network calls. It is rendered in an isolated web view with no
+  network of its own, so anything it fetches will simply not arrive.
+  Publishing the same "work_name" again REPLACES it and bumps its version, so improving
+  a colleague's work is an edit, not a second copy nobody notices.
+- Use "read_work" with "work_name" to read what another agent published, before building
+  on it. Read before you rewrite: the catalog is shared and someone else may have moved
+  it on since you last looked.
 - Use "share_secret" with "secret_key" and "secret_val" to publish a token/variable to the fleet vault.
 - Use "share_session" with "session_domain" and "session_cookies" to export cookies/auth to other bots.
 - Use "snapshot" with an optional "snapshot_name" to checkpoint the workspace

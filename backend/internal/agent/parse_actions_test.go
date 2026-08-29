@@ -84,6 +84,8 @@ func TestEveryAdvertisedActionParses(t *testing.T) {
 		protocol.ActRemember:     `{"action":"remember","text":"the build flag is -tags prod"}`,
 		protocol.ActRecall:       `{"action":"recall","query":"how did we log in last time"}`,
 		protocol.ActSpeak:        `{"action":"speak","text":"the deploy finished"}`,
+		protocol.ActPublishWork:  `{"action":"publish_work","work_name":"game loop","work_kind":"file","text":"function tick(){}"}`,
+		protocol.ActReadWork:     `{"action":"read_work","work_name":"game loop"}`,
 		protocol.ActShareSecret:  `{"action":"share_secret","secret_key":"API_KEY","secret_val":"sk-123"}`,
 		protocol.ActShareSession: `{"action":"share_session","session_domain":"example.com","session_cookies":"[{\"name\":\"sid\"}]"}`,
 		protocol.ActSnapshot:     `{"action":"snapshot","snapshot_name":"before-install"}`,

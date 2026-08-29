@@ -1433,3 +1433,71 @@ class ApiKey {
         secret: j['secret'] as String? ?? '',
       );
 }
+
+
+/// Something an agent published to the shared work catalog.
+///
+/// Agents could message each other and share credentials, but had nowhere to
+/// put the work itself, so whatever one produced lived in its container and
+/// died with it. Kinds differ in what this app does with the content, not in
+/// how it is stored.
+class WorkItem {
+  const WorkItem({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.version,
+    required this.updatedAt,
+    this.description = '',
+    this.content = '',
+    this.mime = '',
+    this.createdByName = '',
+    this.parentId = '',
+  });
+
+  /// A self-contained HTML document this app can render and run.
+  static const kindApp = 'app';
+
+  /// A group of related items several agents worked on together.
+  static const kindWorkspace = 'workspace';
+
+  final String id;
+  final String name;
+
+  /// 'file', 'app' or 'workspace'.
+  final String kind;
+  final String description;
+  final String content;
+  final String mime;
+
+  /// The bot that made it, or the operator's email.
+  final String createdByName;
+
+  /// Set when this item belongs inside a workspace.
+  final String parentId;
+
+  /// Bumped on every write, so improving a colleague's work reads as an edit
+  /// rather than as a second copy.
+  final int version;
+  final DateTime updatedAt;
+
+  bool get isApp => kind == kindApp;
+  bool get isWorkspace => kind == kindWorkspace;
+
+  /// Whether there is actually something to run.
+  bool get runnable => isApp && content.trim().isNotEmpty;
+
+  factory WorkItem.fromJson(Map<String, dynamic> j) => WorkItem(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'file',
+        description: j['description'] as String? ?? '',
+        content: j['content'] as String? ?? '',
+        mime: j['mime'] as String? ?? '',
+        createdByName: j['created_by_name'] as String? ?? '',
+        parentId: j['parent_id'] as String? ?? '',
+        version: (j['version'] as num?)?.toInt() ?? 1,
+        updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}

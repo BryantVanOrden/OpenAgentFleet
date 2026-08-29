@@ -105,6 +105,18 @@ class ApiClient {
 
   Future<void> logout() => _setToken(null);
 
+  // ----------------------------------------------- shared work catalog ---
+
+  /// What the agents have published, newest first.
+  Future<List<WorkItem>> workItems() async {
+    final data = await _get('/api/work') as List? ?? const [];
+    return data
+        .map((e) => WorkItem.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<void> deleteWorkItem(String id) => _delete('/api/work/$id');
+
   // --------------------------------------------------- administration ---
 
   Future<List<AdminUser>> adminUsers() async {

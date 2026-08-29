@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'mini_app_screen.dart';
 
 class VaultScreen extends ConsumerStatefulWidget {
   const VaultScreen({super.key});
@@ -14,10 +15,11 @@ class VaultScreen extends ConsumerStatefulWidget {
 
 class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProviderStateMixin {
   // Two tabs now: comms moved to Fleet, where the agents are.
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late final TabController _tabs = TabController(length: 3, vsync: this);
 
   List<SharedSecret> _secrets = [];
   List<SharedSession> _sessions = [];
+  List<WorkItem> _work = [];
   bool _loading = false;
   String? _error;
 
@@ -42,10 +44,12 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
       final api = ref.read(apiProvider);
       final secs = await api.sharedSecrets();
       final sess = await api.sharedSessions();
+      final work = await api.workItems();
       if (mounted) {
         setState(() {
           _secrets = secs;
           _sessions = sess;
+          _work = work;
         });
       }
     } catch (err) {
@@ -180,6 +184,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
           tabs: [
             Tab(text: 'Secrets (${_secrets.length})'),
             Tab(text: 'Sessions (${_sessions.length})'),
+            Tab(text: 'Work (${_work.length})'),
           ],
         ),
       ),
@@ -192,6 +197,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
                   children: [
                     _buildSecretsTab(),
                     _buildSessionsTab(),
+                    _buildWorkTab(),
                   ],
                 ),
     );
@@ -248,6 +254,195 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
         );
       },
     );
+  }
+
+  /// What the agents have made, for each other and for you.
+  ///
+  /// Workspaces come first with their contents nested under them, because a
+  /// flat list of thirty files from four bots tells you nothing about which
+  /// of them belong to the same piece of work.
+  Widget _buildWorkTab() {
+    if (_work.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'Nothing published yet.\n\nAgents put work here for each other — '
+            'files to build on, and mini-apps you can run from this tab.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Fleet.ink400, height: 1.5),
+          ),
+        ),
+      );
+    }
+
+    final workspaces = _work.where((w) => w.isWorkspace).toList();
+    final loose = _work
+        .where((w) => !w.isWorkspace && w.parentId.isEmpty)
+        .toList();
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: [
+          for (final ws in workspaces) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 6, left: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.folder_outlined, size: 16, color: Fleet.ink400),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      ws.name,
+                      style: TextStyle(
+                          color: Fleet.ink300,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            for (final item in _work.where((w) => w.parentId == ws.id))
+              _workTile(item),
+          ],
+          if (loose.isNotEmpty) ...[
+            if (workspaces.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 6, left: 4),
+                child: Text('LOOSE ITEMS',
+                    style: TextStyle(
+                        color: Fleet.ink400,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6)),
+              ),
+            for (final item in loose) _workTile(item),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _workTile(WorkItem item) {
+    final runnable = item.runnable;
+    return Card(
+      color: Fleet.ink850,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(
+          runnable ? Icons.videogame_asset_outlined : Icons.description_outlined,
+          color: runnable ? Fleet.live : Fleet.ink300,
+          size: 20,
+        ),
+        title: Text(item.name, style: const TextStyle(fontSize: 14)),
+        subtitle: Text(
+          [
+            if (item.createdByName.isNotEmpty) 'by ${item.createdByName}',
+            'v${item.version}',
+            if (item.description.isNotEmpty) item.description,
+          ].join(' · '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: Fleet.ink400, fontSize: 11),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (runnable)
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => MiniAppScreen(item: item),
+                )),
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('Play'),
+              ),
+            IconButton(
+              tooltip: 'Delete',
+              icon: Icon(Icons.delete_outline, size: 18, color: Fleet.bad),
+              onPressed: () => _deleteWork(item),
+            ),
+          ],
+        ),
+        onTap: runnable
+            ? () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => MiniAppScreen(item: item),
+                ))
+            : () => _showWork(item),
+      ),
+    );
+  }
+
+  Future<void> _showWork(WorkItem item) => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Fleet.ink900,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        ),
+        builder: (_) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          builder: (_, scroll) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(item.name,
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text('by ${item.createdByName} · v${item.version}',
+                    style: TextStyle(color: Fleet.ink400, fontSize: 11)),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scroll,
+                    child: SelectableText(
+                      item.content,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 11, height: 1.4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Future<void> _deleteWork(WorkItem item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Fleet.ink850,
+        title: Text('Delete "${item.name}"?'),
+        content: Text(
+          item.isWorkspace
+              ? 'Everything inside this workspace goes with it.'
+              : 'The agents lose what they published here.',
+          style: TextStyle(color: Fleet.ink300),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(apiProvider).deleteWorkItem(item.id);
+      await _load();
+    } catch (err) {
+      if (mounted) setState(() => _error = '$err');
+    }
   }
 
   Widget _buildSessionsTab() {
