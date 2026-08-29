@@ -827,4 +827,36 @@ type User struct {
 	Email     string    `json:"email"`
 	Role      Role      `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
+	// DisabledAt turns an account off without deleting it. Deleting cascades
+	// a person's keys away and orphans what they made, which is the wrong
+	// thing to do to someone who has simply left.
+	DisabledAt time.Time `json:"disabled_at,omitzero"`
 }
+
+// Disabled reports whether this account has been turned off. A disabled user
+// cannot sign in, and their API keys stop working with them.
+func (u User) Disabled() bool { return !u.DisabledAt.IsZero() }
+
+
+// APIKey is a long-lived credential for scripts and CI.
+//
+// The secret is shown once, at creation, and never stored — only a hash of it
+// is. A key carries its owner's role, so revoking the user revokes the key.
+type APIKey struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// UserID is whose authority the key acts with.
+	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email,omitempty"`
+	CreatedBy string `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	// LastUsedAt is zero for a key that has never been used, which is how a
+	// key issued and forgotten is told apart from one in daily service.
+	LastUsedAt time.Time `json:"last_used_at,omitzero"`
+	RevokedAt  time.Time `json:"revoked_at,omitzero"`
+	// Secret is populated only in the response that creates the key.
+	Secret string `json:"secret,omitempty"`
+}
+
+// Revoked reports whether this key has been turned off.
+func (k APIKey) Revoked() bool { return !k.RevokedAt.IsZero() }

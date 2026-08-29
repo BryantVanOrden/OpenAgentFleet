@@ -124,14 +124,14 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/vault/comms", auth(roleAny, s.handleListPeerMessages))
 	mux.Handle("POST /api/vault/comms", auth(roleOperator, s.handleSendPeerMessage))
 	// Combinations: which model does what.
-	mux.Handle("GET /api/model-combos", auth(roleAny, s.handleListModelCombos))
-	mux.Handle("POST /api/model-combos", auth(roleOperator, s.handleUpsertModelCombo))
-	mux.Handle("PUT /api/model-combos/{id}", auth(roleOperator, s.handleUpsertModelCombo))
-	mux.Handle("DELETE /api/model-combos/{id}", auth(roleOperator, s.handleDeleteModelCombo))
+	mux.Handle("GET /api/model-combos", auth(roleAdmin, s.handleListModelCombos))
+	mux.Handle("POST /api/model-combos", auth(roleAdmin, s.handleUpsertModelCombo))
+	mux.Handle("PUT /api/model-combos/{id}", auth(roleAdmin, s.handleUpsertModelCombo))
+	mux.Handle("DELETE /api/model-combos/{id}", auth(roleAdmin, s.handleDeleteModelCombo))
 	// What each role would actually resolve to for this bot.
-	mux.Handle("GET /api/instances/{id}/models/resolved", auth(roleAny, s.handleResolveChain))
+	mux.Handle("GET /api/instances/{id}/models/resolved", auth(roleAdmin, s.handleResolveChain))
 	// A bot's own model fallback chain.
-	mux.Handle("PUT /api/instances/{id}/models", auth(roleOperator, s.handleSetInstanceModels))
+	mux.Handle("PUT /api/instances/{id}/models", auth(roleAdmin, s.handleSetInstanceModels))
 	// What each bot has chosen to remember, and a way to take one back out.
 	mux.Handle("GET /api/instances/{id}/memories", auth(roleAny, s.handleListInstanceMemories))
 	mux.Handle("DELETE /api/instances/{id}/memories/{memoryId}", auth(roleOperator, s.handleForgetMemory))
@@ -173,7 +173,12 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/alerts", auth(roleAny, s.handleListAlerts))
 	mux.Handle("POST /api/alerts/{id}/reply", auth(roleOperator, s.handleReplyAlert))
 
-	mux.Handle("GET /api/providers", auth(roleAny, s.handleListProviders))
+	// Provider connections, model combinations and per-bot fallback chains are
+	// administration, not use. They carry base URLs, OAuth client ids and
+	// sign-in state, and editing a chain changes what every bot on it costs and
+	// which model sees its screen -- none of which belongs to an operator who
+	// was given a bot to drive. The UI hides these too, but the gate is here.
+	mux.Handle("GET /api/providers", auth(roleAdmin, s.handleListProviders))
 	mux.Handle("POST /api/providers", auth(roleAdmin, s.handleUpsertProvider))
 	mux.Handle("PUT /api/providers/{id}", auth(roleAdmin, s.handleUpsertProvider))
 	mux.Handle("DELETE /api/providers/{id}", auth(roleAdmin, s.handleDeleteProvider))
@@ -225,6 +230,17 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/users", auth(roleAdmin, s.handleListUsers))
 	mux.Handle("POST /api/users", auth(roleAdmin, s.handleCreateUser))
 	mux.Handle("PUT /api/users/{id}/role", auth(roleAdmin, s.handleSetRole))
+	// Resetting a password is the only way back in on a deployment with no
+	// mail server to send a reset link through.
+	mux.Handle("PUT /api/users/{id}/password", auth(roleAdmin, s.handleSetUserPassword))
+	// Disable rather than delete: deleting cascades a person's keys away and
+	// orphans what they made.
+	mux.Handle("PUT /api/users/{id}/disabled", auth(roleAdmin, s.handleSetUserDisabled))
+
+	// Long-lived access keys for scripts and CI.
+	mux.Handle("GET /api/api-keys", auth(roleAdmin, s.handleListAPIKeys))
+	mux.Handle("POST /api/api-keys", auth(roleAdmin, s.handleCreateAPIKey))
+	mux.Handle("DELETE /api/api-keys/{id}", auth(roleAdmin, s.handleRevokeAPIKey))
 
 	mux.Handle("GET /api/chat/{instanceID}", auth(roleAny, s.handleChatHistory))
 	mux.Handle("POST /api/chat/{instanceID}", auth(roleOperator, s.handleChatSend))

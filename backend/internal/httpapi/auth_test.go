@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -361,6 +362,44 @@ func TestValidRoleAcceptsExactlyTheDeploymentRoles(t *testing.T) {
 	for _, r := range []protocol.Role{"", "root", "Admin", "owner", "member"} {
 		if protocol.ValidRole(r) {
 			t.Errorf("%q should not be a valid role", r)
+		}
+	}
+}
+
+// Provider connections, model combinations and per-bot fallback chains are
+// administration, and the route table is where that is decided.
+//
+// Several of these were reachable by any signed-in user, and the mutating
+// combo and chain routes only needed operator -- so someone handed a single
+// bot to drive could read every provider's base URL and OAuth client id, and
+// rewrite the model chain the whole fleet falls back through.
+func TestProviderAndModelRoutesAreAdminOnly(t *testing.T) {
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatalf("read routes: %v", err)
+	}
+
+	// Every route line mentioning these surfaces must be gated at roleAdmin.
+	surfaces := []string{"/api/providers", "/api/model-combos", "/models"}
+	for _, line := range strings.Split(string(src), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "mux.Handle(") {
+			continue
+		}
+		matched := false
+		for _, sfx := range surfaces {
+			if strings.Contains(trimmed, sfx) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		// The desktop proxy and per-instance model READ paths are named
+		// explicitly if they are ever deliberately opened up; today none are.
+		if !strings.Contains(trimmed, "roleAdmin") {
+			t.Errorf("not admin-gated: %s", trimmed)
 		}
 	}
 }

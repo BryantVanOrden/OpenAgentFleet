@@ -76,6 +76,13 @@ func (s *Server) requireAuth(minRole string, next http.HandlerFunc) http.Handler
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := s.parseToken(tokenFrom(r))
 		if err != nil {
+			// Not a session token — it may be a long-lived API key, which is
+			// how a script or a CI job gets in without holding a password.
+			// A key acts with its owner's role and stops working the moment
+			// either the key or the account is revoked.
+			c, err = s.claimsForAPIKey(r)
+		}
+		if err != nil {
 			fail(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
@@ -135,6 +142,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	u, hash, err := s.db.UserByEmail(r.Context(), req.Email)
 	if err != nil {
 		// Same response either way: do not leak which accounts exist.
+		fail(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if u.Disabled() {
+		// Same message as a wrong password. Telling someone their account
+		// exists but is switched off is still telling them it exists.
 		fail(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -278,4 +291,21 @@ func EnsureBootstrapUser(ctx context.Context, db *store.Store, email, password s
 	}
 	_, err = db.CreateUser(ctx, email, string(hash), protocol.RoleAdmin)
 	return err == nil, err
+}
+
+
+// claimsForAPIKey resolves a presented API key to the same claims a session
+// token would have produced, so everything downstream — roles, per-bot
+// permissions, who sent a message — is identical whether a person or a script
+// made the call.
+func (s *Server) claimsForAPIKey(r *http.Request) (*claims, error) {
+	u, err := s.db.UserForAPIKey(r.Context(), tokenFrom(r))
+	if err != nil {
+		return nil, err
+	}
+	return &claims{
+		Role:  string(u.Role),
+		Email: u.Email,
+		RegisteredClaims: jwt.RegisteredClaims{Subject: u.ID},
+	}, nil
 }

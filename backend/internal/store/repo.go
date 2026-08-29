@@ -28,26 +28,34 @@ func (s *Store) CreateUser(ctx context.Context, email, hash string, role protoco
 func (s *Store) UserByEmail(ctx context.Context, email string) (*protocol.User, string, error) {
 	u := &protocol.User{}
 	var hash, role string
+	var disabled *time.Time
 	err := s.pool.QueryRow(ctx,
-		`SELECT id,email,password_hash,role,created_at FROM users WHERE lower(email)=lower($1)`, email).
-		Scan(&u.ID, &u.Email, &hash, &role, &u.CreatedAt)
+		`SELECT id,email,password_hash,role,created_at,disabled_at FROM users WHERE lower(email)=lower($1)`, email).
+		Scan(&u.ID, &u.Email, &hash, &role, &u.CreatedAt, &disabled)
 	if err != nil {
 		return nil, "", norm(err)
 	}
 	u.Role = protocol.Role(role)
+	if disabled != nil {
+		u.DisabledAt = *disabled
+	}
 	return u, hash, nil
 }
 
 func (s *Store) UserByID(ctx context.Context, id string) (*protocol.User, error) {
 	u := &protocol.User{}
 	var role string
+	var disabled *time.Time
 	err := s.pool.QueryRow(ctx,
-		`SELECT id,email,role,created_at FROM users WHERE id=$1`, id).
-		Scan(&u.ID, &u.Email, &role, &u.CreatedAt)
+		`SELECT id,email,role,created_at,disabled_at FROM users WHERE id=$1`, id).
+		Scan(&u.ID, &u.Email, &role, &u.CreatedAt, &disabled)
 	if err != nil {
 		return nil, norm(err)
 	}
 	u.Role = protocol.Role(role)
+	if disabled != nil {
+		u.DisabledAt = *disabled
+	}
 	return u, nil
 }
 
@@ -58,7 +66,8 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]protocol.User, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,email,role,created_at FROM users ORDER BY created_at`)
+	rows, err := s.pool.Query(ctx,
+		`SELECT id,email,role,created_at,disabled_at FROM users ORDER BY created_at`)
 	if err != nil {
 		return nil, norm(err)
 	}
@@ -68,10 +77,14 @@ func (s *Store) ListUsers(ctx context.Context) ([]protocol.User, error) {
 	for rows.Next() {
 		var u protocol.User
 		var role string
-		if err := rows.Scan(&u.ID, &u.Email, &role, &u.CreatedAt); err != nil {
+		var disabled *time.Time
+		if err := rows.Scan(&u.ID, &u.Email, &role, &u.CreatedAt, &disabled); err != nil {
 			return nil, err
 		}
 		u.Role = protocol.Role(role)
+		if disabled != nil {
+			u.DisabledAt = *disabled
+		}
 		out = append(out, u)
 	}
 	return out, rows.Err()
@@ -810,4 +823,43 @@ func authModeOr(mode string) string {
 		return "api_key"
 	}
 	return mode
+}
+
+// SetUserPassword replaces a user's password. Used by an administrator
+// resetting an account, which is the only way back in for someone locked out
+// of a deployment with no mail server to send a reset link through.
+func (s *Store) SetUserPassword(ctx context.Context, id, bcryptHash string) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE users SET password_hash=$2 WHERE id=$1`, id, bcryptHash)
+	if err != nil {
+		return norm(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetUserDisabled turns an account on or off.
+//
+// Not a delete: removing the row cascades their API keys away and orphans
+// everything they made, which loses the trail of what they did. A disabled
+// user cannot sign in and their keys stop working with them.
+func (s *Store) SetUserDisabled(ctx context.Context, id string, disabled bool) error {
+	var tag interface{ RowsAffected() int64 }
+	var err error
+	if disabled {
+		tag, err = s.pool.Exec(ctx,
+			`UPDATE users SET disabled_at=now() WHERE id=$1 AND disabled_at IS NULL`, id)
+	} else {
+		tag, err = s.pool.Exec(ctx,
+			`UPDATE users SET disabled_at=NULL WHERE id=$1`, id)
+	}
+	if err != nil {
+		return norm(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
