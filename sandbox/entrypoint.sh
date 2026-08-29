@@ -29,9 +29,17 @@ fi
 # Do that before anything starts writing secrets here.
 install -d -m 0700 -o agent -g agent /var/run/agentfleet/keyring
 
-# Initialize archetype workspace and clone preinstalled repositories
+# Prepare the archetype workspace in the background.
+#
+# Not blocking, deliberately. This runs before supervisord, so anything slow
+# here delays agentd and the orchestrator times out waiting for the sandbox to
+# answer — which is what happened once tool installation became real: fetching
+# kubectl, helm, terraform and friends takes minutes, and the machine never
+# finished provisioning. The desktop comes up immediately and the toolchain
+# lands behind it; the orchestrator waits for a marker before deciding which
+# tools to tell the agent it has.
 if [[ -x /usr/local/bin/init-archetype.sh ]]; then
-    /usr/local/bin/init-archetype.sh || log "warning: archetype init had non-fatal error"
+    ( /usr/local/bin/init-archetype.sh || log "warning: archetype init had non-fatal error" ) &
 fi
 
 # Resolution can be changed per instance without rebuilding.

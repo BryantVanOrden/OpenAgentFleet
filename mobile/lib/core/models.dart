@@ -527,6 +527,114 @@ class ChatSession {
       );
 }
 
+/// An organisation or department.
+class Org {
+  const Org({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.memberCount = 0,
+    this.botCount = 0,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final int memberCount;
+  final int botCount;
+
+  factory Org.fromJson(Map<String, dynamic> j) => Org(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+        memberCount: (j['member_count'] as num?)?.toInt() ?? 0,
+        botCount: (j['bot_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// One person's standing in one department.
+class OrgMember {
+  const OrgMember({
+    required this.userId,
+    required this.email,
+    required this.orgRole,
+  });
+
+  /// Roles, most to least capable.
+  static const roles = ['owner', 'admin', 'member', 'viewer'];
+
+  /// What each role can do, in the terms an administrator thinks in.
+  static const roleSummary = {
+    'owner': 'Everything, including who else has access',
+    'admin': 'Create, edit and delete bots; use shared secrets',
+    'member': 'Talk to bots and use their desktops',
+    'viewer': 'Read only — cannot make anything happen',
+  };
+
+  final String userId;
+  final String email;
+  final String orgRole;
+
+  factory OrgMember.fromJson(Map<String, dynamic> j) => OrgMember(
+        userId: j['user_id'] as String? ?? '',
+        email: j['email'] as String? ?? '',
+        orgRole: j['org_role'] as String? ?? 'member',
+      );
+}
+
+/// A per-bot exception to what someone may do.
+class BotGrant {
+  const BotGrant({required this.userId, required this.permissions});
+
+  /// Permissions, least to most dangerous.
+  static const all = [
+    'view', 'read', 'chat', 'desktop',
+    'edit', 'create', 'delete', 'secrets', 'manage_members',
+  ];
+
+  static const labels = {
+    'view': 'See the bot exists',
+    'read': 'Read its replies and history',
+    'chat': 'Talk to it',
+    'desktop': 'Use its desktop',
+    'edit': 'Change its settings',
+    'create': 'Create new bots',
+    'delete': 'Delete bots',
+    'secrets': 'Use shared secrets and sessions',
+    'manage_members': 'Manage who has access',
+  };
+
+  /// The ones that mean anything for a single bot.
+  static const perBot = ['view', 'read', 'chat', 'desktop', 'edit', 'delete'];
+
+  final String userId;
+  final List<String> permissions;
+
+  factory BotGrant.fromJson(Map<String, dynamic> j) => BotGrant(
+        userId: j['user_id'] as String? ?? '',
+        permissions: ((j['permissions'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(),
+      );
+}
+
+/// A user account.
+class FleetUser {
+  const FleetUser({required this.id, required this.email, required this.role});
+
+  final String id;
+  final String email;
+
+  /// Deployment-wide role: admin, operator or auditor.
+  final String role;
+
+  factory FleetUser.fromJson(Map<String, dynamic> j) => FleetUser(
+        id: j['id'] as String? ?? '',
+        email: j['email'] as String? ?? '',
+        role: j['role'] as String? ?? 'operator',
+      );
+}
+
 /// Which model does what.
 ///
 /// A combination assigns models to roles, so the model that reads the screen

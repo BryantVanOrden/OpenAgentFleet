@@ -84,6 +84,9 @@ COPY supervisord.conf /etc/supervisor/conf.d/agentfleet.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY egress.sh /usr/local/bin/egress.sh
 COPY init-archetype.sh /usr/local/bin/init-archetype.sh
+# Install recipes, editable without touching the script that reads them.
+RUN mkdir -p /etc/agentfleet
+COPY tools.conf /etc/agentfleet/tools.conf
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/egress.sh /usr/local/bin/init-archetype.sh
 
 # The agent runs unprivileged, with a restricted passwordless sudo so it can

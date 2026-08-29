@@ -66,13 +66,37 @@ type CreateRequest struct {
 	SudoAccess        bool                       `json:"sudo_access"`
 	Labels            map[string]string          `json:"labels,omitempty"`
 	// OrgID is the department the bot is created into.
-	OrgID   string `json:"org_id,omitempty"`
+	OrgID string `json:"org_id,omitempty"`
+	// Voice this bot speaks in. Empty takes the archetype's default.
+	Voice   string `json:"voice,omitempty"`
 	OwnerID string `json:"-"`
 }
 
 // Create provisions a sandbox and blocks until its agent daemon answers, so the
 // caller never gets back an instance that cannot be driven.
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Instance, error) {
+	// An archetype's tools come from its template unless the caller overrode
+	// them. Repositories already worked this way; tools did not, so creating a
+	// cyber_ops bot without spelling out a tool list got its wordlists and none
+	// of its tooling — and the app has no reason to know the list.
+	if req.ArchetypeID != "" {
+		if tmpl := protocol.BotTemplateByID(req.ArchetypeID); tmpl != nil {
+			if len(req.PreinstalledTools) == 0 {
+				req.PreinstalledTools = tmpl.PreinstalledTools
+			}
+			// A distinct voice per archetype, so a fleet is legible by ear.
+			if req.Voice == "" {
+				req.Voice = tmpl.DefaultVoice
+			}
+			// Shell where the archetype's whole job is a command line. Sudo is
+			// never defaulted on — that is granted deliberately, per bot, by
+			// someone who meant to.
+			if !req.ShellAccess {
+				req.ShellAccess = tmpl.DefaultShellAccess
+			}
+		}
+	}
+
 	live, err := m.db.CountLiveInstances(ctx)
 	if err != nil {
 		return nil, err
@@ -113,6 +137,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		Profile:           profile,
 		Override:          req.Override,
 		Egress:            req.Egress,
+		Voice:             req.Voice,
 		ShellAccess:       req.ShellAccess && m.cfg.AllowShell,
 		SudoAccess:        req.SudoAccess,
 		Labels:            req.Labels,
@@ -255,9 +280,75 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		return fmt.Errorf("could not apply the sudo setting: %w", err)
 	}
 
+	// Replace the archetype's wish list with what the sandbox actually has.
+	//
+	// The templates declare tools aspirationally — burpsuite, ghidra, blender —
+	// and the system prompt tells the model it HAS whatever is on the list.
+	// Measured against a running sandbox, 96 of 108 declared tools were absent,
+	// so agents were being told to reach for commands that do not exist and
+	// burning steps discovering it one at a time. Now the prompt only ever
+	// names tools that answered.
+	inst.PreinstalledTools = m.verifyTools(ctx, inst, inst.PreinstalledTools)
+
 	inst.State = protocol.InstanceRunning
 	inst.LastError = ""
 	return m.db.UpdateInstance(ctx, inst)
+}
+
+// toolBinaries maps a tool name to the command it actually provides, where
+// they differ.
+var toolBinaries = map[string]string{
+	"ripgrep": "rg", "postgresql-client": "psql", "nodejs": "node",
+	"python3-pip": "pip3", "imagemagick": "convert", "build-essential": "gcc",
+	"default-jdk": "javac", "docker.io": "docker", "aws-cli": "aws",
+}
+
+// verifyTools returns the subset of wanted tools the sandbox can actually run.
+//
+// One exec for the whole list rather than one per tool: this runs on the
+// provisioning path, and a round trip per tool would add seconds to every
+// machine for a list that is usually a dozen long.
+func (m *Manager) verifyTools(ctx context.Context, inst *protocol.Instance, wanted []string) []string {
+	if len(wanted) == 0 {
+		return wanted
+	}
+
+	// Installation runs in the background so the desktop can come up promptly,
+	// so wait for it to finish before deciding what the agent has. Bounded:
+	// a slow mirror should delay the tool list, not the machine.
+	m.waitForTools(ctx, inst, 4*time.Minute)
+
+	var sb strings.Builder
+	for _, t := range wanted {
+		bin := t
+		if mapped, ok := toolBinaries[t]; ok {
+			bin = mapped
+		}
+		// The tool name is echoed, not the binary, so the caller gets back the
+		// names it asked about.
+		fmt.Fprintf(&sb, "command -v %q >/dev/null 2>&1 && echo %q\n", bin, t)
+	}
+
+	out, err := m.docker.ExecAs(ctx, inst.Runtime, "0", []string{"bash", "-lc", sb.String()})
+	if err != nil {
+		// A sandbox that cannot be probed keeps its declared list. Being
+		// optimistic here is better than telling an agent it has nothing.
+		return wanted
+	}
+
+	present := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			present[t] = true
+		}
+	}
+	verified := make([]string, 0, len(wanted))
+	for _, t := range wanted {
+		if present[t] {
+			verified = append(verified, t)
+		}
+	}
+	return verified
 }
 
 func (m *Manager) sandboxEnv(inst *protocol.Instance, p protocol.TierProfile) []string {
@@ -633,4 +724,27 @@ func (m *Manager) SetSudo(ctx context.Context, inst *protocol.Instance, allowed 
 		return fmt.Errorf("could not change sudo: %s", trimmed)
 	}
 	return nil
+}
+
+// waitForTools waits for the sandbox to finish installing its toolchain.
+//
+// Polled rather than pushed because the alternative is agentd growing an
+// endpoint whose only purpose is to say "not yet", and the sandbox already
+// writes a marker for anyone wondering whether the workspace is still filling
+// in. Giving up quietly is the right failure: the verification that follows
+// simply sees fewer tools, and under-claiming is safe.
+func (m *Manager) waitForTools(ctx context.Context, inst *protocol.Instance, budget time.Duration) {
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		out, err := m.docker.ExecAs(ctx, inst.Runtime, "0",
+			[]string{"bash", "-lc", "test -f /home/agent/work/.tools-ready && echo ready"})
+		if err == nil && strings.Contains(out, "ready") {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
+	}
 }

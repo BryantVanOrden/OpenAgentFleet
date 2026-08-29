@@ -3,17 +3,25 @@ package protocol
 // BotTemplate defines an out-of-the-box specialized agent persona with tailored
 // compute profiles, pre-installed toolsets, repositories, and expert system prompts.
 type BotTemplate struct {
-	ID                 string            `json:"id"`
-	Name               string            `json:"name"`
-	Tagline            string            `json:"tagline"`
-	Category           string            `json:"category"`
-	Icon               string            `json:"icon"`
-	RecommendedTier    Tier              `json:"recommended_tier"`
-	VCPU               float64           `json:"vcpu"`
-	MemoryMB           int64             `json:"memory_mb"`
-	DiskGB             int64             `json:"disk_gb"`
-	GPU                bool              `json:"gpu"`
-	PreinstalledTools  []string          `json:"preinstalled_tools"`
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Tagline           string   `json:"tagline"`
+	Category          string   `json:"category"`
+	Icon              string   `json:"icon"`
+	RecommendedTier   Tier     `json:"recommended_tier"`
+	VCPU              float64  `json:"vcpu"`
+	MemoryMB          int64    `json:"memory_mb"`
+	DiskGB            int64    `json:"disk_gb"`
+	GPU               bool     `json:"gpu"`
+	PreinstalledTools []string `json:"preinstalled_tools"`
+	// DefaultVoice gives each archetype a distinct voice, so a fleet several
+	// bots deep is legible by ear rather than by reading every name. Empty
+	// falls back to the operator's default.
+	DefaultVoice string `json:"default_voice,omitempty"`
+	// DefaultShellAccess is whether this archetype needs a shell to do its job
+	// at all. Sudo is never defaulted on: it is granted deliberately, per bot,
+	// by someone who meant to.
+	DefaultShellAccess bool              `json:"default_shell_access,omitempty"`
 	PreinstalledRepos  []string          `json:"preinstalled_repos,omitempty"`
 	SpecializedPrompt  string            `json:"specialized_prompt"`
 	DefaultEnvironment map[string]string `json:"default_environment,omitempty"`
@@ -23,16 +31,18 @@ type BotTemplate struct {
 func DefaultBotTemplates() []BotTemplate {
 	return []BotTemplate{
 		{
-			ID:              "fleet_manager",
-			Name:            "Fleet Manager & Mission Commander",
-			Tagline:         "Autonomous fleet supervisor: decomposes high-level goals, delegates tasks to specialist bots, and synthesizes executive reports",
-			Category:        "Management & Swarms",
-			Icon:            "🎯",
-			RecommendedTier: TierStandard,
-			VCPU:            4,
-			MemoryMB:        8192,
-			DiskGB:          30,
-			GPU:             false,
+			ID:                 "fleet_manager",
+			Name:               "Fleet Manager & Mission Commander",
+			Tagline:            "Autonomous fleet supervisor: decomposes high-level goals, delegates tasks to specialist bots, and synthesizes executive reports",
+			Category:           "Management & Swarms",
+			Icon:               "🎯",
+			DefaultVoice:       "atlas",
+			DefaultShellAccess: false,
+			RecommendedTier:    TierStandard,
+			VCPU:               4,
+			MemoryMB:           8192,
+			DiskGB:             30,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"tmux", "git", "gh", "ripgrep", "jq", "curl", "n8n", "htop", "tree",
 			},
@@ -47,16 +57,18 @@ OPERATING PLAYBOOK:
 5. SYNTHESIS & EXECUTIVE BRIEFING: Aggregate all peer findings, verified artifacts, and test logs into a concise, actionable executive summary presented to the operator.`,
 		},
 		{
-			ID:              "cyber_ops",
-			Name:            "CyberSec PenTester & Red Teamer",
-			Tagline:         "Autonomous vulnerability assessment, network reconnaissance, and exploit auditing",
-			Category:        "Security",
-			Icon:            "🛡️",
-			RecommendedTier: TierStandard,
-			VCPU:            4,
-			MemoryMB:        8192,
-			DiskGB:          40,
-			GPU:             false,
+			ID:                 "cyber_ops",
+			Name:               "CyberSec PenTester & Red Teamer",
+			Tagline:            "Autonomous vulnerability assessment, network reconnaissance, and exploit auditing",
+			Category:           "Security",
+			Icon:               "🛡️",
+			DefaultVoice:       "shadow",
+			DefaultShellAccess: true,
+			RecommendedTier:    TierStandard,
+			VCPU:               4,
+			MemoryMB:           8192,
+			DiskGB:             40,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"nmap", "wireshark", "ffuf", "metasploit", "ghidra", "semgrep",
 				"trivy", "sqlmap", "burpsuite", "nikto", "gobuster", "hydra",
@@ -91,16 +103,18 @@ OPERATING PLAYBOOK:
      * Exact Remediation Guidance & Code Patch.`,
 		},
 		{
-			ID:              "fullstack_dev",
-			Name:            "Full-Stack Software Architect",
-			Tagline:         "Modern full-stack engineering, test-driven dev, microservices, and Git workflows",
-			Category:        "Engineering",
-			Icon:            "💻",
-			RecommendedTier: TierDevHeavy,
-			VCPU:            8,
-			MemoryMB:        16384,
-			DiskGB:          60,
-			GPU:             false,
+			ID:                 "fullstack_dev",
+			Name:               "Full-Stack Software Architect",
+			Tagline:            "Modern full-stack engineering, test-driven dev, microservices, and Git workflows",
+			Category:           "Engineering",
+			Icon:               "💻",
+			DefaultVoice:       "vortex",
+			DefaultShellAccess: true,
+			RecommendedTier:    TierDevHeavy,
+			VCPU:               8,
+			MemoryMB:           16384,
+			DiskGB:             60,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"vscode", "node", "bun", "pnpm", "go", "python3", "rustc", "cargo",
 				"docker", "docker-compose", "psql", "sqlite3", "redis-cli", "gh", "git",
@@ -132,16 +146,18 @@ OPERATING PLAYBOOK:
    - Include clean diff summaries and thorough verification checklists.`,
 		},
 		{
-			ID:              "devops_sre",
-			Name:            "DevOps & Cloud Platform SRE",
-			Tagline:         "Kubernetes orchestration, Terraform IaC, observability, and CI/CD pipelines",
-			Category:        "DevOps",
-			Icon:            "⚙️",
-			RecommendedTier: TierDevHeavy,
-			VCPU:            8,
-			MemoryMB:        16384,
-			DiskGB:          50,
-			GPU:             false,
+			ID:                 "devops_sre",
+			Name:               "DevOps & Cloud Platform SRE",
+			Tagline:            "Kubernetes orchestration, Terraform IaC, observability, and CI/CD pipelines",
+			Category:           "DevOps",
+			Icon:               "⚙️",
+			DefaultVoice:       "shadow",
+			DefaultShellAccess: true,
+			RecommendedTier:    TierDevHeavy,
+			VCPU:               8,
+			MemoryMB:           16384,
+			DiskGB:             50,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"kubectl", "helm", "terraform", "ansible", "k9s", "docker",
 				"aws-cli", "gcloud", "promql-cli", "grafana-cli", "trivy", "stern", "yq",
@@ -168,16 +184,18 @@ OPERATING PLAYBOOK:
    - Provide structured Post-Mortem Incident Briefings (Timeline, Impact, Root Cause, Mitigation Action Items).`,
 		},
 		{
-			ID:              "qa_ui_ux",
-			Name:            "QA, Accessibility & UI/UX Auditor",
-			Tagline:         "Automated E2E testing, visual regression diffing, and WCAG 2.2 AA accessibility audits",
-			Category:        "QA & Design",
-			Icon:            "🎨",
-			RecommendedTier: TierStandard,
-			VCPU:            4,
-			MemoryMB:        8192,
-			DiskGB:          30,
-			GPU:             false,
+			ID:                 "qa_ui_ux",
+			Name:               "QA, Accessibility & UI/UX Auditor",
+			Tagline:            "Automated E2E testing, visual regression diffing, and WCAG 2.2 AA accessibility audits",
+			Category:           "QA & Design",
+			Icon:               "🎨",
+			DefaultVoice:       "echo",
+			DefaultShellAccess: false,
+			RecommendedTier:    TierStandard,
+			VCPU:               4,
+			MemoryMB:           8192,
+			DiskGB:             30,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"playwright", "cypress", "lighthouse-ci", "pa11y", "axe-core",
 				"gimp", "figma-web", "imagemagick", "screenkey", "ffmpeg",
@@ -203,16 +221,18 @@ OPERATING PLAYBOOK:
      * Annotated Screenshot Reference.`,
 		},
 		{
-			ID:              "game_dev",
-			Name:            "Game Developer & 3D Engine Bot",
-			Tagline:         "Godot 4, Blender 3D modeling, physics scripting, and shader development",
-			Category:        "Gaming & 3D",
-			Icon:            "🎮",
-			RecommendedTier: TierDevHeavy,
-			VCPU:            8,
-			MemoryMB:        32768,
-			DiskGB:          100,
-			GPU:             true,
+			ID:                 "game_dev",
+			Name:               "Game Developer & 3D Engine Bot",
+			Tagline:            "Godot 4, Blender 3D modeling, physics scripting, and shader development",
+			Category:           "Gaming & 3D",
+			Icon:               "🎮",
+			DefaultVoice:       "vortex",
+			DefaultShellAccess: true,
+			RecommendedTier:    TierDevHeavy,
+			VCPU:               8,
+			MemoryMB:           32768,
+			DiskGB:             100,
+			GPU:                true,
 			PreinstalledTools: []string{
 				"godot4", "blender", "aseprite", "pygame", "gltf-validator",
 				"shader-compiler", "audacity", "renderdoc", "meshlab", "tiled",
@@ -239,16 +259,18 @@ OPERATING PLAYBOOK:
    - Use RenderDoc and engine profilers to eliminate frame drops and memory leaks.`,
 		},
 		{
-			ID:              "growth_media",
-			Name:            "Social Media & Growth Marketing Bot",
-			Tagline:         "Multi-channel publishing, viral content hooks, trend analysis, and social search",
-			Category:        "Marketing",
-			Icon:            "📱",
-			RecommendedTier: TierMicro,
-			VCPU:            2,
-			MemoryMB:        4096,
-			DiskGB:          20,
-			GPU:             false,
+			ID:                 "growth_media",
+			Name:               "Social Media & Growth Marketing Bot",
+			Tagline:            "Multi-channel publishing, viral content hooks, trend analysis, and social search",
+			Category:           "Marketing",
+			Icon:               "📱",
+			DefaultVoice:       "aura",
+			DefaultShellAccess: false,
+			RecommendedTier:    TierMicro,
+			VCPU:               2,
+			MemoryMB:           4096,
+			DiskGB:             20,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"chromium", "postiz-cli", "buffer-api", "photopea", "ffmpeg",
 				"yt-dlp", "curl", "whisper", "imagemagick", "pandoc",
@@ -273,16 +295,18 @@ OPERATING PLAYBOOK:
    - Compile engagement reports tracking impressions, reposts, CTR, and audience sentiment.`,
 		},
 		{
-			ID:              "media_studio",
-			Name:            "Media Studio & Video Production Bot",
-			Tagline:         "Automated video editing, audio mastering, dynamic captions, and batch asset rendering",
-			Category:        "Creative",
-			Icon:            "🎬",
-			RecommendedTier: TierPower,
-			VCPU:            8,
-			MemoryMB:        24576,
-			DiskGB:          80,
-			GPU:             true,
+			ID:                 "media_studio",
+			Name:               "Media Studio & Video Production Bot",
+			Tagline:            "Automated video editing, audio mastering, dynamic captions, and batch asset rendering",
+			Category:           "Creative",
+			Icon:               "🎬",
+			DefaultVoice:       "lyra",
+			DefaultShellAccess: false,
+			RecommendedTier:    TierPower,
+			VCPU:               8,
+			MemoryMB:           24576,
+			DiskGB:             80,
+			GPU:                true,
 			PreinstalledTools: []string{
 				"ffmpeg", "kdenlive", "audacity", "whisper", "imagemagick",
 				"comfyui-client", "sox", "obs-studio", "handbrake-cli", "exiftool",
@@ -309,16 +333,18 @@ OPERATING PLAYBOOK:
    - Automate eye-catching thumbnail graphics with ImageMagick and batch-export production-ready video files.`,
 		},
 		{
-			ID:              "agentic_crm",
-			Name:            "Agentic CRM & Revenue Bot",
-			Tagline:         "Autonomous lead enrichment, deal pipeline hygiene, and outreach using Comp AI CRM",
-			Category:        "Sales & CRM",
-			Icon:            "🤝",
-			RecommendedTier: TierStandard,
-			VCPU:            4,
-			MemoryMB:        8192,
-			DiskGB:          30,
-			GPU:             false,
+			ID:                 "agentic_crm",
+			Name:               "Agentic CRM & Revenue Bot",
+			Tagline:            "Autonomous lead enrichment, deal pipeline hygiene, and outreach using Comp AI CRM",
+			Category:           "Sales & CRM",
+			Icon:               "🤝",
+			DefaultVoice:       "echo",
+			DefaultShellAccess: false,
+			RecommendedTier:    TierStandard,
+			VCPU:               4,
+			MemoryMB:           8192,
+			DiskGB:             30,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"comp-crm-client", "postgresql-client", "curl", "python3", "email-engine",
 				"pandas", "openpyxl", "csvkit", "playwright", "duckdb",
@@ -346,16 +372,18 @@ OPERATING PLAYBOOK:
    - Synthesize pipeline health reports (deal velocity, conversion rates by stage, projected revenue).`,
 		},
 		{
-			ID:              "data_quant",
-			Name:            "Quantitative Data Scientist & Financial Analyst",
-			Tagline:         "Quantitative financial modeling, econometric backtesting, SQL queries, and interactive charts",
-			Category:        "Data & Finance",
-			Icon:            "📈",
-			RecommendedTier: TierDevHeavy,
-			VCPU:            8,
-			MemoryMB:        16384,
-			DiskGB:          50,
-			GPU:             false,
+			ID:                 "data_quant",
+			Name:               "Quantitative Data Scientist & Financial Analyst",
+			Tagline:            "Quantitative financial modeling, econometric backtesting, SQL queries, and interactive charts",
+			Category:           "Data & Finance",
+			Icon:               "📈",
+			DefaultVoice:       "atlas",
+			DefaultShellAccess: true,
+			RecommendedTier:    TierDevHeavy,
+			VCPU:               8,
+			MemoryMB:           16384,
+			DiskGB:             50,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"jupyterlab", "polars", "duckdb", "pandas", "numpy", "scipy",
 				"yfinance", "plotly", "matplotlib", "seaborn", "quarto", "ta-lib", "statsmodels", "scikit-learn",
@@ -382,16 +410,18 @@ OPERATING PLAYBOOK:
    - Uphold 100% mathematical and statistical rigor with zero hallucination on numbers.`,
 		},
 		{
-			ID:              "deep_researcher",
-			Name:            "Academic & Deep Intelligence Researcher",
-			Tagline:         "Exhaustive literature reviews, whitepapers, citation verification, and structured briefs",
-			Category:        "Research",
-			Icon:            "🔬",
-			RecommendedTier: TierStandard,
-			VCPU:            4,
-			MemoryMB:        8192,
-			DiskGB:          30,
-			GPU:             false,
+			ID:                 "deep_researcher",
+			Name:               "Academic & Deep Intelligence Researcher",
+			Tagline:            "Exhaustive literature reviews, whitepapers, citation verification, and structured briefs",
+			Category:           "Research",
+			Icon:               "🔬",
+			DefaultVoice:       "lyra",
+			DefaultShellAccess: false,
+			RecommendedTier:    TierStandard,
+			VCPU:               4,
+			MemoryMB:           8192,
+			DiskGB:             30,
+			GPU:                false,
 			PreinstalledTools: []string{
 				"zotero", "pandoc", "typst", "pdfminer", "beautifulsoup4",
 				"weasyprint", "calibre", "curl", "python3",
