@@ -226,6 +226,13 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 					sameCount, inst.Name, lastHistory(history)),
 				obs)
 			if err != nil {
+				// Cancelling a task that is waiting on a human is a
+				// cancellation, not a failure to reach anyone. Reporting it as
+				// the latter told the operator their own action was an error.
+				if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+					r.cancelled(ctx, task)
+					return
+				}
 				r.fail(ctx, task, "stalled and could not reach the operator: "+err.Error())
 				return
 			}
@@ -749,10 +756,16 @@ func (r *Runner) succeed(ctx context.Context, task *protocol.Task, inst *protoco
 
 func (r *Runner) fail(ctx context.Context, task *protocol.Task, msg string) {
 	r.log.Warn("task failed", "task", task.ID, "err", msg)
-	_ = r.db.UpdateTaskState(ctx, task.ID, protocol.TaskFailed, task.Step, msg, "")
+	// Detached deliberately: a task most often fails *because* its context died,
+	// and writing the terminal state through that same context drops the write.
+	// The task then sits in whatever state it was last in — running, or
+	// awaiting_human — with nothing able to move it, forever.
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	_ = r.db.UpdateTaskState(wctx, task.ID, protocol.TaskFailed, task.Step, msg, "")
 	r.bus.Emit("task.state", task.InstanceID, task.ID,
 		map[string]any{"state": protocol.TaskFailed, "error": msg})
-	r.fileAlert(ctx, task, protocol.AlertFailed, "warn", "Task failed", msg)
+	r.fileAlert(wctx, task, protocol.AlertFailed, "warn", "Task failed", msg)
 }
 
 func (r *Runner) cancelled(ctx context.Context, task *protocol.Task) {
