@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/inline_error.dart';
 
 /// Manage the chats you have with one bot.
 ///
@@ -44,6 +45,10 @@ class ChatSessionsSheet extends ConsumerStatefulWidget {
 }
 
 class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
+  /// Errors show inline. This is a modal bottom sheet, and a snackbar raised
+  /// from inside one renders behind the sheet — invisible, which makes a
+  /// failed action look like a control that did nothing.
+
   List<ChatSession> _sessions = const [];
   bool _loading = true;
   String? _error;
@@ -73,14 +78,13 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
   }
 
   Future<void> _newChat() async {
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     try {
       final created =
           await ref.read(apiProvider).createChatSession(widget.instanceId);
       navigator.pop(created);
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      if (mounted) setState(() => _error = '$err');
     }
   }
 
@@ -108,27 +112,24 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
       ),
     );
     if (name == null || name.trim().isEmpty || !mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(apiProvider)
           .updateChatSession(widget.instanceId, c.id, title: name.trim());
       await _refresh();
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      if (mounted) setState(() => _error = '$err');
     }
   }
 
   Future<void> _togglePin(ChatSession c) async {
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(apiProvider)
           .updateChatSession(widget.instanceId, c.id, pinned: !c.pinned);
       await _refresh();
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      if (mounted) setState(() => _error = '$err');
     }
   }
 
@@ -155,8 +156,6 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
       ),
     );
     if (confirmed != true || !mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     try {
       await ref
@@ -178,7 +177,7 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
       }
       await _refresh();
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      if (mounted) setState(() => _error = '$err');
     }
   }
 
@@ -231,6 +230,10 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
             ),
           ),
           Flexible(child: _buildList()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: InlineError(_error),
+          ),
           const SizedBox(height: 12),
         ],
       ),

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/inline_error.dart';
 
 /// Add or configure one AI connection.
 ///
@@ -495,32 +496,8 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               onChanged: (v) => setState(() => _enabled = v),
               title: const Text('Enabled', style: TextStyle(fontSize: 13)),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  color: Fleet.bad.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: Fleet.bad.withValues(alpha: 0.4)),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.error_outline, size: 15, color: Fleet.bad),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(_error!,
-                          style: TextStyle(
-                              color: Fleet.ink200,
-                              fontSize: 11.5,
-                              height: 1.4)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            InlineError(_error),
+            const SizedBox(height: 14),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,

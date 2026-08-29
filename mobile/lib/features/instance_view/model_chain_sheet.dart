@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/inline_error.dart';
 
 /// Which models this bot thinks with, and in what order.
 ///
@@ -27,6 +28,10 @@ class ModelChainSheet extends ConsumerStatefulWidget {
 }
 
 class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
+  /// Errors show inline. This is a modal bottom sheet, and a snackbar raised
+  /// from inside one renders behind the sheet — invisible, which makes a
+  /// failed action look like a control that did nothing.
+
   List<AIProvider> _all = const [];
   late List<String> _chain = [...widget.instance.providerIds];
   bool _loading = true;
@@ -64,7 +69,6 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
   Future<void> _save() async {
     setState(() => _busy = true);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(apiProvider)
@@ -72,7 +76,7 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
       ref.invalidate(instancesProvider);
       navigator.pop(true);
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      if (mounted) setState(() => _error = '$err');
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -101,6 +105,7 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
           ),
           const SizedBox(height: 14),
           Flexible(child: _buildBody()),
+          InlineError(_error),
           const SizedBox(height: 12),
           Row(
             children: [

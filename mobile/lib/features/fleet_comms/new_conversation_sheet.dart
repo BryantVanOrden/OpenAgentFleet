@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/inline_error.dart';
 
 /// Open a new conversation.
 ///
@@ -19,6 +20,11 @@ class NewConversationSheet extends ConsumerStatefulWidget {
 }
 
 class _NewConversationSheetState extends ConsumerState<NewConversationSheet> {
+/// Errors show inline. This is a modal bottom sheet, and a snackbar raised
+/// from inside one renders behind the sheet — invisible, which makes a failed
+/// action look like a control that did nothing.
+  String? _error;
+
   final _title = TextEditingController();
   final _selected = <String>{};
   bool _includeMe = true;
@@ -48,7 +54,6 @@ class _NewConversationSheetState extends ConsumerState<NewConversationSheet> {
     if (_selected.isEmpty) return;
     setState(() => _busy = true);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final created = await ref.read(apiProvider).createConversation(
             title: _title.text.trim(),
@@ -59,7 +64,7 @@ class _NewConversationSheetState extends ConsumerState<NewConversationSheet> {
           );
       navigator.pop(created);
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      if (mounted) setState(() => _error = '$err');
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -149,6 +154,7 @@ class _NewConversationSheetState extends ConsumerState<NewConversationSheet> {
                 ),
               ),
             ),
+          InlineError(_error),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
