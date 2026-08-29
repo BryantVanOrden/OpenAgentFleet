@@ -172,17 +172,27 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// operator did not start. The direct threads are still visible; they are
 	// just not mixed in.
 	to := msg.FromInstanceID
-	if msg.ToInstanceID == "broadcast" && isOperator(msg) {
-		to = "broadcast"
+	if isOperator(msg) {
+		// The operator has no instance ID for a reply to be addressed to. In a
+		// two-agent thread the answer goes to the other agent, which is what
+		// lets the pair carry on talking; anywhere else it goes to the fleet.
+		if other, ok := vault.GlobalBus.OtherAgentMember(msg.ConversationID, inst.ID); ok {
+			to = other
+		} else {
+			to = "broadcast"
+		}
 	}
 	if to == "" {
 		to = "broadcast"
 	}
-	// Answer in the thread the question was asked in. Without this a reply in a
-	// thread the operator created between two bots would be re-filed into the
-	// default two-party thread, and the conversation would split in half.
+
+	// Which thread the answer belongs in is a separate question from who it is
+	// addressed to, and conflating them leaked replies. An operator question in
+	// a pair thread has no instance to address, so `to` falls back to
+	// broadcast -- that must not drag the answer out of the thread it was
+	// asked in and into the fleet channel.
 	conv := msg.ConversationID
-	if to == "broadcast" {
+	if conv == "" {
 		conv = protocol.BroadcastConversationID
 	}
 	vault.GlobalBus.SendMessageIn(ctx, conv, inst.ID, inst.Name, to, peerReplyKind, body, nil)

@@ -176,18 +176,12 @@ func (s *Server) otherMemberOf(ctx context.Context, conversationID, senderID str
 	if senderID == "" {
 		senderID = protocol.OperatorMemberID
 	}
-	for _, c := range vault.GlobalBus.ListConversations(ctx) {
-		if c.ID != conversationID {
-			continue
-		}
-		if len(c.Members) != 2 {
-			return "", false
-		}
-		for _, m := range c.Members {
-			if m != senderID && m != protocol.OperatorMemberID {
-				return m, true
-			}
-		}
+	// Only when the sender is actually in the thread. The operator writing into
+	// a thread between two OTHER agents has no "other member" -- picking one
+	// arbitrarily would address half the room and leave the other agent out of
+	// a question meant for both.
+	if !vault.GlobalBus.IsMember(conversationID, senderID) {
+		return "", false
 	}
-	return "", false
+	return vault.GlobalBus.OtherAgentMember(conversationID, senderID)
 }

@@ -336,3 +336,49 @@ func lastRecipient(msgs []protocol.PeerMessage) string {
 	}
 	return msgs[len(msgs)-1].ToInstanceID
 }
+
+// OtherAgentMember returns the one other agent in a thread, if there is
+// exactly one.
+//
+// Used to address a reply. In a two-agent thread the answer goes to the other
+// agent, which keeps it inside the thread; anywhere else there is no single
+// recipient and the caller falls back to the fleet.
+func (b *Bus) OtherAgentMember(conversationID, senderID string) (string, bool) {
+	if conversationID == "" || conversationID == protocol.BroadcastConversationID {
+		return "", false
+	}
+	b.mu.RLock()
+	c, ok := b.conversations[conversationID]
+	b.mu.RUnlock()
+	if !ok {
+		return "", false
+	}
+
+	var others []string
+	for _, m := range c.Members {
+		if m == protocol.OperatorMemberID || m == senderID {
+			continue
+		}
+		others = append(others, m)
+	}
+	if len(others) != 1 {
+		return "", false
+	}
+	return others[0], true
+}
+
+// IsMember reports whether someone is in a thread.
+func (b *Bus) IsMember(conversationID, memberID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	c, ok := b.conversations[conversationID]
+	if !ok {
+		return false
+	}
+	for _, m := range c.Members {
+		if m == memberID {
+			return true
+		}
+	}
+	return false
+}

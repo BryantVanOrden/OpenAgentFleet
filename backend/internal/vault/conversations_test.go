@@ -158,3 +158,55 @@ func TestCompactLeavesThreadIntactOnFailure(t *testing.T) {
 		t.Errorf("empty summary damaged the thread: %d messages left", got)
 	}
 }
+
+// The bug this pins: an operator question inside a pair thread has no instance
+// ID to address a reply to, so the reply fell back to broadcast and the whole
+// exchange escaped into the fleet channel.
+func TestOperatorQuestionInPairThreadKeepsRepliesInThread(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	c := b.CreateConversation(ctx, "pair", []string{"a", "b"})
+
+	// A reply from "a" must be addressed to "b" — the other agent in the room.
+	other, ok := b.OtherAgentMember(c.ID, "a")
+	if !ok || other != "b" {
+		t.Fatalf("OtherAgentMember(%s, a) = %q, %v; want b, true", c.ID, other, ok)
+	}
+
+	// And the broadcast channel has no other member to pick, so a reply there
+	// falls back to the fleet as it always did.
+	if _, ok := b.OtherAgentMember(protocol.BroadcastConversationID, "a"); ok {
+		t.Error("the broadcast channel resolved a single recipient")
+	}
+	if _, ok := b.OtherAgentMember("", "a"); ok {
+		t.Error("an unfiled message resolved a single recipient")
+	}
+}
+
+// A group thread has no single recipient, so nothing is addressed on its
+// behalf — a question meant for four agents must not be handed to one.
+func TestGroupThreadHasNoSingleRecipient(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	c := b.CreateConversation(ctx, "group", []string{"a", "b", "c"})
+	if _, ok := b.OtherAgentMember(c.ID, "a"); ok {
+		t.Error("a three-agent thread resolved one recipient")
+	}
+}
+
+// The operator writing into a thread between two other agents is not a member
+// of it, and must not have their message addressed to an arbitrary half of it.
+func TestNonMemberGetsNoRecipient(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	c := b.CreateConversation(ctx, "pair", []string{"a", "b"})
+	if b.IsMember(c.ID, protocol.OperatorMemberID) {
+		t.Error("the operator counted as a member of an agents-only thread")
+	}
+	if !b.IsMember(c.ID, "a") || !b.IsMember(c.ID, "b") {
+		t.Error("an actual member was not recognised")
+	}
+}
