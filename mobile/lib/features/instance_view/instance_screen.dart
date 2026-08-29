@@ -103,7 +103,11 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
             },
           ),
           _ActivityTab(instanceId: instance.id),
-          ChatScreen(instanceId: instance.id, enabled: instance.isRunning),
+          ChatScreen(
+            instanceId: instance.id,
+            enabled: instance.isRunning,
+            voice: instance.voice,
+          ),
         ],
       ),
     );
@@ -155,6 +159,49 @@ class _ControlMenu extends ConsumerWidget {
           ref.invalidate(instancesProvider);
           // The screen it was showing no longer exists.
           navigator.pop();
+        } catch (err) {
+          messenger.showSnackBar(SnackBar(content: Text('$err')));
+        }
+        return;
+      }
+
+      if (action == 'sudo') {
+        final granting = !instance.sudoAccess;
+        if (granting) {
+          // Granting root inside the sandbox is worth a beat of thought;
+          // revoking it is not, so only one direction asks.
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: Fleet.ink850,
+              title: const Text('Grant sudo?'),
+              content: Text(
+                '"${instance.name}" will be able to become root inside its own '
+                'sandbox — installing packages, editing system files, changing '
+                'its own environment. It stays confined to the container.\n\n'
+                'You can revoke this at any time; it takes effect immediately.',
+                style: TextStyle(color: Fleet.ink300),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Grant'),
+                ),
+              ],
+            ),
+          );
+          if (ok != true) return;
+        }
+        try {
+          final updated = await api.setSudoAccess(instance.id, granting);
+          ref.invalidate(instancesProvider);
+          messenger.showSnackBar(SnackBar(
+            content: Text(updated.sudoAccess ? 'Sudo granted' : 'Sudo revoked'),
+          ));
         } catch (err) {
           messenger.showSnackBar(SnackBar(content: Text('$err')));
         }
@@ -504,6 +551,44 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     );
   }
 
+  /// Let two fingers zoom the remote desktop.
+  ///
+  /// noVNC ships `user-scalable=no` in its viewport, which is right for a
+  /// desktop browser and wrong on a handset: a 1920x1080 screen scaled to fit
+  /// a phone leaves text unreadable and targets far too small to hit. Relaxing
+  /// the viewport gives back the browser's own pinch-zoom, which pans and
+  /// scales the whole canvas without noVNC needing to know.
+  ///
+  /// Done on page load rather than in the URL because it is a property of the
+  /// document, not a noVNC setting — there is no query parameter for it.
+  Future<void> _enablePinchZoom() async {
+    final web = _webView;
+    if (web == null) return;
+    try {
+      await web.runJavaScript('''
+        (function () {
+          var vp = document.querySelector('meta[name=viewport]');
+          if (!vp) {
+            vp = document.createElement('meta');
+            vp.name = 'viewport';
+            document.head.appendChild(vp);
+          }
+          vp.setAttribute('content',
+            'width=device-width, initial-scale=1, minimum-scale=0.5, ' +
+            'maximum-scale=5, user-scalable=yes');
+          // noVNC swallows touchmove to drive the remote pointer. Letting a
+          // two-finger gesture through means a pinch zooms instead of being
+          // read as a drag; one finger still reaches the desktop.
+          document.addEventListener('touchmove', function (e) {
+            if (e.touches && e.touches.length > 1) e.stopPropagation();
+          }, true);
+        })();
+      ''');
+    } catch (_) {
+      // Zoom is a convenience; failing to enable it must not break takeover.
+    }
+  }
+
   /// Raise the phone's keyboard for the remote desktop.
   ///
   /// noVNC's UI is an ES module, so its API is not reachable from injected
@@ -537,6 +622,9 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
       _webView = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(Colors.black)
+        ..setNavigationDelegate(NavigationDelegate(
+          onPageFinished: (_) => _enablePinchZoom(),
+        ))
         ..loadRequest(Uri.parse(api.desktopUrl(widget.instance.id)));
     });
   }

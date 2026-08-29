@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/state.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../core/theme/theme.dart';
 import '../../core/voice/voice_service.dart';
@@ -9,12 +10,14 @@ import '../../core/voice/voice_service.dart';
 const _kRateKey = 'voice.rate';
 const _kPitchKey = 'voice.pitch';
 const _kVoiceKey = 'voice.name';
+const _kServerVoiceKey = 'voice.server';
 
 /// Voice preferences, held in SharedPreferences so a chosen voice survives a
 /// restart. Read by [applyStoredVoiceSettings] wherever a VoiceService is about
 /// to speak.
 class VoicePrefs {
-  const VoicePrefs({required this.rate, required this.pitch, required this.voiceName});
+  const VoicePrefs(
+      {required this.rate, required this.pitch, required this.voiceName});
 
   final double rate;
   final double pitch;
@@ -43,11 +46,12 @@ class VoiceSettingsCard extends ConsumerStatefulWidget {
 }
 
 class _VoiceSettingsCardState extends ConsumerState<VoiceSettingsCard> {
-  final _voice = VoiceService();
+  late final VoiceService _voice = VoiceService(api: ref.read(apiProvider));
 
   double _rate = 0.5;
   double _pitch = 1.0;
   String _voiceName = '';
+  String _serverVoice = '';
   List<Map<String, String>> _voices = const [];
   bool _loading = true;
 
@@ -72,9 +76,11 @@ class _VoiceSettingsCardState extends ConsumerState<VoiceSettingsCard> {
       _rate = stored.rate;
       _pitch = stored.pitch;
       _voiceName = stored.voiceName;
+      _serverVoice = prefs.getString(_kServerVoiceKey) ?? '';
       // Device voices are noisy — dozens of near-identical locale variants.
       // Sorting keeps the list navigable without hiding anything.
-      _voices = list..sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+      _voices = list
+        ..sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
       _loading = false;
     });
   }
@@ -84,11 +90,16 @@ class _VoiceSettingsCardState extends ConsumerState<VoiceSettingsCard> {
     await prefs.setDouble(_kRateKey, _rate);
     await prefs.setDouble(_kPitchKey, _pitch);
     await prefs.setString(_kVoiceKey, _voiceName);
+    await prefs.setString(_kServerVoiceKey, _serverVoice);
+    _voice.useServerVoice(_serverVoice.isEmpty ? null : _serverVoice,
+        speed: _rate / 0.5);
     await _voice.configure(rate: _rate, pitch: _pitch, voiceName: _voiceName);
   }
 
   Future<void> _preview() async {
     await _save();
+    _voice.useServerVoice(_serverVoice.isEmpty ? null : _serverVoice,
+        speed: _rate / 0.5);
     await _voice.speak(
         'This is how the agent will sound when it reads a reply back to you.');
   }
@@ -120,6 +131,46 @@ class _VoiceSettingsCardState extends ConsumerState<VoiceSettingsCard> {
             if (_loading)
               const LinearProgressIndicator(minHeight: 2)
             else ...[
+              // The server's voices when a speech service is running. These are
+              // the real ones; the device list below is the fallback.
+              ref.watch(serverVoicesProvider).maybeWhen(
+                    data: (list) => list.isEmpty
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: DropdownButtonFormField<String>(
+                              initialValue:
+                                  list.any((v) => v.id == _serverVoice)
+                                      ? _serverVoice
+                                      : '',
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Default agent voice',
+                                helperText:
+                                    'Used unless an agent has its own voice set',
+                              ),
+                              items: [
+                                const DropdownMenuItem(
+                                    value: '', child: Text('This device')),
+                                for (final v in list)
+                                  DropdownMenuItem(
+                                    value: v.id,
+                                    child: Text(
+                                      v.description.isEmpty
+                                          ? v.name
+                                          : '${v.name}  ·  ${v.description}',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (v) {
+                                setState(() => _serverVoice = v ?? '');
+                                _save();
+                              },
+                            ),
+                          ),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
               if (_voices.isEmpty)
                 Text(
                   'No speech voices are installed on this device, so replies '

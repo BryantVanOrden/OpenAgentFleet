@@ -127,12 +127,27 @@ func TierNames(tiers []protocol.TierProfile) string {
 
 // securityOpts returns the container security options for an instance.
 //
-// no-new-privileges is the control that makes sudo fail inside the sandbox;
-// the sudoers deny-list baked into the image is a guardrail behind it, not a
-// boundary. Granting sudo means giving that up, so it is opt-in per instance.
+// no-new-privileges is deliberately not set, and that is a considered trade
+// rather than an oversight.
+//
+// It is the stronger control: the kernel ignores every setuid bit in the
+// container, so sudo cannot escalate whatever the filesystem says. But the
+// kernel applies it when the container is created and it cannot be changed
+// afterwards. Using it to gate sudo therefore meant the only way to revoke
+// sudo from an agent was to recreate its container — and these sandboxes carry
+// no volume, so that discards everything the agent has done. Being unable to
+// take privilege away from a misbehaving agent without destroying its work is
+// the wrong failure to build in; the moment you most want to revoke sudo is
+// mid-incident, which is exactly when losing the workspace costs most.
+//
+// Sudo is gated instead by the setuid bit on /usr/bin/sudo, cleared at
+// provision unless asked for and changeable at any time through
+// Manager.SetSudo. That is still a real boundary: with the bit cleared sudo
+// cannot escalate, and the agent runs unprivileged so it cannot restore the
+// bit — doing so needs the privilege being withheld. What is lost is the
+// backstop, so a vulnerability in sudo or another setuid binary is now
+// reachable where the kernel used to refuse outright.
 func securityOpts(sudo bool) []string {
-	if sudo {
-		return nil
-	}
-	return []string{"no-new-privileges"}
+	_ = sudo // sudo is enforced by the setuid bit, not by a container option.
+	return nil
 }

@@ -202,10 +202,12 @@ func redactAll(list []protocol.Instance) []protocol.Instance {
 // step of a running agent -- which is exactly what you want when a run starts
 // doing something you would rather it could not.
 //
-// sudo_access is not settable: it decides whether the container is created with
-// no-new-privileges, which the kernel applies at creation. Changing it on a
-// running container is not possible, and pretending otherwise would be a switch
-// that silently does nothing. It is chosen when the instance is provisioned.
+// sudo_access is settable too, and takes effect immediately: it is enforced by
+// the setuid bit on the sandbox's sudo binary, which can be changed on a
+// running container. It used to depend on no-new-privileges, which the kernel
+// applies at creation — meaning revoking sudo required recreating the
+// container and, with no volume on these sandboxes, discarding the agent's
+// work. See fleet.securityOpts for what that trade costs.
 func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request) {
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -215,15 +217,17 @@ func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request)
 
 	var req struct {
 		ShellAccess *bool `json:"shell_access"`
-		// Voice is settable here too: it is a label on the instance, not a
-		// container property, so unlike sudo it can change at any time.
+		// Voice is a label on the instance rather than a container property.
 		Voice *string `json:"voice"`
+		// SudoAccess is applied to the live container before it is recorded,
+		// so a failure leaves the stored state matching reality.
+		SudoAccess *bool `json:"sudo_access"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.ShellAccess == nil && req.Voice == nil {
+	if req.ShellAccess == nil && req.Voice == nil && req.SudoAccess == nil {
 		fail(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
@@ -239,6 +243,20 @@ func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Voice != nil {
 		inst.Voice = strings.TrimSpace(*req.Voice)
+	}
+	if req.SudoAccess != nil && *req.SudoAccess != inst.SudoAccess {
+		if inst.State != protocol.InstanceRunning {
+			fail(w, http.StatusConflict,
+				"sudo can only be changed while the agent is running")
+			return
+		}
+		// Change the container first. Recording a grant that did not take
+		// would leave the UI claiming sudo is off while it still works.
+		if err := s.fleet.SetSudo(r.Context(), inst, *req.SudoAccess); err != nil {
+			failErr(w, err)
+			return
+		}
+		inst.SudoAccess = *req.SudoAccess
 	}
 	if err := s.db.UpdateInstance(r.Context(), inst); err != nil {
 		failErr(w, err)

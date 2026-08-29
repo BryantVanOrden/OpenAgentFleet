@@ -345,6 +345,14 @@ class ApiClient {
     return Instance.fromJson((res.data as Map).cast<String, dynamic>());
   }
 
+  /// Grant or revoke sudo inside a running agent's sandbox. Immediate.
+  Future<Instance> setSudoAccess(String instanceId, bool allowed) async {
+    final res = await _dio.put('/api/instances/$instanceId/access',
+        data: {'sudo_access': allowed}, options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return Instance.fromJson((res.data as Map).cast<String, dynamic>());
+  }
+
   /// Turn shell access on or off for a running agent. Takes effect on its next
   /// step. Sudo is not settable here — it is fixed when the instance is built.
   Future<Instance> setShellAccess(String instanceId, bool allowed) async {

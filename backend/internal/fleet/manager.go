@@ -242,6 +242,16 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		return fmt.Errorf("sandbox never became ready: %w", err)
 	}
 
+	// Apply the sudo decision now that the container is up. This is not
+	// optional: the image ships sudo setuid, and no-new-privileges no longer
+	// neutralises it (see securityOpts), so an instance created without this
+	// would silently have root available. Failing to apply it is therefore a
+	// provisioning failure, not a warning — an agent that quietly has more
+	// privilege than it was granted is worse than one that failed to start.
+	if err := m.SetSudo(ctx, inst, inst.SudoAccess); err != nil {
+		return fmt.Errorf("could not apply the sudo setting: %w", err)
+	}
+
 	inst.State = protocol.InstanceRunning
 	inst.LastError = ""
 	return m.db.UpdateInstance(ctx, inst)

@@ -17,7 +17,16 @@ import '../settings/voice_settings_card.dart';
 /// task. Collapsing those into one button is how you end up with an agent
 /// clicking Deploy because you asked whether it was ready to deploy.
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.instanceId, this.enabled = true});
+  const ChatScreen({
+    super.key,
+    required this.instanceId,
+    this.enabled = true,
+    this.voice = '',
+  });
+
+  /// The voice this agent speaks in, from its own settings. Empty falls back
+  /// to the app-wide default.
+  final String voice;
 
   final String instanceId;
   final bool enabled;
@@ -29,7 +38,7 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
-  final _voice = VoiceService();
+  late final VoiceService _voice = VoiceService(api: ref.read(apiProvider));
   bool _busy = false;
   bool _listening = false;
 
@@ -48,6 +57,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scroll.dispose();
     _voice.dispose();
     super.dispose();
+  }
+
+  /// Read a reply aloud in this agent's own voice.
+  ///
+  /// The server voice is chosen per agent and wins when one is set; the device
+  /// settings are still applied underneath so the fallback sounds right too.
+  Future<void> _speakReply(String body) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final chosen = widget.voice.isNotEmpty
+        ? widget.voice
+        : (prefs.getString('voice.server') ?? '');
+    _voice.useServerVoice(
+      chosen.isEmpty ? null : chosen,
+      speed: (prefs.getDouble('voice.rate') ?? 0.5) / 0.5,
+    );
+    await applyStoredVoiceSettings(_voice, prefs);
+    await _voice.speak(body);
   }
 
   /// Dictate into the message box. The transcript lands in the same field the
@@ -73,8 +99,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final why = _voice.lastError.isEmpty
           ? 'Nothing was heard.'
           : 'Could not listen: ${_voice.lastError}';
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(why)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(why)));
       return;
     }
     _controller.text = heard;
@@ -115,9 +140,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref
-          .read(apiProvider)
-          .sendChat(widget.instanceId, text, mode: mode);
+      await ref.read(apiProvider).sendChat(widget.instanceId, text, mode: mode);
       _controller.clear();
       ref.invalidate(chatProvider(widget.instanceId));
     } catch (err) {
@@ -138,11 +161,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final latest = list.last;
       if (latest.isUser || latest.id == _lastSpokenId) return;
       _lastSpokenId = latest.id;
-      // Pick up the speed and voice chosen in settings rather than whatever
-      // the engine defaults to.
-      unawaited(applyStoredVoiceSettings(
-              _voice, ref.read(sharedPreferencesProvider))
-          .then((_) => _voice.speak(latest.body)));
+      unawaited(_speakReply(latest.body));
     });
 
     final messages = ref.watch(chatProvider(widget.instanceId));
@@ -331,8 +350,7 @@ class _BubbleState extends ConsumerState<_Bubble> {
                   if (message.kind == 'plan') ...[
                     Row(
                       children: [
-                        Icon(Icons.checklist_rtl,
-                            size: 14, color: Fleet.live),
+                        Icon(Icons.checklist_rtl, size: 14, color: Fleet.live),
                         const SizedBox(width: 6),
                         Text('Proposed plan',
                             style: TextStyle(
