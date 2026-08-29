@@ -1,13 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agentfleet_companion/core/models.dart';
 
-Conversation conv(String id, List<String> members, {String kind = 'pair'}) =>
+Conversation conv(String id, List<String> members,
+        {String kind = 'pair', DateTime? lastMessageAt, DateTime? createdAt}) =>
     Conversation(
       id: id,
       kind: kind,
       title: id,
       members: members,
       messageCount: 0,
+      lastMessageAt: lastMessageAt,
+      createdAt: createdAt,
     );
 
 void main() {
@@ -46,5 +49,35 @@ void main() {
     final trio = conv('t', ['x', 'y', 'z'], kind: 'group');
     expect(trio.participantKey, isNot(conv('p', ['x', 'y']).participantKey));
     expect(trio.participantKey, isNot(conv('q', ['y', 'z']).participantKey));
+  });
+
+  test('a brand-new chat is the most recently used one in its group', () {
+    // Tapping a row opens group.first, and the group is ordered by
+    // lastUsedAt. A new chat has no messages, so ordering on last message
+    // alone put it LAST -- tapping Everyone opened the oldest thread and the
+    // chat just made was the hardest one to reach.
+    final old = conv('old', const [],
+        kind: 'broadcast', lastMessageAt: DateTime(2026, 8, 1));
+    final fresh = conv('fresh', const [],
+        kind: 'broadcast', createdAt: DateTime(2026, 8, 29));
+
+    final group = [old, fresh]
+      ..sort((a, b) => b.lastUsedAt.compareTo(a.lastUsedAt));
+
+    expect(group.first.id, 'fresh');
+  });
+
+  test('a thread that has been talked in beats one merely opened earlier', () {
+    final chatty = conv('chatty', const [],
+        kind: 'broadcast',
+        createdAt: DateTime(2026, 8, 1),
+        lastMessageAt: DateTime(2026, 8, 29, 12));
+    final quiet = conv('quiet', const [],
+        kind: 'broadcast', createdAt: DateTime(2026, 8, 29, 9));
+
+    final group = [quiet, chatty]
+      ..sort((a, b) => b.lastUsedAt.compareTo(a.lastUsedAt));
+
+    expect(group.first.id, 'chatty');
   });
 }

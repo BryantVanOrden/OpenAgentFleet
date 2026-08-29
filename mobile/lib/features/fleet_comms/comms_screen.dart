@@ -91,8 +91,7 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     return out;
   }
 
-  DateTime _lastActivity(Conversation c) =>
-      c.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastActivity(Conversation c) => c.lastUsedAt;
 
   /// A readable name for a thread, falling back to who is in it.
   String _titleOf(Conversation c, List<Instance> instances) {

@@ -211,15 +211,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   ChatSession? _mostRecent(List<ChatSession> sessions) {
-    ChatSession? best;
+    if (sessions.isEmpty) return null;
+    ChatSession best = sessions.first;
     for (final c in sessions) {
-      final at = c.lastMessageAt;
-      if (at == null) continue;
-      if (best?.lastMessageAt == null || at.isAfter(best!.lastMessageAt!)) {
-        best = c;
-      }
+      if (c.lastUsedAt.isAfter(best.lastUsedAt)) best = c;
     }
-    return best ?? sessions.first;
+    return best;
   }
 
   /// Remember the open chat so returning to this bot resumes it.

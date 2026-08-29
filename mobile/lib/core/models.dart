@@ -504,6 +504,7 @@ class ChatSession {
     required this.pinned,
     required this.messageCount,
     this.lastMessageAt,
+    this.createdAt,
   });
 
   /// The chat holding messages from before chats could be separated. It is not
@@ -515,6 +516,17 @@ class ChatSession {
   final bool pinned;
   final int messageCount;
   final DateTime? lastMessageAt;
+
+  /// When the chat was started. Null for the implicit default chat.
+  final DateTime? createdAt;
+
+  /// How recently the chat was used, for picking which one to reopen.
+  ///
+  /// A chat you have just started has no last message. Skipping those meant
+  /// a new chat could never be the most recent, so opening the bot went back
+  /// to an old chat instead of the one you had just made.
+  DateTime get lastUsedAt =>
+      lastMessageAt ?? createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   bool get isDefault => id == defaultId;
 
@@ -530,6 +542,7 @@ class ChatSession {
         pinned: j['pinned'] as bool? ?? false,
         messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
         lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
       );
 }
 
@@ -789,6 +802,7 @@ class Conversation {
     required this.members,
     required this.messageCount,
     this.lastMessageAt,
+    this.createdAt,
     this.pinned = false,
   });
 
@@ -800,12 +814,26 @@ class Conversation {
 
   final String id;
 
-  /// 'direct', 'pair' or 'group'.
+  /// 'direct', 'pair', 'group' or 'broadcast'.
   final String kind;
   final String title;
   final List<String> members;
   final int messageCount;
   final DateTime? lastMessageAt;
+
+  /// When the thread was opened. Null only for the built-in channel, which is
+  /// implicit and has no row until it is renamed or pinned.
+  final DateTime? createdAt;
+
+  /// How recently a thread was used, for ordering.
+  ///
+  /// A thread that has just been made has no last message, and ordering on
+  /// that alone sent every new chat to the BOTTOM of its group -- so opening
+  /// the group went to the oldest thread and the chat you had just made was
+  /// the hardest one to reach. Falling back to when it was opened puts it
+  /// where you expect: at the top, until something newer happens elsewhere.
+  DateTime get lastUsedAt =>
+      lastMessageAt ?? createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Keeps a thread at the top of the list however long it has been quiet.
   final bool pinned;
@@ -844,6 +872,7 @@ class Conversation {
             .toList(growable: false),
         messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
         lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
+          createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
         pinned: j['pinned'] as bool? ?? false,
       );
 }

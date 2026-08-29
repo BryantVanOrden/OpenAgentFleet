@@ -186,11 +186,7 @@ class _ChatSessionsSheetState extends ConsumerState<ChatSessionsSheet> {
   ChatSession _mostRecent(List<ChatSession> sessions) {
     ChatSession best = sessions.first;
     for (final c in sessions) {
-      final at = c.lastMessageAt;
-      if (at == null) continue;
-      if (best.lastMessageAt == null || at.isAfter(best.lastMessageAt!)) {
-        best = c;
-      }
+      if (c.lastUsedAt.isAfter(best.lastUsedAt)) best = c;
     }
     return best;
   }
