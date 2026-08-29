@@ -62,6 +62,13 @@ func ListDynamicModels(ctx context.Context, kind protocol.ProviderKind, base, ke
 	case protocol.ProviderAnthropic:
 		return listAnthropicDynamic(ctx, hc, base, key)
 
+	case protocol.ProviderAnthropicVertex:
+		// Vertex publishes its Claude catalogue per project and region behind
+		// the same OAuth the connection itself uses, which discovery does not
+		// hold. The curated list is honest about being curated rather than
+		// implying an empty dropdown means no models.
+		return listAnthropicDynamic(ctx, hc, "", key)
+
 	case protocol.ProviderGemini:
 		return listGeminiDynamic(ctx, hc, base, key)
 

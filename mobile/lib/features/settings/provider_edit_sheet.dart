@@ -33,6 +33,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
     'anthropic',
     'gemini',
     'antigravity',
+    'anthropic-vertex',
     'openai-compatible',
   ];
 
@@ -48,7 +49,11 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
 
   /// Engines that can be signed into with an account instead. Offered only
   /// where it actually works, so the choice is never a dead end.
-  static const _canSignIn = {'gemini', 'antigravity'};
+  static const _canSignIn = {'gemini', 'antigravity', 'anthropic-vertex'};
+
+  /// Vertex serves Claude through Google, so it is the one way to run Claude
+  /// on an account sign-in rather than a pasted key.
+  static const _vertexKind = 'anthropic-vertex';
 
   late final _name =
       TextEditingController(text: widget.existing?.name ?? '');
@@ -210,6 +215,9 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
                   } else if (next == 'ollama' && _baseUrl.text.isEmpty) {
                     _baseUrl.text = 'http://host.docker.internal:11434';
                   }
+                  // Running Claude on a Google sign-in is the only reason to
+                  // pick Vertex over the direct API, so start there.
+                  if (next == _vertexKind) _authMode = 'oauth';
                   _kind = next;
                 });
                 _loadModels();
@@ -227,10 +235,16 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
             TextField(
               controller: _baseUrl,
               decoration: InputDecoration(
-                labelText: isOllama ? 'Address' : 'Address (optional)',
+                labelText: isOllama || _kind == _vertexKind
+                    ? 'Address'
+                    : 'Address (optional)',
                 helperText: isOllama
                     ? 'Where ollama is listening'
-                    : 'Leave empty for the official endpoint',
+                    : _kind == _vertexKind
+                        ? 'https://REGION-aiplatform.googleapis.com/v1/'
+                            'projects/YOUR_PROJECT/locations/REGION'
+                        : 'Leave empty for the official endpoint',
+                helperMaxLines: 2,
               ),
               onEditingComplete: _loadModels,
             ),
@@ -360,7 +374,11 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               controller: _model,
               decoration: InputDecoration(
                 labelText: 'Model',
-                hintText: isOllama ? 'e.g. qwen3.5:4b' : 'e.g. claude-opus-5',
+                hintText: isOllama
+                    ? 'e.g. qwen3.5:4b'
+                    : _kind == _vertexKind
+                        ? 'e.g. claude-opus-4-5@20251101'
+                        : 'e.g. claude-opus-5',
                 helperText: !_liveModels
                     ? (_modelsReason.isEmpty
                         ? 'Could not reach the engine to list models — you can '
