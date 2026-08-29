@@ -812,14 +812,20 @@ class Conversation {
 
   bool get isBroadcast => id == broadcastId;
 
+  /// An everyone-channel: the whole fleet hears it. True for the built-in
+  /// channel and for any other opened since.
+  bool get isEveryone => isBroadcast || kind == 'broadcast';
+
   /// Identifies the set of people a thread is between, so several threads with
   /// the same participants collapse to one row in the comms list.
   ///
-  /// The broadcast channel is its own group: it is the everyone-channel, and
-  /// grouping it with operator-created everyone-chats would hide the one
-  /// thread that cannot be deleted behind ones that can.
+  /// The built-in channel and any everyone-channel opened since group
+  /// together: they are between the same people -- everyone -- so a new chat
+  /// made from the broadcast belongs alongside it rather than in a row of its
+  /// own. The built-in one cannot be deleted, but it is still reachable from
+  /// the thread bar like any other sibling.
   String get participantKey {
-    if (isBroadcast) return broadcastId;
+    if (isBroadcast || isEveryone) return 'everyone';
     if (members.isEmpty) return 'everyone';
     final sorted = [...members]..sort();
     return sorted.join('|');

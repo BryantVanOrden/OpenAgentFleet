@@ -337,24 +337,26 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               _ => _delete(),
             },
             itemBuilder: (_) => [
-              if (!_current.isBroadcast) ...[
-                const PopupMenuItem(
-                  value: 'rename',
-                  child: ListTile(
-                      dense: true,
-                      leading: Icon(Icons.edit_outlined),
-                      title: Text('Rename')),
-                ),
-                PopupMenuItem(
-                  value: 'pin',
-                  child: ListTile(
+              // The built-in channel can be renamed and pinned like any other
+              // -- the server stores both. Only deleting it is refused, since
+              // an unaddressed message would then have nowhere to land.
+              const PopupMenuItem(
+                value: 'rename',
+                child: ListTile(
                     dense: true,
-                    leading: Icon(_pinned
-                        ? Icons.push_pin_outlined
-                        : Icons.push_pin),
-                    title: Text(_pinned ? 'Unpin' : 'Pin to top'),
-                  ),
+                    leading: Icon(Icons.edit_outlined),
+                    title: Text('Rename')),
+              ),
+              PopupMenuItem(
+                value: 'pin',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(
+                      _pinned ? Icons.push_pin_outlined : Icons.push_pin),
+                  title: Text(_pinned ? 'Unpin' : 'Pin to top'),
                 ),
+              ),
+              if (!_current.isBroadcast)
                 PopupMenuItem(
                   value: 'delete',
                   child: ListTile(
@@ -364,7 +366,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                         style: TextStyle(color: Fleet.bad)),
                   ),
                 ),
-              ],
             ],
           ),
           IconButton(
@@ -509,18 +510,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     final messenger = ScaffoldMessenger.of(context);
     try {
-      // The broadcast channel has no member list of its own, so a new chat
-      // alongside it is one with every bot in it — which is what an
-      // everyone-channel is.
-      final members = _current.isBroadcast
-          ? (ref.read(instancesProvider).valueOrNull ?? const [])
-              .map((i) => i.id)
-              .toList()
-          : _current.members;
+      // A new chat made from an everyone-channel is another everyone-channel,
+      // not a group that happens to contain today's bots. Sending the roster
+      // as a member list made a thread that grouped separately from the
+      // broadcast and silently excluded every bot added afterwards.
+      final everyone = _current.isEveryone;
 
       final created = await ref.read(apiProvider).createConversation(
             title: name.trim(),
-            members: members,
+            members: everyone ? const [] : _current.members,
+            kind: everyone ? 'broadcast' : '',
           );
       if (!mounted) return;
       setState(() {

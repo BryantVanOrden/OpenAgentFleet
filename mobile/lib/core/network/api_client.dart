@@ -448,13 +448,19 @@ class ApiClient {
 
   /// Open a thread. Include [Conversation.operatorId] among the members to be
   /// in it yourself; leave it out to put two bots together and watch.
+  ///
+  /// Pass [kind] as 'broadcast' for another everyone-channel: those are heard
+  /// by the whole fleet, including bots added after the thread was opened, so
+  /// they need no member list.
   Future<Conversation> createConversation({
     required List<String> members,
     String title = '',
+    String kind = '',
   }) async {
     final data = await _post('/api/comms/conversations', {
       'title': title,
       'members': members,
+      if (kind.isNotEmpty) 'kind': kind,
     }) as Map;
     return Conversation.fromJson(data.cast<String, dynamic>());
   }

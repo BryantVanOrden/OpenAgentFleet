@@ -443,6 +443,11 @@ const (
 	ConversationPair = "pair"
 	// ConversationGroup is any other set of members, you included.
 	ConversationGroup = "group"
+	// ConversationBroadcast is an everyone-channel: every agent in the fleet
+	// hears it, including agents provisioned after the thread was made. Its
+	// stored member list is therefore not what decides who is in it -- a
+	// frozen roster would quietly stop including new bots.
+	ConversationBroadcast = "broadcast"
 )
 
 // BroadcastConversationID is the built-in channel every agent can hear. It is

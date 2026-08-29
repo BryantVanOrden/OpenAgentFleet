@@ -253,10 +253,19 @@ class TestDisplayBoundFunctionsAreNotExercised(unittest.TestCase):
         # a11y sets AVAILABLE = False when pyatspi is missing and returns
         # empty rather than raising, so a desktop with no accessibility bus
         # reduces the agent to vision-only instead of taking it down.
+        #
+        # AVAILABLE is forced rather than asserted: this ran green only on a
+        # machine that happened to lack pyatspi, and failed inside the sandbox
+        # image -- where it IS installed -- without the degradation path ever
+        # being exercised. What matters is the behaviour when it is missing.
         import a11y
 
-        self.assertFalse(a11y.AVAILABLE)
-        self.assertEqual(capture.screen_text(), "")
+        was = a11y.AVAILABLE
+        a11y.AVAILABLE = False
+        try:
+            self.assertEqual(capture.screen_text(), "")
+        finally:
+            a11y.AVAILABLE = was
 
 
 if __name__ == "__main__":

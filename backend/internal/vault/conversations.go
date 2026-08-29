@@ -108,14 +108,21 @@ func (b *Bus) AttachConversationStore(ctx context.Context, st ConversationStore)
 // in the canonical thread for its two parties, created on demand by
 // CanonicalThread, so a pair always has somewhere to talk without anyone
 // opening a thread first.
-func (b *Bus) CreateConversation(ctx context.Context, title string, members []string) protocol.Conversation {
+// kind may be given as protocol.ConversationBroadcast to open another
+// everyone-channel; any other value is ignored and the kind is derived from
+// the members, which is the only thing that can be trusted to describe them.
+func (b *Bus) CreateConversation(ctx context.Context, title string, members []string, kind string) protocol.Conversation {
 	norm := normalizeMembers(members)
+	resolved := KindFor(norm)
+	if kind == protocol.ConversationBroadcast {
+		resolved = protocol.ConversationBroadcast
+	}
 
 	b.mu.Lock()
 	b.seq++
 	c := protocol.Conversation{
 		ID:        fmt.Sprintf("conv-%d-%d", time.Now().UnixNano(), b.seq),
-		Kind:      KindFor(norm),
+		Kind:      resolved,
 		Title:     title,
 		Members:   norm,
 		CreatedAt: time.Now().UTC(),
@@ -203,7 +210,7 @@ func (b *Bus) ListConversations(ctx context.Context) []protocol.Conversation {
 	// name when one exists.
 	broadcast := protocol.Conversation{
 		ID:      protocol.BroadcastConversationID,
-		Kind:    protocol.ConversationGroup,
+		Kind:    protocol.ConversationBroadcast,
 		Title:   "Everyone",
 		Members: []string{},
 	}
@@ -392,6 +399,10 @@ func (b *Bus) OtherAgentMember(conversationID, senderID string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	// Addressed to the room, like the built-in channel above.
+	if c.Kind == protocol.ConversationBroadcast {
+		return "", false
+	}
 
 	var others []string
 	for _, m := range c.Members {
@@ -408,11 +419,19 @@ func (b *Bus) OtherAgentMember(conversationID, senderID string) (string, bool) {
 
 // IsMember reports whether someone is in a thread.
 func (b *Bus) IsMember(conversationID, memberID string) bool {
+	if conversationID == protocol.BroadcastConversationID {
+		return true
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	c, ok := b.conversations[conversationID]
 	if !ok {
 		return false
+	}
+	// An everyone-channel includes agents that did not exist when it was
+	// opened, so its stored members are not the answer.
+	if c.Kind == protocol.ConversationBroadcast {
+		return true
 	}
 	for _, m := range c.Members {
 		if m == memberID {

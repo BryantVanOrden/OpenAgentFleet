@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ type CreateConversationReq struct {
 	// yourself. A pair of agents with no operator is a thread you can still
 	// read — watching agents work is the point of fleet comms.
 	Members []string `json:"members"`
+	// Kind may be "broadcast" to open another everyone-channel; anything else
+	// is derived from Members. An everyone-channel needs no member list, since
+	// its membership is the fleet as it stands at the time a message is sent.
+	Kind string `json:"kind"`
 }
 
 func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
@@ -34,31 +39,44 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 		fail(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if len(req.Members) == 0 {
+	broadcast := req.Kind == protocol.ConversationBroadcast
+	if len(req.Members) == 0 && !broadcast {
 		fail(w, http.StatusBadRequest, "a conversation needs at least one member")
 		return
 	}
 
 	// Reject unknown members up front. A thread addressed to an instance that
-	// does not exist looks fine until nobody ever answers in it.
-	known, err := s.db.ListInstances(r.Context())
-	if err != nil {
-		failErr(w, err)
-		return
-	}
-	byID := map[string]bool{protocol.OperatorMemberID: true}
-	for _, i := range known {
-		byID[i.ID] = true
-	}
-	for _, m := range req.Members {
-		if !byID[m] {
-			fail(w, http.StatusBadRequest, "no such member: "+m)
+	// does not exist looks fine until nobody ever answers in it. An
+	// everyone-channel names nobody, so there is nothing to check and no
+	// reason to go to the database for it.
+	if len(req.Members) > 0 {
+		if err := s.rejectUnknownMembers(r.Context(), req.Members); err != nil {
+			fail(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 
 	writeJSON(w, http.StatusCreated,
-		vault.GlobalBus.CreateConversation(r.Context(), req.Title, req.Members))
+		vault.GlobalBus.CreateConversation(r.Context(), req.Title, req.Members, req.Kind))
+}
+
+// rejectUnknownMembers reports the first member that is not the operator and
+// not a bot this deployment knows about.
+func (s *Server) rejectUnknownMembers(ctx context.Context, members []string) error {
+	known, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return err
+	}
+	byID := map[string]bool{protocol.OperatorMemberID: true}
+	for _, i := range known {
+		byID[i.ID] = true
+	}
+	for _, m := range members {
+		if !byID[m] {
+			return errors.New("no such member: " + m)
+		}
+	}
+	return nil
 }
 
 // handleUpdateConversation renames or pins a thread.

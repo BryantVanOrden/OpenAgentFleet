@@ -82,8 +82,8 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     out.sort((a, b) {
       // The everyone-channel stays at the top; it is always there and is where
       // an unaddressed message lands.
-      if (a.first.isBroadcast != b.first.isBroadcast) {
-        return a.first.isBroadcast ? -1 : 1;
+      if (a.first.isEveryone != b.first.isEveryone) {
+        return a.first.isEveryone ? -1 : 1;
       }
       if (a.first.pinned != b.first.pinned) return a.first.pinned ? -1 : 1;
       return _lastActivity(b.first).compareTo(_lastActivity(a.first));
@@ -97,7 +97,7 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
   /// A readable name for a thread, falling back to who is in it.
   String _titleOf(Conversation c, List<Instance> instances) {
     if (c.title.isNotEmpty) return c.title;
-    if (c.isBroadcast) return 'Everyone';
+    if (c.isEveryone) return 'Everyone';
 
     final names = c.members.map((m) {
       if (m == Conversation.operatorId) return 'You';
@@ -277,13 +277,13 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     final icon = switch (c.kind) {
       'direct' => Icons.person_outline,
       'pair' => Icons.swap_horiz_rounded,
-      _ => c.isBroadcast ? Icons.campaign_outlined : Icons.groups_outlined,
+      _ => c.isEveryone ? Icons.campaign_outlined : Icons.groups_outlined,
     };
 
     final subtitle = switch (c.kind) {
       'pair' => 'Two agents — you are watching',
       'direct' => 'You and one agent',
-      _ => c.isBroadcast ? 'Everyone in the fleet' : 'Group',
+      _ => c.isEveryone ? 'Everyone in the fleet' : 'Group',
     };
 
     return Card(

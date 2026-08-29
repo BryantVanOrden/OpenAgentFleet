@@ -45,8 +45,8 @@ func TestCreateConversationAlwaysCreates(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	first := b.CreateConversation(ctx, "Scouting", []string{"a", "b"})
-	second := b.CreateConversation(ctx, "Release checks", []string{"a", "b"})
+	first := b.CreateConversation(ctx, "Scouting", []string{"a", "b"}, "")
+	second := b.CreateConversation(ctx, "Release checks", []string{"a", "b"}, "")
 
 	if first.ID == second.ID {
 		t.Fatal("a second chat with the same pair reused the first thread")
@@ -81,7 +81,7 @@ func TestCanonicalThreadIsStable(t *testing.T) {
 		t.Fatal("the canonical thread differs by member order")
 	}
 	// An operator-created thread between the same pair is a separate thing.
-	named := b.CreateConversation(ctx, "Side channel", []string{"a", "b"})
+	named := b.CreateConversation(ctx, "Side channel", []string{"a", "b"}, "")
 	if named.ID == one.ID {
 		t.Error("a named thread collided with the canonical one")
 	}
@@ -112,7 +112,7 @@ func TestDeleteConversationKeepsMessages(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	c := b.CreateConversation(ctx, "temp", []string{"a", "b"})
+	c := b.CreateConversation(ctx, "temp", []string{"a", "b"}, "")
 	b.SendMessageIn(ctx, c.ID, "a", "Alpha", "b", "message", "hello", nil)
 
 	if !b.DeleteConversation(ctx, c.ID) {
@@ -139,7 +139,7 @@ func TestCompactConversationReplacesHistory(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	c := b.CreateConversation(ctx, "long", []string{"a", "b"})
+	c := b.CreateConversation(ctx, "long", []string{"a", "b"}, "")
 	for _, line := range []string{"one", "two", "three"} {
 		b.SendMessageIn(ctx, c.ID, "a", "Alpha", "b", "message", line, nil)
 	}
@@ -168,7 +168,7 @@ func TestCompactLeavesThreadIntactOnFailure(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	c := b.CreateConversation(ctx, "long", []string{"a", "b"})
+	c := b.CreateConversation(ctx, "long", []string{"a", "b"}, "")
 	b.SendMessageIn(ctx, c.ID, "a", "Alpha", "b", "message", "one", nil)
 	b.SendMessageIn(ctx, c.ID, "b", "Beta", "a", "message", "two", nil)
 
@@ -197,7 +197,7 @@ func TestOperatorQuestionInPairThreadKeepsRepliesInThread(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	c := b.CreateConversation(ctx, "pair", []string{"a", "b"})
+	c := b.CreateConversation(ctx, "pair", []string{"a", "b"}, "")
 
 	// A reply from "a" must be addressed to "b" — the other agent in the room.
 	other, ok := b.OtherAgentMember(c.ID, "a")
@@ -221,7 +221,7 @@ func TestGroupThreadHasNoSingleRecipient(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	c := b.CreateConversation(ctx, "group", []string{"a", "b", "c"})
+	c := b.CreateConversation(ctx, "group", []string{"a", "b", "c"}, "")
 	if _, ok := b.OtherAgentMember(c.ID, "a"); ok {
 		t.Error("a three-agent thread resolved one recipient")
 	}
@@ -233,7 +233,7 @@ func TestNonMemberGetsNoRecipient(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
-	c := b.CreateConversation(ctx, "pair", []string{"a", "b"})
+	c := b.CreateConversation(ctx, "pair", []string{"a", "b"}, "")
 	if b.IsMember(c.ID, protocol.OperatorMemberID) {
 		t.Error("the operator counted as a member of an agents-only thread")
 	}
@@ -307,5 +307,42 @@ func TestBroadcastIsListedOnce(t *testing.T) {
 	}
 	if seen != 1 {
 		t.Errorf("the broadcast channel appears %d times", seen)
+	}
+}
+
+// A new chat opened from an everyone-channel must itself be an
+// everyone-channel: heard by the whole fleet, including bots provisioned
+// after it was made. Sending the current roster as a member list instead
+// produced a thread that grouped apart from the broadcast in the UI and
+// silently excluded every later bot.
+func TestBroadcastKindConversationIncludesTheWholeFleet(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	c := b.CreateConversation(ctx, "Standup", nil, protocol.ConversationBroadcast)
+	if c.Kind != protocol.ConversationBroadcast {
+		t.Fatalf("kind = %q, want %q", c.Kind, protocol.ConversationBroadcast)
+	}
+
+	// A bot that did not exist when the thread was opened is still in it.
+	if !b.IsMember(c.ID, "instance-provisioned-later") {
+		t.Error("a later bot is not a member of an everyone-channel")
+	}
+	if !b.IsMember(c.ID, protocol.OperatorMemberID) {
+		t.Error("the operator is not a member of an everyone-channel")
+	}
+
+	// Addressed to the room, so a reply is not pointed at one agent.
+	if other, ok := b.OtherAgentMember(c.ID, protocol.OperatorMemberID); ok {
+		t.Errorf("reply addressed to %q, want the whole room", other)
+	}
+
+	// Only the kind hint does this; a plain group is still a group.
+	g := b.CreateConversation(ctx, "Two of them", []string{"a", "b"}, "")
+	if g.Kind != protocol.ConversationGroup && g.Kind != protocol.ConversationPair {
+		t.Errorf("kind = %q, want a member-derived kind", g.Kind)
+	}
+	if b.IsMember(g.ID, "someone-else") {
+		t.Error("a non-member is in an ordinary thread")
 	}
 }

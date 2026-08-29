@@ -22,15 +22,24 @@ void main() {
         isNot(conv('b', ['x', 'z']).participantKey));
   });
 
-  test('the broadcast channel is its own group', () {
-    // Grouping it with operator-created everyone-chats would hide the one
-    // thread that cannot be deleted behind ones that can.
-    final broadcast = conv(Conversation.broadcastId, const [], kind: 'group');
-    final everyone = conv('other', const [], kind: 'group');
+  test('every everyone-channel groups with the built-in one', () {
+    // A new chat opened from the broadcast is between the same people --
+    // everyone -- so it belongs in that row rather than one of its own.
+    // Keying them apart is what made "new chat" look like it had left the
+    // broadcast and made a stray thread somewhere else.
+    final broadcast = conv(Conversation.broadcastId, const [], kind: 'broadcast');
+    final another = conv('conv-1', const [], kind: 'broadcast');
 
     expect(broadcast.isBroadcast, isTrue);
-    expect(broadcast.participantKey, Conversation.broadcastId);
-    expect(everyone.participantKey, isNot(Conversation.broadcastId));
+    expect(another.isBroadcast, isFalse, reason: 'only one built-in channel');
+    expect(another.isEveryone, isTrue);
+    expect(another.participantKey, broadcast.participantKey);
+  });
+
+  test('an everyone-channel does not collapse into an ordinary group', () {
+    final everyone = conv('e', const [], kind: 'broadcast');
+    final trio = conv('t', ['x', 'y', 'z'], kind: 'group');
+    expect(everyone.participantKey, isNot(trio.participantKey));
   });
 
   test('a group of three keys separately from either of its pairs', () {
