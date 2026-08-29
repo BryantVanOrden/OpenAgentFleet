@@ -40,5 +40,49 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
 
+  # Branding generators. Both are build-time only: they rasterise the masters in
+  # assets/branding/ into each platform's icon and splash directories, and the
+  # generated files are committed so a plain `flutter build` needs neither.
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/
+
+# Launcher icons. Regenerate with:
+#   dart run flutter_launcher_icons
+# Linux has no launcher-icon concept in this package; its icon ships as a
+# .desktop entry instead (see linux/agentfleet.desktop).
+flutter_launcher_icons:
+  image_path: assets/branding/icon.png
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  # Android 8+ masks the foreground into whatever shape the launcher uses, so
+  # the monogram sits inside the 66% safe zone and the amber is a flat colour
+  # rather than part of the image.
+  adaptive_icon_background: "#F5A524"
+  adaptive_icon_foreground: assets/branding/icon_foreground.png
+  macos:
+    generate: true
+    image_path: assets/branding/icon.png
+  windows:
+    generate: true
+    image_path: assets/branding/icon.png
+
+# Native splash. Regenerate with:
+#   dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#0D0F14"
+  image: assets/branding/splash.png
+  # Android 12 replaced the old splash with a system-drawn icon window; it
+  # needs its own asset or the mark gets cropped by the circular mask.
+  android_12:
+    color: "#0D0F14"
+    image: assets/branding/splash.png
+    icon_background_color: "#0D0F14"
+  android: true
+  ios: true
+  web: false

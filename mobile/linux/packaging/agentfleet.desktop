@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AgentFleet
+Comment=Watch, talk to, and take over your agents
+# Flutter's Linux bundle is relocatable, so Exec is rewritten by install.sh to
+# wherever the bundle actually landed rather than hardcoded here.
+Exec=agentfleet_companion
+Icon=agentfleet
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=io.github.bryantvanorden.agentfleet_companion

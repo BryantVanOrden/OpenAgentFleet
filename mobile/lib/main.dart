@@ -13,29 +13,81 @@ import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
 import 'features/pipelines/pipelines_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/splash/splash_screen.dart';
 import 'features/swarms/swarms_screen.dart';
 import 'features/vault/vault_screen.dart';
 import 'features/voice/voice_screen.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  final api = await ApiClient.create();
-  final prefs = await SharedPreferences.getInstance();
 
   // Registered before runApp so a notification arriving during a cold start is
   // not dropped.
   FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
 
-  runApp(
-    ProviderScope(
-      overrides: [
-        apiProvider.overrideWithValue(api),
-        sharedPreferencesProvider.overrideWithValue(prefs),
-      ],
-      child: AgentFleetApp(api: api),
-    ),
-  );
+  // runApp goes first and the disk work happens behind a splash. Awaiting it
+  // out here instead would mean no window at all until it finished, which on
+  // desktop -- where there is no native splash to cover the gap -- looks like
+  // the app failed to launch.
+  runApp(const Bootstrap());
+}
+
+/// Loads what the provider scope needs, showing the splash until it is ready.
+class Bootstrap extends StatefulWidget {
+  const Bootstrap({super.key});
+
+  @override
+  State<Bootstrap> createState() => _BootstrapState();
+}
+
+class _BootstrapState extends State<Bootstrap> {
+  late Future<_Deps> _deps = _load();
+
+  static Future<_Deps> _load() async {
+    final api = await ApiClient.create();
+    final prefs = await SharedPreferences.getInstance();
+    return _Deps(api, prefs);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_Deps>(
+      future: _deps,
+      builder: (context, snap) {
+        // The splash and error states get their own MaterialApp because the
+        // themed one below cannot be built until the providers exist.
+        if (snap.hasError) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: SplashError(
+              error: snap.error!,
+              onRetry: () => setState(() => _deps = _load()),
+            ),
+          );
+        }
+        final deps = snap.data;
+        if (deps == null) {
+          return const MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: SplashScreen(),
+          );
+        }
+        return ProviderScope(
+          overrides: [
+            apiProvider.overrideWithValue(deps.api),
+            sharedPreferencesProvider.overrideWithValue(deps.prefs),
+          ],
+          child: AgentFleetApp(api: deps.api),
+        );
+      },
+    );
+  }
+}
+
+class _Deps {
+  const _Deps(this.api, this.prefs);
+  final ApiClient api;
+  final SharedPreferences prefs;
 }
 
 class AgentFleetApp extends ConsumerStatefulWidget {
