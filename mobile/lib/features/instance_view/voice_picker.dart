@@ -32,6 +32,16 @@ class VoicePicker extends ConsumerStatefulWidget {
 
 class _VoicePickerState extends ConsumerState<VoicePicker> {
   String? _selected;
+
+  /// 0 on the instance means "whatever the app is set to". The slider has to
+  /// sit somewhere, so it sits at 1.0 and only sends a value once moved —
+  /// otherwise opening this sheet would silently pin every bot to a rate
+  /// nobody chose.
+  late double _speed = widget.instance.voiceSpeed == 0
+      ? 1.0
+      : widget.instance.voiceSpeed;
+  late bool _speedSet = widget.instance.voiceSpeed != 0;
+
   bool _busy = false;
   String? _error;
 
@@ -41,16 +51,20 @@ class _VoicePickerState extends ConsumerState<VoicePicker> {
     _selected = widget.instance.voice;
   }
 
-  Future<void> _save(String voiceId) async {
+  Future<void> _save(String voiceId, {bool close = true}) async {
     setState(() {
       _selected = voiceId;
       _busy = true;
       _error = null;
     });
     try {
-      await ref.read(apiProvider).setInstanceVoice(widget.instance.id, voiceId);
+      await ref.read(apiProvider).setInstanceVoice(
+            widget.instance.id,
+            voiceId,
+            speed: _speedSet ? _speed : null,
+          );
       ref.invalidate(instancesProvider);
-      if (mounted) Navigator.pop(context, true);
+      if (mounted && close) Navigator.pop(context, true);
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     } finally {
@@ -120,6 +134,7 @@ class _VoicePickerState extends ConsumerState<VoicePicker> {
                 },
               ),
             ),
+            _speedControl(),
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(_error!, style: TextStyle(color: Fleet.bad, fontSize: 12)),
@@ -157,6 +172,74 @@ class _VoicePickerState extends ConsumerState<VoicePicker> {
           : Text(v.description,
               style: TextStyle(color: Fleet.ink400, fontSize: 11)),
       onTap: _busy ? null : () => _save(v.id),
+    );
+  }
+
+  /// How fast this bot talks.
+  ///
+  /// The speak endpoint and the speech service always took a rate; there was
+  /// simply nowhere to keep one per bot, so every agent spoke at the same
+  /// pace. Two agents sharing a voice are still told apart by how fast they
+  /// say it, which is the point of giving them distinct voices at all.
+  Widget _speedControl() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _header('Speaking speed'),
+        Row(
+          children: [
+            Icon(Icons.slow_motion_video, size: 16, color: Fleet.ink500),
+            Expanded(
+              child: Slider(
+                value: _speed,
+                min: 0.5,
+                max: 2.0,
+                divisions: 15,
+                label: _speedSet
+                    ? '${_speed.toStringAsFixed(2)}x'
+                    : 'default (1.00x)',
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() {
+                          _speed = v;
+                          _speedSet = true;
+                        }),
+                // Saved on release, not on every frame: dragging a slider
+                // would otherwise fire a request per pixel.
+                onChangeEnd: _busy
+                    ? null
+                    : (_) => _save(_selected ?? '', close: false),
+              ),
+            ),
+            Icon(Icons.speed, size: 16, color: Fleet.ink500),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 52,
+              child: Text(
+                _speedSet ? '${_speed.toStringAsFixed(2)}x' : 'default',
+                textAlign: TextAlign.end,
+                style: TextStyle(color: Fleet.ink300, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        if (_speedSet)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      setState(() {
+                        _speed = 1.0;
+                        _speedSet = false;
+                      });
+                      _save(_selected ?? '', close: false);
+                    },
+              child: const Text('Reset to default'),
+            ),
+          ),
+      ],
     );
   }
 }

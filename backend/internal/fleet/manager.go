@@ -137,13 +137,26 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 	if name == "" {
 		name = "agent-" + id[:8]
 	}
+
+	// Fall back to the archetype's own persona.
+	//
+	// The templates each carry a specialised prompt written for the job, and
+	// nothing ever read it -- so a bot created without an explicit personality
+	// got an empty one and had nothing to say about what it was for. An
+	// operator who writes their own still wins; this only fills a blank.
+	persona := req.SystemPrompt
+	if strings.TrimSpace(persona) == "" {
+		if t := protocol.BotTemplateByID(req.ArchetypeID); t != nil {
+			persona = t.SpecializedPrompt
+		}
+	}
 	inst := &protocol.Instance{
 		ID:                id,
 		Name:              name,
 		OwnerID:           req.OwnerID,
 		OrgID:             req.OrgID,
 		ArchetypeID:       req.ArchetypeID,
-		SystemPrompt:      req.SystemPrompt,
+		SystemPrompt:      persona,
 		PreinstalledTools: req.PreinstalledTools,
 		Tier:              profile.Name,
 		Driver:            profile.Driver,

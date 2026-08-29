@@ -42,6 +42,9 @@ class Instance {
     this.providerIds = const [],
     this.orgId = '',
     this.voice = '',
+    this.voiceSpeed = 0,
+    this.archetypeId = '',
+    this.systemPrompt = '',
     required this.createdAt,
     this.lastError = '',
   });
@@ -67,6 +70,18 @@ class Instance {
   /// Voice this agent speaks in. Empty uses the app-wide default. Per agent so
   /// a fleet is legible by ear rather than every bot sounding identical.
   final String voice;
+
+  /// How fast this agent talks, as a multiplier. 0 uses the app-wide default.
+  /// Two bots sharing a voice are still told apart by pace.
+  final double voiceSpeed;
+
+  /// Which archetype this bot was built from. Drives the default personality.
+  final String archetypeId;
+
+  /// This bot's personality, in its own words. Empty means it was created
+  /// before personalities were editable and falls back to its archetype's.
+  final String systemPrompt;
+
   final DateTime createdAt;
   final String lastError;
 
@@ -87,6 +102,9 @@ class Instance {
             .toList(growable: false),
         orgId: j['org_id'] as String? ?? '',
         voice: j['voice'] as String? ?? '',
+        voiceSpeed: (j['voice_speed'] as num?)?.toDouble() ?? 0,
+        archetypeId: j['archetype_id'] as String? ?? '',
+        systemPrompt: j['system_prompt'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
         lastError: j['last_error'] as String? ?? '',
@@ -1162,6 +1180,7 @@ class BotTemplate {
     this.tools = const [],
     this.defaultVoice = '',
     this.defaultShellAccess = false,
+    this.specializedPrompt = '',
   });
 
   final String id;
@@ -1177,6 +1196,10 @@ class BotTemplate {
   final String defaultVoice;
   final bool defaultShellAccess;
 
+  /// The personality written for this job, used to prefill a new bot's own.
+  /// The operator can change it before creating and at any time after.
+  final String specializedPrompt;
+
   factory BotTemplate.fromJson(Map<String, dynamic> j) => BotTemplate(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
@@ -1188,6 +1211,7 @@ class BotTemplate {
             .toList(),
         defaultVoice: j['default_voice'] as String? ?? '',
         defaultShellAccess: j['default_shell_access'] as bool? ?? false,
+        specializedPrompt: j['specialized_prompt'] as String? ?? '',
       );
 }
 

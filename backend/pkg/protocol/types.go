@@ -88,13 +88,19 @@ type Instance struct {
 	AgentdURL   string       `json:"agentd_url,omitempty"` // internal only
 	Egress      EgressPolicy `json:"egress"`
 	ShellAccess bool         `json:"shell_access"`
-	// SudoAccess drops the container's no-new-privileges option so sudo works
-	// inside the sandbox. Fixed at creation: the kernel applies it when the
-	// container starts, so changing it means recreating the instance.
+	// SudoAccess controls the setuid bit on /usr/bin/sudo inside the sandbox.
+	// Changeable on a running agent through Manager.SetSudo; it used to be a
+	// container option fixed at creation, and this said so long after that
+	// stopped being true.
 	SudoAccess bool `json:"sudo_access"`
 	// Voice this agent speaks in. Empty falls back to the operator's default.
 	// Distinct voices are what make a fleet legible by ear.
 	Voice string `json:"voice,omitempty"`
+	// VoiceSpeed is how fast this agent speaks, as a multiplier. 0 means the
+	// operator's default: a distinct voice makes a fleet legible by ear, and
+	// pace is the other half of that, but pinning every existing bot to a
+	// rate nobody chose would not be.
+	VoiceSpeed float64 `json:"voice_speed,omitempty"`
 	// OrgID is the department this bot belongs to. Empty means unassigned,
 	// which only a global admin can see.
 	OrgID string `json:"org_id,omitempty"`

@@ -155,6 +155,10 @@ class ApiClient {
     List<String>? tools,
     /// Tools the operator added, with how to fetch each one.
     List<CustomTool> customTools = const [],
+    /// The bot's personality. Empty lets the server fall back to the
+    /// archetype's own, so an operator who cleared the field still gets a bot
+    /// that knows what it is for.
+    String systemPrompt = '',
   }) async {
     final data = await _post('/api/instances', {
       'name': name,
@@ -169,6 +173,7 @@ class ApiClient {
           for (final c in customTools)
             {'name': c.name, 'method': c.method, 'spec': c.spec},
         ],
+      if (systemPrompt.isNotEmpty) 'system_prompt': systemPrompt,
     }) as Map;
     return Instance.fromJson(data.cast<String, dynamic>());
   }
@@ -579,11 +584,28 @@ class ApiClient {
   Future<void> discardPlan(String instanceId, String planId) =>
       _post('/api/chat/$instanceId/plans/$planId/discard');
 
-  /// Set the voice a particular agent speaks in. Empty returns it to the
-  /// app-wide default.
-  Future<Instance> setInstanceVoice(String instanceId, String voice) async {
+  /// Set the voice a particular agent speaks in, and how fast it talks.
+  ///
+  /// Empty voice returns it to the app-wide default; a speed of 0 does the
+  /// same for the rate. Pace is half of what makes a fleet legible by ear —
+  /// two agents on the same voice are still told apart by how they speak.
+  Future<Instance> setInstanceVoice(String instanceId, String voice,
+      {double? speed}) async {
     final res = await _dio.put('/api/instances/$instanceId/access',
-        data: {'voice': voice}, options: _auth);
+        data: {
+          'voice': voice,
+          if (speed != null) 'voice_speed': speed,
+        },
+        options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return Instance.fromJson((res.data as Map).cast<String, dynamic>());
+  }
+
+  /// Set a bot's personality. Applies to its next turn and its next reply —
+  /// the prompt is built per call, not baked into the sandbox.
+  Future<Instance> setInstancePersona(String instanceId, String persona) async {
+    final res = await _dio.put('/api/instances/$instanceId/access',
+        data: {'system_prompt': persona}, options: _auth);
     if (res.statusCode! >= 400) _fail(res);
     return Instance.fromJson((res.data as Map).cast<String, dynamic>());
   }
@@ -597,7 +619,7 @@ class ApiClient {
   }
 
   /// Turn shell access on or off for a running agent. Takes effect on its next
-  /// step. Sudo is not settable here — it is fixed when the instance is built.
+  /// step.
   Future<Instance> setShellAccess(String instanceId, bool allowed) async {
     final res = await _dio.put('/api/instances/$instanceId/access',
         data: {'shell_access': allowed}, options: _auth);

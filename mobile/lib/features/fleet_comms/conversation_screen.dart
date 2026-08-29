@@ -122,6 +122,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         instances.where((i) => i.id == m.fromInstanceId).firstOrNull;
     _voice.useServerVoice(
       (sender?.voice.isNotEmpty ?? false) ? sender!.voice : null,
+      // Each speaker at its own pace. In a thread with several bots in it,
+      // pace is as much of the "who just said that" as the voice is.
+      speed: (sender?.voiceSpeed ?? 0) != 0 ? sender!.voiceSpeed : 1.0,
     );
 
     if (mounted) setState(() => _speakingId = m.id);

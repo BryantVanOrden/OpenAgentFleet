@@ -53,9 +53,12 @@ func TestArchetypePromptInjection(t *testing.T) {
 				}
 			}
 
-			// 3. Check specialized playbook guidelines
-			if !strings.Contains(system, "Specialized Bot Persona & Guidelines:") {
-				t.Errorf("[%s] system prompt missing Specialized Bot Persona section", tmpl.ID)
+			// 3. Check specialized playbook guidelines. The header is written
+			// in the second person because it addresses the agent; what
+			// matters is that the persona is carried, which the playbook
+			// assertion below actually proves.
+			if !strings.Contains(system, "Your persona and guidelines:") {
+				t.Errorf("[%s] system prompt missing the persona section", tmpl.ID)
 			}
 			if !strings.Contains(system, "OPERATING PLAYBOOK:") {
 				t.Errorf("[%s] system prompt missing OPERATING PLAYBOOK header", tmpl.ID)

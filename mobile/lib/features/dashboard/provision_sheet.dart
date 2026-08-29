@@ -45,6 +45,13 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
 
   /// Tools the operator added by hand.
   final List<CustomTool> _custom = [];
+
+  /// The bot's personality, prefilled from the archetype's own — the one
+  /// written for that job — and editable before the bot is built. Left alone
+  /// it ships the recommended personality; nothing read it at all before, so
+  /// every bot started life with no idea what it was for.
+  final _persona = TextEditingController();
+  bool _personaEdited = false;
   bool _shell = false;
   bool _busy = false;
   String? _error;
@@ -52,7 +59,72 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
   @override
   void dispose() {
     _name.dispose();
+    _persona.dispose();
     super.dispose();
+  }
+
+  /// The personality this bot will be built with.
+  ///
+  /// Prefilled from the archetype — each one carries a personality written for
+  /// its job — and editable here, so a bot can be given its own character
+  /// before it ever runs rather than after.
+  Widget _personaField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.psychology_outlined, size: 16, color: Fleet.ink400),
+            const SizedBox(width: 6),
+            Text('Personality',
+                style: TextStyle(
+                    color: Fleet.ink300,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+            const Spacer(),
+            if (_personaEdited)
+              TextButton(
+                onPressed: () {
+                  final list = ref.read(templatesProvider).valueOrNull ??
+                      const <BotTemplate>[];
+                  final t =
+                      list.where((e) => e.id == _archetype).firstOrNull;
+                  setState(() {
+                    _persona.text = t?.specializedPrompt ?? '';
+                    _personaEdited = false;
+                  });
+                },
+                child: const Text('Reset'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _persona,
+          enabled: !_busy,
+          maxLines: 5,
+          minLines: 3,
+          style: const TextStyle(fontSize: 12, height: 1.4),
+          onChanged: (_) {
+            if (!_personaEdited) setState(() => _personaEdited = true);
+          },
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Fleet.ink850,
+            isDense: true,
+            hintText: _archetype == null
+                ? 'Pick a role above and its recommended personality appears here.'
+                : 'How this bot thinks and talks.',
+            hintStyle:
+                TextStyle(color: Fleet.ink500, fontSize: 11, height: 1.4),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _create() async {
@@ -76,6 +148,7 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
                 : _tools.toList(),
             customTools: _custom,
             shellAccess: _shell,
+            systemPrompt: _persona.text.trim(),
           );
       if (mounted) Navigator.pop(context, true);
     } catch (err) {
@@ -289,6 +362,13 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
                           ..clear()
                           ..addAll(_offered);
                         if (t != null && t.defaultShellAccess) _shell = true;
+                        // Prefill the personality the same way, unless the
+                        // operator has already written their own — changing
+                        // archetype should not silently discard what they
+                        // typed.
+                        if (!_personaEdited) {
+                          _persona.text = t?.specializedPrompt ?? '';
+                        }
                       }),
                     ),
             ),
@@ -345,6 +425,8 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
             ],
             const SizedBox(height: 10),
             _customToolsSection(),
+            const SizedBox(height: 12),
+            _personaField(),
             const SizedBox(height: 6),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

@@ -312,6 +312,12 @@ func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request)
 		ShellAccess *bool `json:"shell_access"`
 		// Voice is a label on the instance rather than a container property.
 		Voice *string `json:"voice"`
+		// SystemPrompt is the bot's personality. Editable at any time: it is
+		// read when a prompt is built, not baked into the container, so a
+		// change applies to the agent's next turn and its next chat reply.
+		SystemPrompt *string `json:"system_prompt"`
+		// VoiceSpeed is a multiplier; 0 means the operator's default.
+		VoiceSpeed *float64 `json:"voice_speed"`
 		// SudoAccess is applied to the live container before it is recorded,
 		// so a failure leaves the stored state matching reality.
 		SudoAccess *bool `json:"sudo_access"`
@@ -320,7 +326,8 @@ func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.ShellAccess == nil && req.Voice == nil && req.SudoAccess == nil {
+	if req.ShellAccess == nil && req.Voice == nil && req.SudoAccess == nil &&
+		req.SystemPrompt == nil && req.VoiceSpeed == nil {
 		fail(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
@@ -336,6 +343,20 @@ func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Voice != nil {
 		inst.Voice = strings.TrimSpace(*req.Voice)
+	}
+	if req.SystemPrompt != nil {
+		inst.SystemPrompt = strings.TrimSpace(*req.SystemPrompt)
+	}
+	if req.VoiceSpeed != nil {
+		// Clamped rather than rejected: the slider cannot produce anything
+		// outside this, and a speed of 0.05 or 40 is not a preference, it is
+		// a bot nobody can listen to.
+		sp := *req.VoiceSpeed
+		if sp != 0 && (sp < 0.5 || sp > 2.0) {
+			fail(w, http.StatusBadRequest, "voice speed must be between 0.5 and 2.0")
+			return
+		}
+		inst.VoiceSpeed = sp
 	}
 	if req.SudoAccess != nil && *req.SudoAccess != inst.SudoAccess {
 		if inst.State != protocol.InstanceRunning {

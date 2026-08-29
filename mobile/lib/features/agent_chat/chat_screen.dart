@@ -24,6 +24,7 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.instanceName = 'this bot',
     this.enabled = true,
     this.voice = '',
+    this.voiceSpeed = 0,
   });
 
   /// Shown when managing chats, so a confirmation names the bot rather than
@@ -33,6 +34,9 @@ class ChatScreen extends ConsumerStatefulWidget {
   /// The voice this agent speaks in, from its own settings. Empty falls back
   /// to the app-wide default.
   final String voice;
+
+  /// How fast this bot talks. 0 falls back to the app-wide rate.
+  final double voiceSpeed;
 
   final String instanceId;
   final bool enabled;
@@ -90,9 +94,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _speakReply(String body) async {
     final prefs = ref.read(sharedPreferencesProvider);
     final chosen = widget.voice;
+    // The bot's own pace wins; the app-wide rate is the fallback for bots
+    // that have not been given one.
     _voice.useServerVoice(
       chosen.isEmpty ? null : chosen,
-      speed: (prefs.getDouble('voice.rate') ?? 0.5) / 0.5,
+      speed: widget.voiceSpeed != 0
+          ? widget.voiceSpeed
+          : (prefs.getDouble('voice.rate') ?? 0.5) / 0.5,
     );
     await applyStoredVoiceSettings(_voice, prefs);
     await _voice.speak(body);

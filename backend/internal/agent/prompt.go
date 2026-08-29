@@ -104,36 +104,8 @@ Rules:
 func buildSystem(inst *protocol.Instance, mounted map[string]protocol.MountedTool) string {
 	var sb strings.Builder
 	sb.WriteString(systemPrompt)
-	sb.WriteString("\n\nThis instance:\n")
-	fmt.Fprintf(&sb, "- tier %s (%.0f vCPU, %d MB RAM, %d GB disk, GPU: %t)\n",
-		inst.Profile.Name, inst.Profile.VCPU, inst.Profile.MemoryMB, inst.Profile.DiskGB, inst.Profile.GPU)
-	if inst.ShellAccess {
-		sb.WriteString("- shell: ENABLED\n")
-	} else {
-		sb.WriteString("- shell: DISABLED — any shell action will be refused\n")
-	}
-	if len(inst.Egress.Allow) > 0 {
-		fmt.Fprintf(&sb, "- network: only these hosts are reachable: %s\n", strings.Join(inst.Egress.Allow, ", "))
-	}
-	if inst.ArchetypeID != "" {
-		fmt.Fprintf(&sb, "- archetype: %s\n", inst.ArchetypeID)
-	}
-	if len(inst.PreinstalledTools) > 0 {
-		// Do not claim these are installed. The archetype only writes the list
-		// into an ARCHETYPE_README; nothing in the image (see sandbox/Dockerfile)
-		// actually installs metasploit, ghidra, burpsuite and friends. Asserting
-		// "preinstalled" made agents plan whole runs around tools that were not
-		// there. State them as requested-but-unverified so the model checks (and,
-		// with sudo available in these archetypes, installs) before relying on one.
-		fmt.Fprintf(&sb, "- tools requested for this archetype (NOT guaranteed installed — verify each with e.g. `which`, and install on demand, before relying on it): %s\n",
-			strings.Join(inst.PreinstalledTools, ", "))
-	}
-	if strings.TrimSpace(inst.SystemPrompt) != "" {
-		sb.WriteString("\nSpecialized Bot Persona & Guidelines:\n")
-		sb.WriteString(strings.TrimSpace(inst.SystemPrompt))
-		sb.WriteString("\n")
-	}
-
+	// One description of the bot, shared with chat, so the two cannot drift.
+	sb.WriteString(Identity(inst))
 	if len(mounted) > 0 {
 		sb.WriteString("\nMounted Dynamic Tools (call with action \"call_tool\"):\n")
 		for _, t := range mounted {
@@ -305,4 +277,62 @@ func orDash(s string) string {
 		return "(unknown)"
 	}
 	return s
+}
+
+// Identity tells an agent who it is: its name, what it was built to be good
+// at, what it actually has to work with, and any persona the operator wrote.
+//
+// Shared by the runner and by chat on purpose. Chat used to be told only the
+// sandbox name -- so asked "what are you good at?" in a fresh chat, a bot had
+// nothing to answer from and said it did not know. In an older chat it could
+// sometimes infer itself from the backlog, which made the gap look like a
+// quirk of one conversation rather than a missing prompt. Two descriptions of
+// the same bot is how that happened, so there is now one.
+func Identity(inst *protocol.Instance) string {
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "\n\nWho you are:\n- name: %s\n", inst.Name)
+
+	if inst.ArchetypeID != "" {
+		// The id as well as the friendly name: peers are matched by archetype
+		// id in the fleet prompt ("cyber_ops for pentesting"), so an agent
+		// that only knew its display name could not say what it was when
+		// another agent went looking for one of its kind.
+		fmt.Fprintf(&sb, "- archetype: %s\n", inst.ArchetypeID)
+		if t := protocol.BotTemplateByID(inst.ArchetypeID); t != nil {
+			fmt.Fprintf(&sb, "- role: %s — %s\n", t.Name, t.Tagline)
+			if t.Category != "" {
+				fmt.Fprintf(&sb, "- speciality: %s\n", t.Category)
+			}
+		}
+	}
+
+	fmt.Fprintf(&sb, "- machine: tier %s (%.0f vCPU, %d MB RAM, %d GB disk, GPU: %t)\n",
+		inst.Profile.Name, inst.Profile.VCPU, inst.Profile.MemoryMB, inst.Profile.DiskGB, inst.Profile.GPU)
+
+	if inst.ShellAccess {
+		sb.WriteString("- shell: ENABLED\n")
+	} else {
+		sb.WriteString("- shell: DISABLED — any shell action will be refused\n")
+	}
+	if len(inst.Egress.Allow) > 0 {
+		fmt.Fprintf(&sb, "- network: only these hosts are reachable: %s\n",
+			strings.Join(inst.Egress.Allow, ", "))
+	}
+
+	if len(inst.PreinstalledTools) > 0 {
+		// These are the tools that answered when the sandbox was provisioned,
+		// not the archetype's wish list -- the orchestrator replaces one with
+		// the other (see fleet.Manager). So they can be stated plainly.
+		fmt.Fprintf(&sb, "- tools installed on this machine: %s\n",
+			strings.Join(inst.PreinstalledTools, ", "))
+	}
+
+	if p := strings.TrimSpace(inst.SystemPrompt); p != "" {
+		sb.WriteString("\nYour persona and guidelines:\n")
+		sb.WriteString(p)
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
 }

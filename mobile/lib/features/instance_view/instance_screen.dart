@@ -19,6 +19,7 @@ import '../agent_chat/chat_screen.dart';
 import '../admin/bot_access_sheet.dart';
 import 'memory_screen.dart';
 import 'model_chain_sheet.dart';
+import 'persona_sheet.dart';
 import 'voice_picker.dart';
 
 /// One machine, three views: what it looks like, what it is doing, and talking
@@ -111,6 +112,7 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
             instanceName: instance.name,
             enabled: instance.isRunning,
             voice: instance.voice,
+            voiceSpeed: instance.voiceSpeed,
           ),
         ],
       ),
@@ -217,6 +219,11 @@ class _ControlMenu extends ConsumerWidget {
         return;
       }
 
+        if (action == 'persona') {
+          await PersonaSheet.show(context, instance);
+          return;
+        }
+
       if (action == 'access') {
         await BotAccessSheet.show(context, instance);
         return;
@@ -307,8 +314,23 @@ class _ControlMenu extends ConsumerWidget {
             leading: const Icon(Icons.record_voice_over_outlined),
             title: const Text('Voice'),
             subtitle: Text(
-              instance.voice.isEmpty ? 'App default' : instance.voice,
+              [
+                instance.voice.isEmpty ? 'App default' : instance.voice,
+                if (instance.voiceSpeed != 0)
+                  '${instance.voiceSpeed.toStringAsFixed(2)}x',
+              ].join(' · '),
             ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'persona',
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.psychology_outlined),
+            title: const Text('Personality'),
+            subtitle: Text(instance.systemPrompt.isEmpty
+                ? 'Using its archetype default'
+                : 'Customised'),
           ),
         ),
         const PopupMenuItem(
