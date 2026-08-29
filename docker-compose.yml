@@ -44,6 +44,7 @@ services:
       # nvidia-smi in here: this image is Alpine, and the binary the NVIDIA
       # container runtime injects is glibc-linked, so it cannot execute.
       HOST_GPU_STATS_FILE: /hostfs/run/agentfleet/gpu-stats.csv
+      TTS_BASE_URL: ${TTS_BASE_URL:-http://tts:8080}
       ARTIFACT_BACKEND: ${ARTIFACT_BACKEND:-fs}
       ARTIFACT_DIR: /var/lib/agentfleet/artifacts
       S3_ENDPOINT: http://minio:9000
@@ -79,6 +80,23 @@ services:
     networks: [control, sandbox]
     restart: unless-stopped
 
+  # Text to speech. Optional: with the service absent the API reports voices as
+  # unavailable and the app falls back to the phone's own synthesiser, so a
+  # deployment that does not want a ~2 GB image can simply not run it.
+  tts:
+    build:
+      context: ./tts
+    environment:
+      TTS_LANGUAGE: ${TTS_LANGUAGE:-english}
+      # Leaves headroom on a machine that is also running inference; the model
+      # is faster than realtime well before it needs every core.
+      OMP_NUM_THREADS: ${TTS_THREADS:-4}
+    volumes:
+      # Model weights, downloaded once and kept across rebuilds.
+      - tts-models:/models
+    networks: [control]
+    restart: unless-stopped
+
   admin:
     build:
       context: ./admin
@@ -105,6 +123,7 @@ services:
 
 volumes:
   db-data:
+  tts-models:
   artifacts:
   minio-data:
 

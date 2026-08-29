@@ -814,3 +814,28 @@ class WebhookTrigger {
         targetInstanceId: j['target_instance_id'] as String? ?? '',
       );
 }
+
+
+/// A voice offered by the server's speech service.
+class ServerVoice {
+  const ServerVoice({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.preset = false,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+
+  /// One of the fleet's named presets rather than a raw model speaker.
+  final bool preset;
+
+  factory ServerVoice.fromJson(Map<String, dynamic> j) => ServerVoice(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+        preset: j['preset'] as bool? ?? false,
+      );
+}

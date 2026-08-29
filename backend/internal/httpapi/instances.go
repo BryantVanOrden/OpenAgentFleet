@@ -215,23 +215,31 @@ func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request)
 
 	var req struct {
 		ShellAccess *bool `json:"shell_access"`
+		// Voice is settable here too: it is a label on the instance, not a
+		// container property, so unlike sudo it can change at any time.
+		Voice *string `json:"voice"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.ShellAccess == nil {
-		fail(w, http.StatusBadRequest, "shell_access is required")
+	if req.ShellAccess == nil && req.Voice == nil {
+		fail(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
 	// The platform-wide kill switch still wins: an operator cannot grant shell
 	// on a deployment that has disabled it entirely.
-	if *req.ShellAccess && !s.cfg.AllowShell {
-		fail(w, http.StatusForbidden, "shell access is disabled for this deployment")
-		return
+	if req.ShellAccess != nil {
+		// The platform-wide kill switch still wins.
+		if *req.ShellAccess && !s.cfg.AllowShell {
+			fail(w, http.StatusForbidden, "shell access is disabled for this deployment")
+			return
+		}
+		inst.ShellAccess = *req.ShellAccess
 	}
-
-	inst.ShellAccess = *req.ShellAccess
+	if req.Voice != nil {
+		inst.Voice = strings.TrimSpace(*req.Voice)
+	}
 	if err := s.db.UpdateInstance(r.Context(), inst); err != nil {
 		failErr(w, err)
 		return

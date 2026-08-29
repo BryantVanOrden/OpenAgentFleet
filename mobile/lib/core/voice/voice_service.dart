@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+
+import '../network/api_client.dart';
 
 /// Speech in and out, on device.
 ///
@@ -15,12 +18,20 @@ import 'package:speech_to_text/speech_to_text.dart';
 /// Voice is a way to talk to an agent, so this is a plain service used by the
 /// agent's chat screen rather than a destination of its own.
 class VoiceService {
-  VoiceService({SpeechToText? speech, FlutterTts? tts})
+  VoiceService({SpeechToText? speech, FlutterTts? tts, ApiClient? api})
       : _speech = speech ?? SpeechToText(),
-        _tts = tts ?? FlutterTts();
+        _tts = tts ?? FlutterTts(),
+        _api = api;
 
   final SpeechToText _speech;
   final FlutterTts _tts;
+
+  /// When set, speech is rendered by the server's TTS service — real voices,
+  /// identical on every device. Without it, or if that call fails, the phone's
+  /// own synthesiser is used instead: worse voices, but it always works and
+  /// needs no network.
+  final ApiClient? _api;
+  final AudioPlayer _player = AudioPlayer();
 
   bool _ready = false;
   bool _unavailable = false;
@@ -32,6 +43,10 @@ class VoiceService {
   double _rate = 0.5;
   double _pitch = 1.0;
   String? _voiceName;
+
+  /// Server voice id, or null to use the device.
+  String? _serverVoice;
+  double _serverSpeed = 1.0;
 
   bool get isListening => _speech.isListening;
 
@@ -130,6 +145,12 @@ class VoiceService {
   /// Applied before every utterance rather than once at startup: the engine
   /// resets between speakers on some Android builds, and a rate that silently
   /// reverts is worse than one that never changed.
+  /// Choose the server voice. Null returns to the device's own synthesiser.
+  void useServerVoice(String? voiceId, {double speed = 1.0}) {
+    _serverVoice = (voiceId == null || voiceId.isEmpty) ? null : voiceId;
+    _serverSpeed = speed;
+  }
+
   Future<void> configure({double? rate, double? pitch, String? voiceName}) async {
     if (rate != null) _rate = rate.clamp(0.1, 1.0);
     if (pitch != null) _pitch = pitch.clamp(0.5, 2.0);
@@ -155,6 +176,19 @@ class VoiceService {
   Future<void> speak(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+
+    if (_api != null && _serverVoice != null) {
+      try {
+        await _speakViaServer(trimmed);
+        return;
+      } catch (e) {
+        // Falling through to the device is the right failure: the operator
+        // hears the reply in a worse voice rather than hearing nothing and
+        // wondering whether the agent answered at all.
+        _lastError = 'server speech failed, used the device voice: $e';
+      }
+    }
+
     try {
       await _tts.stop();
       await _applySettings();
@@ -164,14 +198,52 @@ class VoiceService {
     }
   }
 
+  Future<void> _speakViaServer(String text) async {
+    final bytes = await _api!.speak(text, voice: _serverVoice, speed: _serverSpeed);
+    if (bytes.isEmpty) throw StateError('empty audio');
+    await _player.stop();
+    // Fed as bytes rather than a URL so playback needs no second authenticated
+    // request from the audio stack.
+    await _player.setAudioSource(_WavSource(Uint8List.fromList(bytes)));
+    await _player.play();
+  }
+
   Future<void> stopSpeaking() async {
     try {
       await _tts.stop();
+    } catch (_) {}
+    try {
+      await _player.stop();
     } catch (_) {}
   }
 
   Future<void> dispose() async {
     await stopListening();
     await stopSpeaking();
+    await _player.dispose();
+  }
+}
+
+/// Plays WAV bytes already in memory.
+///
+// ignore_for_file: experimental_member_use
+// StreamAudioResponse is how just_audio exposes an in-memory source; there is
+// no stable alternative, and the whole point is to avoid a second
+// authenticated fetch from the audio stack.
+class _WavSource extends StreamAudioSource {
+  _WavSource(this._bytes);
+  final Uint8List _bytes;
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    end ??= _bytes.length;
+    return StreamAudioResponse(
+      sourceLength: _bytes.length,
+      contentLength: end - start,
+      offset: start,
+      stream: Stream.value(_bytes.sublist(start, end)),
+      contentType: 'audio/wav',
+    );
   }
 }

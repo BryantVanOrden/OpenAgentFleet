@@ -40,7 +40,10 @@ dependencies:
   # sandbox's "TTS" is a sine-wave generator, not speech. Keeping it on-device
   # also means audio never leaves the handset.
   speech_to_text: ^7.0.0
+  # On-device synthesis, still the fallback when the server has no TTS service.
   flutter_tts: ^4.2.0
+  # Playback for server-rendered speech.
+  just_audio: ^0.9.42
 
   # Push. Firebase covers Android and iOS; the backend also speaks APNs directly
   # for builds that skip Firebase entirely.

@@ -150,6 +150,38 @@ class ApiClient {
 
   Future<void> deleteInstance(String id) => _delete('/api/instances/$id');
 
+  // ----------------------------------------------------------------- voice ---
+
+  /// Voices offered by the server's speech service.
+  ///
+  /// Returns an empty list when no service is deployed — that is a normal
+  /// configuration, not an error, and the caller falls back to the device's
+  /// own synthesiser.
+  Future<List<ServerVoice>> serverVoices() async {
+    final data = await _get('/api/voice/voices') as Map?;
+    if (data == null || data['available'] != true) return const [];
+    return ((data['voices'] as List?) ?? const [])
+        .map((e) => ServerVoice.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Synthesise speech. Returns WAV bytes.
+  Future<List<int>> speak(String text, {String? voice, double speed = 1.0}) async {
+    final res = await _dio.post<List<int>>(
+      '/api/voice/speak',
+      data: {'text': text, if (voice != null) 'voice': voice, 'speed': speed},
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: _auth.headers,
+        validateStatus: (_) => true,
+      ),
+    );
+    if (res.statusCode! >= 400) {
+      throw ApiException('speech synthesis failed', res.statusCode ?? 0);
+    }
+    return res.data ?? const [];
+  }
+
   // ------------------------------------------------------------------ host ---
 
   /// Live usage of the machine running the orchestrator.

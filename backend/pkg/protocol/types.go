@@ -86,11 +86,14 @@ type Instance struct {
 	// SudoAccess drops the container's no-new-privileges option so sudo works
 	// inside the sandbox. Fixed at creation: the kernel applies it when the
 	// container starts, so changing it means recreating the instance.
-	SudoAccess bool              `json:"sudo_access"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	LastError  string            `json:"last_error,omitempty"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	SudoAccess bool `json:"sudo_access"`
+	// Voice this agent speaks in. Empty falls back to the operator's default.
+	// Distinct voices are what make a fleet legible by ear.
+	Voice     string            `json:"voice,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	LastError string            `json:"last_error,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 // EgressPolicy constrains what the sandbox may talk to. An empty Allow list

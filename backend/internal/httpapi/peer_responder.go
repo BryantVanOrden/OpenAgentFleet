@@ -128,16 +128,25 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 		scope = "the whole fleet"
 	}
 
+	// "What is everyone up to" is the question this feature exists to answer,
+	// and it cannot be answered from the message alone. Give the agent its own
+	// recent history so the reply is a real status report rather than a
+	// paraphrase of the question.
+	status := s.recentActivity(ctx, inst)
+
 	resp, err := s.models.Complete(ctx, "", connectors.Request{
 		System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
-			"desktop agents. Another member of the fleet, or the operator, has " +
-			"messaged " + scope + ". You are idle right now — not working on a task. " +
-			"Reply in one or two sentences: answer if you can, say plainly if you " +
-			"cannot help, and say what you are able to do. Do not invent work you " +
-			"have not done and do not claim to have started anything.",
+			"desktop agents, reporting to your operator. " + scope +
+			" was messaged.\n\n" + status + "\n\n" +
+			"Reply in one or two short sentences, in the first person, as a status " +
+			"update. Say what you have actually been doing and whether you are free. " +
+			"Ground every claim in the history above: if it says you have run nothing, " +
+			"say you are idle and available. Never invent work, never claim to have " +
+			"started something, and do not offer a list of your capabilities unless " +
+			"you were asked what you can do.",
 		Messages: []connectors.Message{{
 			Role: connectors.RoleUser,
-			Text: msg.FromInstanceName + " said: " + msg.Content,
+			Text: msg.FromInstanceName + " asked: " + msg.Content,
 		}},
 		// A reasoning model would spend the whole budget thinking and return
 		// nothing; this is small talk between agents, not a plan.
@@ -154,12 +163,73 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 		return
 	}
 
-	// Reply to the sender, or back to the fleet if it was a broadcast, so the
-	// answer appears in the same conversation the question was asked in.
+	// Where the reply goes.
+	//
+	// An operator broadcast is answered in the group so every reply sits under
+	// the question. Anything else — an agent asking another agent something —
+	// is answered directly to the asker, which keeps agent chatter in its own
+	// thread instead of filling the fleet channel with conversations the
+	// operator did not start. The direct threads are still visible; they are
+	// just not mixed in.
 	to := msg.FromInstanceID
-	if msg.ToInstanceID == "broadcast" || to == "" {
+	if msg.ToInstanceID == "broadcast" && isOperator(msg) {
+		to = "broadcast"
+	}
+	if to == "" {
 		to = "broadcast"
 	}
 	vault.GlobalBus.SendMessage(ctx, inst.ID, inst.Name, to, peerReplyKind, body, nil)
 	s.log.Info("agent answered a peer message", "instance", inst.Name, "to", to)
+}
+
+// isOperator reports whether a message came from a human rather than an agent.
+// Operator messages have no originating instance.
+func isOperator(m protocol.PeerMessage) bool {
+	return strings.TrimSpace(m.FromInstanceID) == ""
+}
+
+// recentActivity summarises what this agent has actually been doing, so a
+// status reply is grounded in the record rather than improvised.
+func (s *Server) recentActivity(ctx context.Context, inst protocol.Instance) string {
+	tasks, err := s.db.ListTasks(ctx, inst.ID, 5)
+	if err != nil || len(tasks) == 0 {
+		return "YOUR HISTORY\nYou have not been given any work yet. You are idle and available."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("YOUR HISTORY (most recent first)\n")
+	for i, t := range tasks {
+		if i >= 3 {
+			break
+		}
+		line := "- " + string(t.State) + ": " + trunc(t.Goal, 120)
+		switch {
+		case t.Result != "":
+			line += " — outcome: " + trunc(t.Result, 160)
+		case t.Error != "":
+			line += " — failed: " + trunc(t.Error, 160)
+		}
+		sb.WriteString(line + "\n")
+	}
+	running := false
+	for _, t := range tasks {
+		if t.State == protocol.TaskRunning || t.State == protocol.TaskQueued {
+			running = true
+			break
+		}
+	}
+	if running {
+		sb.WriteString("Something of yours is still in flight.")
+	} else {
+		sb.WriteString("Nothing is running right now; you are free.")
+	}
+	return sb.String()
+}
+
+func trunc(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
