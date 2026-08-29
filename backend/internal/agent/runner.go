@@ -618,7 +618,7 @@ func (r *Runner) execute(
 			return fmt.Sprintf("deep_search error: %s", clip(res.Stdout, 500)), terminalNone
 		}
 		return fmt.Sprintf("deep_search output:\n%s", clip(res.Stdout, 1200)), terminalNone
-	// snapshot/rollback are workspace-only (a tar of /home/agent/workspace), not
+	// snapshot/rollback are workspace-only (a tar of /home/agent/work), not
 	// code execution, so they are not behind the ShellAccess gate; they fall
 	// through to sc.Act and agentd's SnapshotEngine does the work.
 	case a.Action == protocol.ActSnapshot:

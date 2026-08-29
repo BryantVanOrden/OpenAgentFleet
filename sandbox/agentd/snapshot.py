@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import tarfile
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +29,12 @@ class SnapshotMetadata:
 class SnapshotEngine:
     """Manages workspace snapshots and rollbacks in the agent container."""
 
-    def __init__(self, workspace_root: str = "/home/agent/workspace", snapshot_store: str = "/tmp/agentfleet_snapshots") -> None:
+    # The agent's files live in ~/work -- the Dockerfile creates it, the
+    # initializer fills it, and a shell action runs inside it. Snapshots
+    # pointed at /home/agent/workspace, which nothing else in the image has
+    # ever created, so every snapshot archived an empty directory it had just
+    # made and every rollback restored it, both reporting success.
+    def __init__(self, workspace_root: str = "/home/agent/work", snapshot_store: str = "/tmp/agentfleet_snapshots") -> None:
         self.workspace_root = Path(workspace_root)
         self.snapshot_store = Path(snapshot_store)
         self.snapshot_store.mkdir(parents=True, exist_ok=True)
@@ -83,22 +89,32 @@ class SnapshotEngine:
         if not target or not Path(target.archive_path).exists():
             return False
 
-        # Clear current workspace contents cleanly
-        if self.workspace_root.exists():
+        # Unpacked somewhere else first. Clearing the workspace before knowing
+        # the archive is readable means a truncated snapshot destroys the work
+        # it was meant to protect, which is the one outcome a rollback must
+        # never have.
+        staging = tempfile.mkdtemp(dir=str(self.snapshot_store))
+        try:
+            with tarfile.open(target.archive_path, "r:gz") as tar:
+                try:
+                    tar.extractall(path=staging, filter="data")
+                except TypeError:
+                    tar.extractall(path=staging)
+        except (tarfile.TarError, OSError):
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+
+        try:
+            self.workspace_root.mkdir(parents=True, exist_ok=True)
             for item in self.workspace_root.iterdir():
-                if item.is_dir():
+                if item.is_dir() and not item.is_symlink():
                     shutil.rmtree(item)
                 else:
                     item.unlink()
-        else:
-            self.workspace_root.mkdir(parents=True, exist_ok=True)
-
-        # Restore from tar archive
-        with tarfile.open(target.archive_path, "r:gz") as tar:
-            try:
-                tar.extractall(path=self.workspace_root, filter="data")
-            except TypeError:
-                tar.extractall(path=self.workspace_root)
+            for item in Path(staging).iterdir():
+                shutil.move(str(item), str(self.workspace_root / item.name))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
         return True
 
