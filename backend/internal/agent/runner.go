@@ -458,7 +458,7 @@ func (r *Runner) execute(
 	// speaks desktop pixels. Doing the conversion here — once, in one place —
 	// is what lets the prompt tell the model to just read positions off the
 	// picture, which is the thing vision models are actually good at.
-	res, err := sc.Act(actCtx, mapToDesktop(a, obs))
+	res, err := sc.Act(actCtx, mapToDesktop(a, obs, r.cfg.CoordSpace))
 	if err != nil {
 		if ctx.Err() != nil {
 			return "cancelled", terminalCancelled
@@ -678,14 +678,32 @@ func (r *Runner) fileAlert(ctx context.Context, task *protocol.Task, kind protoc
 	}
 }
 
+// NormalizedScale is the axis range used by models that answer in relative
+// coordinates: 0-1000 on both axes, independent of the image's real size.
+const NormalizedScale = 1000
+
+// fromNormalized rescales a 0-1000 relative coordinate onto the image the model
+// was actually shown. Both axes are divided by the same 1000, not by a shared
+// aspect ratio, so a non-square image maps correctly.
+func fromNormalized(x, y int, obs *protocol.Observation) (int, int) {
+	w, h := obs.ImageWidth(), obs.ImageHeight()
+	if w <= 0 || h <= 0 {
+		return x, y
+	}
+	return x * w / NormalizedScale, y * h / NormalizedScale
+}
+
 // mapToDesktop rewrites an action's coordinates from the image space the model
 // answered in into desktop pixels. Returns a copy: the original is what gets
 // persisted to the audit trail, so a replay shows what the model actually said.
-func mapToDesktop(a protocol.Action, obs *protocol.Observation) protocol.Action {
+//
+// coordSpace names the convention the model answers in; see config.CoordSpace.
+func mapToDesktop(a protocol.Action, obs *protocol.Observation, coordSpace string) protocol.Action {
 	if obs == nil {
 		return a
 	}
 	out := a
+	normalized := coordSpace == "normalized"
 	if a.Mark > 0 {
 		// Marks are already in desktop space — agentd builds them from AT-SPI
 		// extents and only shifts them into frame space for drawing. So this
@@ -703,11 +721,19 @@ func mapToDesktop(a protocol.Action, obs *protocol.Observation) protocol.Action 
 		}
 	}
 	if len(a.Coordinates) == 2 {
-		x, y := obs.ToDesktop(a.Coordinates[0], a.Coordinates[1])
+		x, y := a.Coordinates[0], a.Coordinates[1]
+		if normalized {
+			x, y = fromNormalized(x, y, obs)
+		}
+		x, y = obs.ToDesktop(x, y)
 		out.Coordinates = []int{x, y}
 	}
 	if len(a.To) == 2 {
-		x, y := obs.ToDesktop(a.To[0], a.To[1])
+		x, y := a.To[0], a.To[1]
+		if normalized {
+			x, y = fromNormalized(x, y, obs)
+		}
+		x, y = obs.ToDesktop(x, y)
 		out.To = []int{x, y}
 	}
 	return out

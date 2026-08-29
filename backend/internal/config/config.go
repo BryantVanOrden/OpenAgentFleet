@@ -71,6 +71,17 @@ type Config struct {
 	StallDelta     float64 // fraction of changed pixels considered "movement"
 	ScreenshotMaxW int
 
+	// CoordSpace is the coordinate convention the vision model answers in.
+	// "pixel" (default) means coordinates are already in the image's own
+	// resolution. "normalized" means the model reports 0-1000 on both axes
+	// regardless of the image size, and we rescale before clicking.
+	//
+	// This is not a preference the prompt can express. Qwen3/Qwen3.5-class
+	// models emit normalised coordinates no matter what the prompt says --
+	// measured: identical output when told the pixel range explicitly and even
+	// when shown a worked example -- so the conversion has to happen here.
+	CoordSpace string
+
 	// AllowShell is the global kill switch for the shell action. Individual
 	// instances still have to opt in on top of this.
 	AllowShell bool
@@ -109,6 +120,7 @@ func Load() (*Config, error) {
 		StallThreshold:        envInt("AGENT_STALL_THRESHOLD", 3),
 		StallDelta:            envFloat("AGENT_STALL_DELTA", 0.02),
 		ScreenshotMaxW:        envInt("AGENT_SCREENSHOT_MAX_WIDTH", 1280),
+		CoordSpace:            env("AGENT_COORD_SPACE", "pixel"),
 		AllowShell:            envBool("ALLOW_SHELL", true),
 	}
 
