@@ -172,6 +172,8 @@ jobs:
           cache: true
 
       - name: Build Windows Executable
+        env:
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: |
           cd mobile
           flutter pub get
