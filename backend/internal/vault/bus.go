@@ -3,11 +3,27 @@ package vault
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
+
+// PeerStore is the persistence a Bus writes its P2P messages through to.
+//
+// It is an interface rather than *store.Store so the bus keeps working with no
+// database at all -- which is how every test constructs it, and how the
+// package-level GlobalBus behaves until the server attaches a store on boot.
+type PeerStore interface {
+	InsertPeerMessage(ctx context.Context, m protocol.PeerMessage) error
+	ListPeerMessages(ctx context.Context, instanceID string, limit int) ([]protocol.PeerMessage, error)
+}
+
+// peerHydrateLimit is how much conversation history is pulled back into memory
+// on boot. Deep history stays in the database and is not what an agent asking
+// "what did anyone say to me" needs.
+const peerHydrateLimit = 500
 
 // Bus manages the shared fleet secrets vault, browser sessions, and inter-agent P2P messages.
 type Bus struct {
@@ -15,6 +31,14 @@ type Bus struct {
 	secrets  map[string]protocol.SharedSecret
 	sessions map[string]protocol.SharedSession
 	messages []protocol.PeerMessage
+	// seq disambiguates messages sent within the same nanosecond tick, for the
+	// same reason memory.Engine carries one: a timestamp is not an identity,
+	// and a burst is exactly when collisions happen.
+	seq uint64
+
+	// store is optional. When nil the bus is in-memory only.
+	store PeerStore
+	log   *slog.Logger
 }
 
 var GlobalBus = NewBus()
@@ -25,6 +49,33 @@ func NewBus() *Bus {
 		sessions: make(map[string]protocol.SharedSession),
 		messages: make([]protocol.PeerMessage, 0),
 	}
+}
+
+// AttachStore makes the bus durable: recent peer messages are loaded back into
+// the in-memory working set, and everything sent afterwards is written through.
+//
+// Shared secrets and browser sessions deliberately stay in memory. Their tables
+// exist, but they hold credential plaintext and live cookie jars, and writing
+// those to an unencrypted table is a decision for the operator to make
+// explicitly rather than something persistence should acquire by accident --
+// the encrypted vault (internal/vault.Vault) is the place for them.
+func (b *Bus) AttachStore(ctx context.Context, st PeerStore, log *slog.Logger) error {
+	if log == nil {
+		log = slog.Default()
+	}
+	history, err := st.ListPeerMessages(ctx, "", peerHydrateLimit)
+	if err != nil {
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.store = st
+	b.log = log
+	// ListPeerMessages returns oldest first, which is the order this slice is
+	// appended in and the order ListMessages walks backwards from.
+	b.messages = append(history, b.messages...)
+	return nil
 }
 
 // -------------------------------------------------------------- Shared Secrets ---
@@ -114,10 +165,9 @@ func (b *Bus) ListSessions(ctx context.Context, domain string) []protocol.Shared
 
 func (b *Bus) SendMessage(ctx context.Context, fromID, fromName, toID, kind, content string, data map[string]any) protocol.PeerMessage {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
+	b.seq++
 	msg := protocol.PeerMessage{
-		ID:               fmt.Sprintf("peer-msg-%d", time.Now().UnixNano()),
+		ID:               fmt.Sprintf("peer-msg-%d-%d", time.Now().UnixNano(), b.seq),
 		FromInstanceID:   fromID,
 		FromInstanceName: fromName,
 		ToInstanceID:     toID,
@@ -127,6 +177,17 @@ func (b *Bus) SendMessage(ctx context.Context, fromID, fromName, toID, kind, con
 		CreatedAt:        time.Now().UTC(),
 	}
 	b.messages = append(b.messages, msg)
+	st, log := b.store, b.log
+	b.mu.Unlock()
+
+	// Written outside the lock: a database round trip must not block every
+	// other agent's reads. A failed write costs durability for this one
+	// message, never the delivery -- the message is already in the working set.
+	if st != nil {
+		if err := st.InsertPeerMessage(ctx, msg); err != nil {
+			log.Warn("peer message not persisted", "id", msg.ID, "err", err)
+		}
+	}
 	return msg
 }
 

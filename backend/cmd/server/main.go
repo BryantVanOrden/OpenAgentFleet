@@ -101,9 +101,15 @@ func run(log *slog.Logger) error {
 	runner.ResumeInterrupted(ctx)
 
 	// --- http ---
+	api := httpapi.NewServer(cfg, db, fm, models, runner, eventBus, v, art, log)
+	// Loads the persisted triggers, peer messages and episodic memory, and
+	// starts the cron engine. Before serving, so a request cannot arrive
+	// against half-loaded configuration.
+	api.StartBackground(ctx)
+
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: httpapi.NewServer(cfg, db, fm, models, runner, eventBus, v, art, log).Routes(),
+		Handler: api.Routes(),
 		// No WriteTimeout: the event stream and the desktop proxy are long-lived.
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,

@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -12,12 +13,36 @@ import (
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
+// Store is the persistence an Engine writes memories through to.
+//
+// An interface rather than *store.Store so the engine works with no database,
+// which is how the tests build it and how GlobalEngine behaves until the
+// server attaches a store on boot.
+type Store interface {
+	UpsertMemory(ctx context.Context, m protocol.MemoryRecord) error
+	ListMemories(ctx context.Context, namespace string, limit int) ([]protocol.MemoryRecord, error)
+}
+
+// hydrateLimit caps what is loaded back on boot. Search is a linear scan over
+// the working set, so the whole point of the index is that it stays small
+// enough to scan; older memories remain in the table.
+const hydrateLimit = 2000
+
+// vectorDim must match computeBagOfWordsVector; a stored embedding of any other
+// length is from a different hashing scheme and gets recomputed on load.
+const vectorDim = 128
+
 // Engine manages long-term episodic memory indexing and semantic search across the fleet.
 type Engine struct {
 	mu       sync.RWMutex
 	memories map[string]protocol.MemoryRecord
 	// seq disambiguates records created within the same nanosecond tick.
 	seq uint64
+
+	// store is optional. When nil the engine is in-memory only and every
+	// memory dies with the process.
+	store Store
+	log   *slog.Logger
 }
 
 // GlobalEngine is the fleet-wide episodic memory, shared across instances so a
@@ -30,10 +55,41 @@ func NewEngine() *Engine {
 	}
 }
 
+// AttachStore makes the index durable: what the fleet has already learned is
+// loaded back, and everything stored afterwards is written through.
+//
+// Records whose persisted embedding is missing or from a different vector
+// scheme are re-embedded here rather than dropped, so a change to the hashing
+// degrades to a one-off recompute instead of a silent search blind spot.
+func (e *Engine) AttachStore(ctx context.Context, st Store, log *slog.Logger) error {
+	if log == nil {
+		log = slog.Default()
+	}
+	saved, err := st.ListMemories(ctx, "", hydrateLimit)
+	if err != nil {
+		return err
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.store = st
+	e.log = log
+	for _, m := range saved {
+		// Anything stored before the attach wins: it is newer than the table.
+		if _, live := e.memories[m.ID]; live {
+			continue
+		}
+		if len(m.Embedding) != vectorDim {
+			m.Embedding = computeBagOfWordsVector(m.Title + " " + m.Content + " " + strings.Join(m.Tags, " "))
+		}
+		e.memories[m.ID] = m
+	}
+	return nil
+}
+
 // StoreMemory registers a new episodic memory item into the index.
 func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	if mem.ID == "" {
 		// A timestamp alone is not an identity. This formatted to second
@@ -53,6 +109,19 @@ func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) err
 
 	mem.Embedding = computeBagOfWordsVector(mem.Title + " " + mem.Content + " " + strings.Join(mem.Tags, " "))
 	e.memories[mem.ID] = mem
+	st, log := e.store, e.log
+	// Unlocked explicitly rather than by defer: the database round trip below
+	// has to happen outside the lock, or every recall in the fleet waits on it.
+	e.mu.Unlock()
+
+	if st != nil {
+		if err := st.UpsertMemory(ctx, mem); err != nil {
+			// Not returned: the memory IS stored and recallable right now, and
+			// the caller is an agent that would report the whole remember
+			// action as failed and retry it.
+			log.Warn("episodic memory not persisted", "id", mem.ID, "err", err)
+		}
+	}
 	return nil
 }
 

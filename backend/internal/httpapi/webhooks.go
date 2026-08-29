@@ -1,80 +1,65 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/schedule"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 )
 
-type WebhookRecord struct {
-	ID              string     `json:"id"`
-	Token           string     `json:"token"`
-	Name            string     `json:"name"`
-	TargetArchetype string     `json:"target_archetype"`
-	GoalTemplate    string     `json:"goal_template"`
-	Active          bool       `json:"active"`
-	LastTriggeredAt *time.Time `json:"last_triggered_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-}
+// WebhookRecord and CronTriggerRecord are the persisted rows. They are aliases
+// rather than copies so there is exactly one definition of a trigger's shape:
+// the API used to carry its own structs, which is how the API grew fields the
+// tables never had and the tables grew columns nothing read.
+type WebhookRecord = store.Webhook
+type CronTriggerRecord = store.CronTrigger
 
-type CronTriggerRecord struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	ScheduleCron    string     `json:"schedule_cron"`
-	TargetArchetype string     `json:"target_archetype"`
-	GoalTemplate    string     `json:"goal_template"`
-	Active          bool       `json:"active"`
-	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-}
-
+// The maps are the working set, hydrated from the database on boot by
+// StartBackground and written through on every change. They are also what makes
+// the handlers usable with no database at all, which is how the tests build a
+// Server -- see the s.db nil checks below.
+//
+// There is no demo seeding here any more. Two fake webhooks and a fake nightly
+// scan used to be inserted at process start, so a fresh install opened on
+// configuration that looked real, could not be made to work, and came back
+// every restart after being deleted.
 var (
 	webhookMu sync.RWMutex
-	webhooks  = map[string]WebhookRecord{
-		"wh-github-pr": {
-			ID:              "wh-github-pr",
-			Token:           "github-pr-sync",
-			Name:            "GitHub PR Review & Test Webhook",
-			TargetArchetype: "fullstack_dev",
-			GoalTemplate:    "Pull latest branch for PR, run unit tests and static analysis, and verify build.",
-			Active:          true,
-			CreatedAt:       time.Now().UTC(),
-		},
-		"wh-comp-crm": {
-			ID:              "wh-comp-crm",
-			Token:           "crm-lead-enrich",
-			Name:            "Comp AI CRM New Lead Webhook",
-			TargetArchetype: "agentic_crm",
-			GoalTemplate:    "Enrich newly created lead account using deep_search and update pipeline status.",
-			Active:          true,
-			CreatedAt:       time.Now().UTC(),
-		},
-	}
+	webhooks  = map[string]WebhookRecord{} // keyed by token, which is the ID
 
 	cronMu sync.RWMutex
-	crons  = map[string]CronTriggerRecord{
-		"cron-daily-sec": {
-			ID:              "cron-daily-sec",
-			Name:            "Nightly Automated Vulnerability Scan",
-			ScheduleCron:    "0 2 * * *",
-			TargetArchetype: "cyber_ops",
-			GoalTemplate:    "Execute automated SAST/DAST scan on staging endpoints and compile CVSS briefing.",
-			Active:          true,
-			CreatedAt:       time.Now().UTC(),
-		},
-	}
+	crons  = map[string]CronTriggerRecord{}
+	// cronSchedules holds the parsed expression for each trigger in crons. A
+	// trigger with no entry here has an expression that would not parse and
+	// therefore never fires -- rejected at create time, logged once at load.
+	cronSchedules = map[string]*schedule.Schedule{}
 )
+
+// webhookView is the API projection: everything except the signing secret.
+type webhookView struct {
+	WebhookRecord
+	Secret    string `json:"secret,omitempty"` // always empty; shadows the real one
+	HasSecret bool   `json:"has_secret"`
+}
+
+func redactWebhook(wh WebhookRecord) webhookView {
+	return webhookView{WebhookRecord: wh, Secret: "", HasSecret: wh.Secret != ""}
+}
 
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
 	webhookMu.RLock()
 	defer webhookMu.RUnlock()
 
-	out := make([]WebhookRecord, 0, len(webhooks))
+	out := make([]webhookView, 0, len(webhooks))
 	for _, wh := range webhooks {
-		out = append(out, wh)
+		out = append(out, redactWebhook(wh))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -89,22 +74,47 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	// A webhook with no target cannot dispatch anything. Rejecting it here is
+	// the difference between a bad config the operator fixes now and a 503 at
+	// 3am from whatever system was wired to the URL.
+	if req.TargetInstanceID == "" && req.TargetArchetype == "" {
+		fail(w, http.StatusBadRequest, "target_instance_id or target_archetype is required")
+		return
+	}
+	if req.GoalTemplate == "" {
+		fail(w, http.StatusBadRequest, "goal_template is required")
+		return
+	}
 	if req.Token == "" {
 		req.Token = fmt.Sprintf("wh-%d", time.Now().UnixNano())
 	}
 	req.ID = req.Token
 	req.CreatedAt = time.Now().UTC()
 	req.Active = true
+	req.LastTriggeredAt = nil
+
+	if s.db != nil {
+		if err := s.db.UpsertWebhook(r.Context(), &req); err != nil {
+			failErr(w, err)
+			return
+		}
+	}
 
 	webhookMu.Lock()
 	webhooks[req.ID] = req
 	webhookMu.Unlock()
 
-	writeJSON(w, http.StatusCreated, req)
+	writeJSON(w, http.StatusCreated, redactWebhook(req))
 }
 
 func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if s.db != nil {
+		if err := s.db.DeleteWebhook(r.Context(), id); err != nil {
+			failErr(w, err)
+			return
+		}
+	}
 	webhookMu.Lock()
 	delete(webhooks, id)
 	webhookMu.Unlock()
@@ -112,30 +122,70 @@ func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleIncomingWebhook is the unauthenticated external ingress endpoint.
+//
+// It creates and starts a real task. It previously logged the body and answered
+// {"status":"accepted"} without doing anything at all, which is worse than a
+// missing feature: the calling system records a success and nobody finds out
+// until someone asks why the work never happened.
 func (s *Server) handleIncomingWebhook(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
-	webhookMu.Lock()
+	webhookMu.RLock()
 	wh, ok := webhooks[token]
+	webhookMu.RUnlock()
 	if !ok || !wh.Active {
-		webhookMu.Unlock()
 		fail(w, http.StatusNotFound, "webhook not found or inactive")
 		return
 	}
-	now := time.Now().UTC()
-	wh.LastTriggeredAt = &now
-	webhooks[token] = wh
-	webhookMu.Unlock()
 
-	bodyBytes, _ := io.ReadAll(r.Body)
-	s.log.Info("incoming webhook triggered", "token", token, "name", wh.Name, "bytes", len(bodyBytes))
+	// Bounded read: this endpoint takes no authentication, so the body size is
+	// whatever the caller feels like sending.
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		fail(w, http.StatusRequestEntityTooLarge, "payload too large")
+		return
+	}
+	if wh.Secret != "" && !verifyWebhookSignature(wh.Secret, body, r) {
+		s.logger().Warn("webhook signature rejected", "token", token, "name", wh.Name)
+		fail(w, http.StatusUnauthorized, "signature missing or invalid")
+		return
+	}
+
+	goal := renderGoal(wh.GoalTemplate, body)
+	task, err := s.dispatchTrigger(r.Context(), wh.TargetInstanceID, wh.TargetArchetype, goal, "webhook:"+wh.Name)
+	if err != nil {
+		if errors.Is(err, errNoTarget) {
+			// 503, not 500: the webhook is configured correctly and the caller
+			// can reasonably retry once the fleet has an instance up.
+			fail(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		failErr(w, err)
+		return
+	}
+
+	now := time.Now().UTC()
+	webhookMu.Lock()
+	if cur, still := webhooks[token]; still {
+		cur.LastTriggeredAt = &now
+		webhooks[token] = cur
+	}
+	webhookMu.Unlock()
+	if s.db != nil {
+		if err := s.db.TouchWebhook(r.Context(), wh.ID, now); err != nil {
+			s.logger().Warn("webhook fired but last_triggered_at not recorded", "token", token, "err", err)
+		}
+	}
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":           "accepted",
-		"webhook":          wh.Name,
-		"target_archetype": wh.TargetArchetype,
-		"dispatched_at":    now,
+		"status":        "dispatched",
+		"webhook":       wh.Name,
+		"task_id":       task.ID,
+		"instance_id":   task.InstanceID,
+		"dispatched_at": now,
 	})
 }
+
+// ---------------------------------------------------------- cron triggers ---
 
 func (s *Server) handleListCronTriggers(w http.ResponseWriter, r *http.Request) {
 	cronMu.RLock()
@@ -158,12 +208,38 @@ func (s *Server) handleCreateCronTrigger(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusBadRequest, "name and schedule_cron are required")
 		return
 	}
+	// Parsed here so a typo is a 400 the operator reads now, rather than a
+	// trigger that sits in the list looking configured and never fires.
+	sched, err := schedule.Parse(req.ScheduleCron)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.TargetInstanceID == "" && req.TargetArchetype == "" {
+		fail(w, http.StatusBadRequest, "target_instance_id or target_archetype is required")
+		return
+	}
+	if req.GoalTemplate == "" {
+		fail(w, http.StatusBadRequest, "goal_template is required")
+		return
+	}
 	req.ID = fmt.Sprintf("cron-%d", time.Now().UnixNano())
 	req.CreatedAt = time.Now().UTC()
 	req.Active = true
+	// A new trigger has never run, but it must not treat the whole past as
+	// missed work either -- the scheduler only ever fires the current minute.
+	req.LastRunAt = nil
+
+	if s.db != nil {
+		if err := s.db.UpsertCronTrigger(r.Context(), &req); err != nil {
+			failErr(w, err)
+			return
+		}
+	}
 
 	cronMu.Lock()
 	crons[req.ID] = req
+	cronSchedules[req.ID] = sched
 	cronMu.Unlock()
 
 	writeJSON(w, http.StatusCreated, req)
@@ -171,8 +247,50 @@ func (s *Server) handleCreateCronTrigger(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleDeleteCronTrigger(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if s.db != nil {
+		if err := s.db.DeleteCronTrigger(r.Context(), id); err != nil {
+			failErr(w, err)
+			return
+		}
+	}
 	cronMu.Lock()
 	delete(crons, id)
+	delete(cronSchedules, id)
 	cronMu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// loadTriggers hydrates the working set from the database on boot.
+func (s *Server) loadTriggers(ctx context.Context) error {
+	whs, err := s.db.ListWebhooks(ctx)
+	if err != nil {
+		return err
+	}
+	webhookMu.Lock()
+	for _, wh := range whs {
+		webhooks[wh.ID] = wh
+	}
+	webhookMu.Unlock()
+
+	trigs, err := s.db.ListCronTriggers(ctx)
+	if err != nil {
+		return err
+	}
+	cronMu.Lock()
+	for _, cr := range trigs {
+		crons[cr.ID] = cr
+		sched, err := schedule.Parse(cr.ScheduleCron)
+		if err != nil {
+			// Logged once, here, instead of every minute from the scheduler.
+			// The trigger stays listed so the operator can see and fix it.
+			s.logger().Warn("cron trigger has an unparseable schedule and will not fire",
+				"id", cr.ID, "name", cr.Name, "schedule", cr.ScheduleCron, "err", err)
+			continue
+		}
+		cronSchedules[cr.ID] = sched
+	}
+	cronMu.Unlock()
+
+	s.logger().Info("triggers loaded", "webhooks", len(whs), "cron", len(trigs))
+	return nil
 }
