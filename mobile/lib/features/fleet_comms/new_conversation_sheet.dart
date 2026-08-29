@@ -111,7 +111,32 @@ class _NewConversationSheetState extends ConsumerState<NewConversationSheet> {
               style: TextStyle(color: Fleet.ink400, fontSize: 11),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
+          // Everyone is the common case and ticking a dozen boxes to express
+          // it is not a workflow.
+          OutlinedButton.icon(
+            onPressed: instances.isEmpty
+                ? null
+                : () => setState(() {
+                      final all = instances.map((i) => i.id).toSet();
+                      if (_selected.containsAll(all) &&
+                          _selected.length == all.length) {
+                        _selected.clear();
+                      } else {
+                        _selected
+                          ..clear()
+                          ..addAll(all);
+                      }
+                    }),
+            icon: const Icon(Icons.groups_outlined, size: 16),
+            label: Text(
+              _selected.length == instances.length && instances.isNotEmpty
+                  ? 'Clear everyone'
+                  : 'Everyone in the fleet',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 10),
           Text('AGENTS',
               style: TextStyle(
                   color: Fleet.ink400,

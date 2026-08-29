@@ -381,7 +381,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
       body: Column(
         children: [
-          if (_siblings.length > 1 || !_current.isBroadcast) _threadBar(),
+          _threadBar(),
           Expanded(child: _buildList()),
           _buildComposer(),
         ],
@@ -390,6 +390,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   /// Which of these people's threads is open, and how to reach the others.
+  ///
+  /// Always shown, including on a thread with no siblings yet: this bar is
+  /// where a new chat with the same people is started, so hiding it when there
+  /// is only one is hiding the only way to make a second — which is exactly
+  /// what happened on the everyone-channel.
   ///
   /// On screen rather than in a menu for the same reason the per-bot chat
   /// switcher is: which thread you are in decides who reads what you type.
