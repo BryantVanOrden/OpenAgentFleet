@@ -5,19 +5,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'oauth_webview_screen.dart';
-
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'oauth_webview_screen.dart';
 
 /// Sign in to a provider with a Google account.
 ///
-/// You are shown a short code and sent to a Google page to approve it, the same
-/// shape as signing a TV into an account. It works this way rather than through
-/// a browser redirect because the server runs in a container and this app is
-/// often a phone — neither can reliably catch a redirect back to localhost, and
-/// a code you type on whatever device is handy works from both.
+/// Collects the OAuth client, then opens the provider's consent page in a
+/// webview so the sign-in finishes without leaving the app. The code-on-another
+/// -device flow is kept as a fallback for anywhere a webview cannot run.
+///
+/// Nothing here reports through a snackbar: this is a modal bottom sheet, and a
+/// snackbar raised from inside one renders behind it, which turns every failure
+/// into a button that appears to do nothing.
 class ProviderSignInSheet extends ConsumerStatefulWidget {
   const ProviderSignInSheet({super.key, required this.provider});
 
@@ -40,6 +41,10 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
   late final _clientId =
       TextEditingController(text: widget.provider.oauthClientId);
   final _clientSecret = TextEditingController();
+
+  /// Briefly flips after a copy. A snackbar would render behind this sheet, so
+  /// the confirmation has to live inside it.
+  String _copied = '';
 
   String _userCode = '';
   String _verifyUrl = '';
@@ -166,6 +171,14 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
     }
   }
 
+  void _copy(String text, String which) {
+    Clipboard.setData(ClipboardData(text: text));
+    setState(() => _copied = which);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && _copied == which) setState(() => _copied = '');
+    });
+  }
+
   Widget _step(int n, String text) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -266,12 +279,7 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
         Padding(
           padding: const EdgeInsets.only(left: 26, top: 4, bottom: 8),
           child: InkWell(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: _redirectUri));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Redirect URI copied')),
-              );
-            },
+            onTap: () => _copy(_redirectUri, 'redirect'),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
@@ -288,7 +296,11 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
                             fontFamily: 'monospace',
                             color: Fleet.ink200)),
                   ),
-                  Icon(Icons.copy, size: 14, color: Fleet.ink400),
+                  Icon(
+                    _copied == 'redirect' ? Icons.check : Icons.copy,
+                    size: 14,
+                    color: _copied == 'redirect' ? Fleet.good : Fleet.ink400,
+                  ),
                 ],
               ),
             ),
@@ -356,14 +368,10 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
         const SizedBox(height: 6),
         Center(
           child: TextButton.icon(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: _userCode));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Code copied')),
-              );
-            },
-            icon: const Icon(Icons.copy, size: 15),
-            label: const Text('Copy code', style: TextStyle(fontSize: 12)),
+            onPressed: () => _copy(_userCode, 'code'),
+            icon: Icon(_copied == 'code' ? Icons.check : Icons.copy, size: 15),
+            label: Text(_copied == 'code' ? 'Copied' : 'Copy code',
+                style: const TextStyle(fontSize: 12)),
           ),
         ),
         const SizedBox(height: 10),

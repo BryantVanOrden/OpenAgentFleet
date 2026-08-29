@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
-import 'provider_signin_sheet.dart';
 
 /// Add or configure one AI connection.
 ///
@@ -16,8 +15,11 @@ class ProviderEditSheet extends ConsumerStatefulWidget {
 
   final AIProvider? existing;
 
-  static Future<bool?> show(BuildContext context, {AIProvider? existing}) =>
-      showModalBottomSheet<bool>(
+  /// Returns true when a connection was saved, or the saved [AIProvider] when
+  /// the operator asked to sign in to it — the caller opens the sign-in, so a
+  /// modal sheet is never stacked on another one.
+  static Future<Object?> show(BuildContext context, {AIProvider? existing}) =>
+      showModalBottomSheet<Object>(
         context: context,
         isScrollControlled: true,
         builder: (_) => ProviderEditSheet(existing: existing),
@@ -68,6 +70,11 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
   late String _authMode = widget.existing?.authMode ?? 'api_key';
   late bool _vision = widget.existing?.vision ?? true;
   late bool _enabled = widget.existing?.enabled ?? true;
+
+  /// Shown inline. A snackbar raised from inside a modal bottom sheet renders
+  /// behind the sheet, so every error reported that way was invisible and the
+  /// button looked like it did nothing.
+  String? _error;
 
   List<String> _available = const [];
   bool _loadingModels = false;
@@ -137,14 +144,11 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
         _needsKey.contains(_kind) &&
         _apiKey.text.trim().isEmpty &&
         !(widget.existing?.hasKey ?? false)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$_kind needs an API key')),
-      );
+      setState(() => _error = '$_kind needs an API key, or sign in instead.');
       return;
     }
     setState(() => _busy = true);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(apiProvider).saveProvider(
           apiKey: _apiKey.text.trim(),
@@ -166,8 +170,12 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
           ));
       navigator.pop(true);
     } catch (err) {
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = '$err';
+        });
+      }
     }
   }
 
@@ -178,23 +186,23 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
   /// reopen and hunt through a menu is the whole difference between an
   /// authenticate button and an instruction to go find one.
   Future<void> _saveAndSignIn() async {
-    if (_model.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick a model first')),
-      );
-      return;
-    }
-    setState(() => _busy = true);
+    // Deliberately no model check. You cannot list an engine's models until
+    // you are authenticated to it, so requiring one before signing in is a
+    // deadlock with no way out. A placeholder gets the connection saved; the
+    // real list appears the moment the sign-in lands.
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final saved = await ref.read(apiProvider).saveProvider(AIProvider(
             id: widget.existing?.id ?? '',
             name: _name.text.trim().isEmpty
-                ? '$_kind · ${_model.text.trim()}'
+                ? '$_kind · $_modelOrDefault'
                 : _name.text.trim(),
             kind: _kind,
-            model: _model.text.trim(),
+            model: _modelOrDefault,
             baseUrl: _baseUrl.text.trim(),
             vision: _vision,
             priority: widget.existing?.priority ?? 100,
@@ -206,22 +214,30 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
           ));
       if (!mounted) return;
       setState(() => _busy = false);
-
-      final ok = await ProviderSignInSheet.show(context, saved);
-      if (!mounted) return;
-      // The connection is saved either way; only the sign-in may have been
-      // abandoned, and closing the sheet keeps what was entered.
-      navigator.pop(true);
-      if (ok != true) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Connection saved. Sign in from its menu when ready.'),
-        ));
-      }
+      // Hand the saved connection back and let the list open the sign-in.
+      // Showing a modal sheet on top of this one is exactly the arrangement
+      // that swallows taps and leaves a button looking dead.
+      navigator.pop(saved);
     } catch (err) {
       if (!mounted) return;
-      setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text('$err')));
+      setState(() {
+        _busy = false;
+        _error = '$err';
+      });
     }
+  }
+
+  /// The model to save with, falling back to something the engine actually
+  /// serves so a connection can exist before you have seen its catalogue.
+  String get _modelOrDefault {
+    final typed = _model.text.trim();
+    if (typed.isNotEmpty) return typed;
+    return switch (_kind) {
+      'gemini' || 'antigravity' => 'gemini-2.0-flash',
+      'anthropic' => 'claude-opus-5',
+      'openai' => 'gpt-4o',
+      _ => 'default',
+    };
   }
 
   @override
@@ -450,6 +466,32 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               onChanged: (v) => setState(() => _enabled = v),
               title: const Text('Enabled', style: TextStyle(fontSize: 13)),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: Fleet.bad.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: Fleet.bad.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.error_outline, size: 15, color: Fleet.bad),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_error!,
+                          style: TextStyle(
+                              color: Fleet.ink200,
+                              fontSize: 11.5,
+                              height: 1.4)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,

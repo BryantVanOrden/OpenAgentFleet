@@ -54,8 +54,13 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
   }
 
   Future<void> _edit([AIProvider? existing]) async {
-    final saved = await ProviderEditSheet.show(context, existing: existing);
-    if (saved == true) await _refresh();
+    final result = await ProviderEditSheet.show(context, existing: existing);
+    if (!mounted) return;
+    await _refresh();
+    // The sheet hands back the saved connection when the operator asked to
+    // sign in to it, so the sign-in opens here rather than stacked on top of
+    // the sheet that started it.
+    if (result is AIProvider) await _signIn(result);
   }
 
   Future<void> _reorder(int oldIndex, int newIndex) async {
