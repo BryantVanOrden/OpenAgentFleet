@@ -267,13 +267,12 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	if err != nil {
 		return err
 	}
-	ip := ci.IPOn(m.cfg.SandboxNetwork)
-	if ip == "" {
+	// Still checked, because a container with no address on the sandbox
+	// network is genuinely broken -- but the URLs are built from the alias.
+	if ip := ci.IPOn(m.cfg.SandboxNetwork); ip == "" {
 		return fmt.Errorf("container has no address on %s", m.cfg.SandboxNetwork)
 	}
-	inst.AgentdURL = fmt.Sprintf("http://%s:%d", ip, PortAgentd)
-	inst.VNCURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNC)
-	inst.VNCViewURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNCView)
+	inst.AgentdURL, inst.VNCURL, inst.VNCViewURL = urlsFor(inst)
 	if m.cfg.PublishPorts {
 		if hp := ci.HostPort(portKey(PortNoVNC)); hp != "" {
 			inst.Labels = withLabel(inst.Labels, "published_vnc", "http://127.0.0.1:"+hp)
@@ -491,9 +490,7 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 		return err
 	}
 	if ip := ci.IPOn(m.cfg.SandboxNetwork); ip != "" {
-		inst.AgentdURL = fmt.Sprintf("http://%s:%d", ip, PortAgentd)
-		inst.VNCURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNC)
-		inst.VNCViewURL = fmt.Sprintf("http://%s:%d", ip, PortNoVNCView)
+		inst.AgentdURL, inst.VNCURL, inst.VNCViewURL = urlsFor(inst)
 	}
 	if err := m.waitHealthy(ctx, inst.AgentdURL, 60*time.Second); err != nil {
 		inst.State = protocol.InstanceError
@@ -581,6 +578,29 @@ func (m *Manager) Stats(ctx context.Context, id string) (*protocol.InstanceStats
 	return out, nil
 }
 
+// sandboxHost is how the rest of the system addresses a sandbox.
+//
+// The container's network alias, deliberately, not its IP. Docker hands out a
+// new address every time a container starts, and the containers carry a
+// restart policy -- so after a host reboot they come back on shuffled IPs
+// without the orchestrator ever running the restart path that refreshes the
+// stored URL. That left bots pointing at addresses nothing was listening on
+// (a 500 on every desktop call) and, worse, at addresses another bot had
+// since been given, so one bot's desktop showed another's screen. The alias
+// is set on the endpoint at create time and resolves to whatever the current
+// address is.
+func sandboxHost(inst *protocol.Instance) string {
+	return "af-" + inst.ID[:12]
+}
+
+// urlsFor builds the three sandbox URLs from the instance's stable hostname.
+func urlsFor(inst *protocol.Instance) (agentd, vnc, vncView string) {
+	h := sandboxHost(inst)
+	return fmt.Sprintf("http://%s:%d", h, PortAgentd),
+		fmt.Sprintf("http://%s:%d", h, PortNoVNC),
+		fmt.Sprintf("http://%s:%d", h, PortNoVNCView)
+}
+
 // Reconcile aligns database state with what the engine actually reports. It runs
 // on boot and on a timer so a crashed container does not stay "running" forever.
 func (m *Manager) Reconcile(ctx context.Context) {
@@ -617,6 +637,28 @@ func (m *Manager) Reconcile(ctx context.Context) {
 			}
 			m.log.Info("reconciling instance state", "instance", inst.ID, "from", inst.State, "to", want)
 			_ = m.db.SetInstanceState(ctx, inst.ID, want, msg)
+		}
+
+		// Repair the address as well as the state.
+		//
+		// Reconcile used to sync only the lifecycle state, so a container that
+		// came back on a different address -- which is what happens when the
+		// host reboots and the restart policy, not the orchestrator, starts it
+		// -- stayed marked running with a URL pointing at nothing. It looked
+		// entirely healthy and 500'd on every call. Rows written before
+		// sandboxes were addressed by name are healed here too.
+		if ci.State.Running {
+			agentd, vnc, vncView := urlsFor(&inst)
+			if inst.AgentdURL != agentd || inst.VNCURL != vnc || inst.VNCViewURL != vncView {
+				m.log.Info("reconciling sandbox address",
+					"instance", inst.ID, "from", inst.AgentdURL, "to", agentd)
+				updated := inst
+				updated.AgentdURL, updated.VNCURL, updated.VNCViewURL = agentd, vnc, vncView
+				if err := m.db.UpdateInstance(ctx, &updated); err != nil {
+					m.log.Error("reconcile: could not save sandbox address",
+						"instance", inst.ID, "err", err)
+				}
+			}
 		}
 	}
 }
