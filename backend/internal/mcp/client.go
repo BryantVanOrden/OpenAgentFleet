@@ -81,7 +81,8 @@ func (m *ClientManager) ListTools(ctx context.Context, serverID string) []protoc
 	if serverID != "" {
 		return m.tools[serverID]
 	}
-	var all []protocol.MCPTool
+	// Empty rather than nil so the JSON is [] and not null; see vault/bus.go.
+	all := make([]protocol.MCPTool, 0)
 	for _, tools := range m.tools {
 		all = append(all, tools...)
 	}

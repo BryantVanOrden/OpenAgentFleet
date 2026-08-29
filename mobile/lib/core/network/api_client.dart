@@ -90,7 +90,12 @@ class ApiClient {
   // ----------------------------------------------------------------- fleet ---
 
   Future<List<Instance>> instances() async {
-    final data = await _get('/api/instances') as List;
+    // `as List? ?? const []` rather than a bare `as List` throughout: an
+    // endpoint that yields a JSON null -- a nil slice on the Go side
+    // serialises that way -- would otherwise throw "Null is not a subtype
+    // of List<dynamic>" and take the whole screen down instead of
+    // rendering an empty one.
+    final data = await _get('/api/instances') as List? ?? const [];
     return data
         .map((e) => Instance.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
@@ -116,7 +121,7 @@ class ApiClient {
 
   Future<List<Task>> tasks({String? instanceId}) async {
     final data = await _get('/api/tasks',
-        query: instanceId == null ? null : {'instance_id': instanceId}) as List;
+        query: instanceId == null ? null : {'instance_id': instanceId}) as List? ?? const [];
     return data
         .map((e) => Task.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
@@ -138,7 +143,7 @@ class ApiClient {
   Future<void> cancelTask(String id) => _post('/api/tasks/$id/cancel');
 
   Future<List<Skill>> skills() async {
-    final data = await _get('/api/skills') as List;
+    final data = await _get('/api/skills') as List? ?? const [];
     return data
         .map((e) => Skill.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
@@ -155,7 +160,7 @@ class ApiClient {
   // -------------------------------------------------------- vault & comms ---
 
   Future<List<SharedSecret>> sharedSecrets() async {
-    final data = await _get('/api/vault/secrets') as List;
+    final data = await _get('/api/vault/secrets') as List? ?? const [];
     return data.map((e) => SharedSecret.fromJson((e as Map).cast<String, dynamic>())).toList();
   }
 
@@ -179,13 +184,13 @@ class ApiClient {
 
   Future<List<SharedSession>> sharedSessions({String? domain}) async {
     final data = await _get('/api/vault/sessions',
-        query: domain == null ? null : {'domain': domain}) as List;
+        query: domain == null ? null : {'domain': domain}) as List? ?? const [];
     return data.map((e) => SharedSession.fromJson((e as Map).cast<String, dynamic>())).toList();
   }
 
   Future<List<PeerMessage>> peerMessages({String? instanceId}) async {
     final data = await _get('/api/vault/comms',
-        query: instanceId == null ? null : {'instance_id': instanceId}) as List;
+        query: instanceId == null ? null : {'instance_id': instanceId}) as List? ?? const [];
     return data.map((e) => PeerMessage.fromJson((e as Map).cast<String, dynamic>())).toList();
   }
 
@@ -207,7 +212,7 @@ class ApiClient {
   // ------------------------------------------------------------ pipelines ---
 
   Future<List<WorkflowPipeline>> pipelines() async {
-    final data = await _get('/api/pipelines') as List;
+    final data = await _get('/api/pipelines') as List? ?? const [];
     return data.map((e) => WorkflowPipeline.fromJson((e as Map).cast<String, dynamic>())).toList();
   }
 
@@ -219,7 +224,7 @@ class ApiClient {
   // ---------------------------------------------------------------- alerts ---
 
   Future<List<Alert>> alerts({bool openOnly = false}) async {
-    final data = await _get('/api/alerts', query: {'open': openOnly}) as List;
+    final data = await _get('/api/alerts', query: {'open': openOnly}) as List? ?? const [];
     return data
         .map((e) => Alert.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
@@ -231,7 +236,7 @@ class ApiClient {
   // ------------------------------------------------------------------ chat ---
 
   Future<List<ChatMessage>> chat(String instanceId) async {
-    final data = await _get('/api/chat/$instanceId') as List;
+    final data = await _get('/api/chat/$instanceId') as List? ?? const [];
     return data
         .map((e) => ChatMessage.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
@@ -244,7 +249,7 @@ class ApiClient {
   // --------------------------------------------------------------- swarms ---
 
   Future<List<SwarmTeam>> swarms() async {
-    final data = await _get('/api/swarms') as List;
+    final data = await _get('/api/swarms') as List? ?? const [];
     return data
         .map((e) => SwarmTeam.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
@@ -280,14 +285,14 @@ class ApiClient {
   // ------------------------------------------------------------- providers ---
 
   Future<List<AIProvider>> providers() async {
-    final data = await _get('/api/providers') as List;
+    final data = await _get('/api/providers') as List? ?? const [];
     return data
         .map((e) => AIProvider.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
   }
 
   Future<List<AIProvider>> reorderProviders(List<String> ids) async {
-    final data = await _post('/api/providers/reorder', {'ids': ids}) as List;
+    final data = await _post('/api/providers/reorder', {'ids': ids}) as List? ?? const [];
     return data
         .map((e) => AIProvider.fromJson((e as Map).cast<String, dynamic>()))
         .toList();

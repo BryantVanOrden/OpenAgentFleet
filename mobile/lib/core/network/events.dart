@@ -39,6 +39,23 @@ class EventStream {
       final channel =
           WebSocketChannel.connect(_api.eventsUri(instanceId: instanceId));
       _channel = channel;
+
+      // An open socket is what "connected" means. Waiting for the first frame
+      // instead leaves an idle fleet -- no instances, so nothing to broadcast
+      // -- reporting "reconnecting" indefinitely over a perfectly healthy
+      // connection, which is exactly the state a new install starts in.
+      channel.ready.then((_) {
+        // A late callback from a socket we have already replaced or disposed
+        // must not resurrect the indicator.
+        if (_disposed || !identical(_channel, channel)) return;
+        _attempt = 0;
+        _connection.add(true);
+      }).catchError((_) {
+        // A failed handshake also surfaces as a stream error below, and that
+        // path owns the retry; swallowing here just avoids an unhandled
+        // future error and a double reconnect.
+      });
+
       _subscription = channel.stream.listen(
         (frame) {
           _attempt = 0;

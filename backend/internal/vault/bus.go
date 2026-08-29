@@ -138,7 +138,10 @@ func (b *Bus) ListMessages(ctx context.Context, instanceID string, limit int) []
 		limit = 50
 	}
 
-	var out []protocol.PeerMessage
+	// Empty, not nil: a nil slice marshals to JSON null, and clients that
+	// reasonably expect a list then fail on the cast rather than showing
+	// "no messages".
+	out := make([]protocol.PeerMessage, 0)
 	for i := len(b.messages) - 1; i >= 0; i-- {
 		m := b.messages[i]
 		if instanceID == "" || m.ToInstanceID == "broadcast" || m.ToInstanceID == instanceID || m.FromInstanceID == instanceID {

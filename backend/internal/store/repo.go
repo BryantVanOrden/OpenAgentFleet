@@ -63,7 +63,8 @@ func (s *Store) ListUsers(ctx context.Context) ([]protocol.User, error) {
 		return nil, norm(err)
 	}
 	defer rows.Close()
-	var out []protocol.User
+	// Empty rather than nil so the JSON is [] and not null; see vault/bus.go.
+	out := make([]protocol.User, 0)
 	for rows.Next() {
 		var u protocol.User
 		var role string

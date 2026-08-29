@@ -113,7 +113,8 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 func (e *Engine) ListRuns(ctx context.Context, pipelineID string) []protocol.PipelineRun {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	var out []protocol.PipelineRun
+	// Empty rather than nil so the JSON is [] and not null; see bus.go.
+	out := make([]protocol.PipelineRun, 0)
 	for _, r := range e.runs {
 		if pipelineID == "" || r.PipelineID == pipelineID {
 			out = append(out, r)
