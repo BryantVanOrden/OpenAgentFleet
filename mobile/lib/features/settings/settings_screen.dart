@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'host_usage_card.dart';
+import 'providers_screen.dart';
 import '../auth/login_screen.dart';
 import 'theme_card.dart';
 
@@ -86,6 +87,22 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Card(
+            color: Fleet.ink850,
+            child: ListTile(
+              leading: Icon(Icons.hub_outlined, color: Fleet.ink300),
+              title: const Text('AI connections'),
+              subtitle: Text(
+                'Add engines, pick models, set the fallback order',
+                style: TextStyle(color: Fleet.ink400, fontSize: 11),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ProvidersScreen(),
+              )),
             ),
           ),
           const SizedBox(height: 20),

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -208,6 +209,59 @@ func redactAll(list []protocol.Instance) []protocol.Instance {
 // applies at creation — meaning revoking sudo required recreating the
 // container and, with no volume on these sandboxes, discarding the agent's
 // work. See fleet.securityOpts for what that trade costs.
+// handleSetInstanceModels assigns a bot its own ordered model chain.
+//
+// Replaces the list rather than merging: the order IS the setting, and a merge
+// would make "move this model to the top" impossible to express.
+func (s *Server) handleSetInstanceModels(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	inst, err := s.db.Instance(r.Context(), id)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+
+	var req struct {
+		ProviderIDs []string `json:"provider_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Reject unknown providers: a chain pointing at nothing looks configured
+	// and silently falls through to the fleet default.
+	known, err := s.db.ListProviders(r.Context(), false)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	byID := make(map[string]bool, len(known))
+	for _, p := range known {
+		byID[p.ID] = true
+	}
+	seen := make(map[string]bool, len(req.ProviderIDs))
+	chain := make([]string, 0, len(req.ProviderIDs))
+	for _, pid := range req.ProviderIDs {
+		if !byID[pid] {
+			fail(w, http.StatusBadRequest, "no such provider: "+pid)
+			return
+		}
+		if seen[pid] {
+			continue // a duplicate in a fallback order means nothing
+		}
+		seen[pid] = true
+		chain = append(chain, pid)
+	}
+
+	inst.ProviderIDs = chain
+	if err := s.db.UpdateInstance(r.Context(), inst); err != nil {
+		failErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, inst)
+}
+
 func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request) {
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {

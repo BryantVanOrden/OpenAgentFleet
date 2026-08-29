@@ -114,11 +114,32 @@ func (r *Registry) Chain(ctx context.Context, preferred string) ([]Connector, er
 
 // Complete walks the chain until a provider answers. The returned Response
 // carries the provider that actually served the request.
+// CompleteFor runs a request down one bot's own fallback chain.
+//
+// The bot's providers are tried in the order given, then everything else as a
+// safety net: a bot whose assigned model was deleted or is down should degrade
+// to a working model rather than stop being able to think at all. Pass nil to
+// get the fleet-wide order.
+func (r *Registry) CompleteFor(ctx context.Context, providerIDs []string, req Request) (*Response, error) {
+	if len(providerIDs) == 0 {
+		return r.Complete(ctx, "", req)
+	}
+	chain, err := r.ChainFor(ctx, providerIDs)
+	if err != nil {
+		return nil, err
+	}
+	return r.complete(ctx, chain, req)
+}
+
 func (r *Registry) Complete(ctx context.Context, preferred string, req Request) (*Response, error) {
 	chain, err := r.Chain(ctx, preferred)
 	if err != nil {
 		return nil, err
 	}
+	return r.complete(ctx, chain, req)
+}
+
+func (r *Registry) complete(ctx context.Context, chain []Connector, req Request) (*Response, error) {
 	var errs []error
 	for _, c := range chain {
 		// Vision-blind providers cannot see the desktop; skip them when the
@@ -142,6 +163,42 @@ func (r *Registry) Complete(ctx context.Context, preferred string, req Request) 
 		return nil, fmt.Errorf("%w: no vision-capable provider is enabled", ErrNoProvider)
 	}
 	return nil, errors.Join(errs...)
+}
+
+// ChainFor orders the connectors by a bot's own preference.
+//
+// Assigned providers come first in the order the operator put them in; the
+// rest follow so an agent is never left with nothing to think with. A provider
+// that no longer exists is simply skipped rather than being an error, because
+// deleting a provider must not break every bot that once referenced it.
+func (r *Registry) ChainFor(ctx context.Context, providerIDs []string) ([]Connector, error) {
+	all, err := r.Chain(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	byID := make(map[string]Connector, len(all))
+	for _, c := range all {
+		byID[c.ID()] = c
+	}
+
+	out := make([]Connector, 0, len(all))
+	taken := make(map[string]bool, len(providerIDs))
+	for _, id := range providerIDs {
+		if c, ok := byID[id]; ok && !taken[id] {
+			out = append(out, c)
+			taken[id] = true
+		}
+	}
+	for _, c := range all {
+		if !taken[c.ID()] {
+			out = append(out, c)
+		}
+	}
+	if len(out) == 0 {
+		return nil, ErrNoProvider
+	}
+	return out, nil
 }
 
 func hasImage(req Request) bool {
@@ -194,4 +251,24 @@ func (r *Registry) Probe(ctx context.Context, id string) error {
 		DisableThinking: true,
 	})
 	return err
+}
+
+// PreferredChain puts an explicit per-request choice at the head of a bot's own
+// chain.
+//
+// A task pinned to one provider still falls back down that bot's list rather
+// than to the fleet default, which is what makes "this agent uses these models,
+// in this order" hold even for a one-off run.
+func PreferredChain(preferred string, botChain []string) []string {
+	if preferred == "" {
+		return botChain
+	}
+	out := make([]string, 0, len(botChain)+1)
+	out = append(out, preferred)
+	for _, id := range botChain {
+		if id != preferred {
+			out = append(out, id)
+		}
+	}
+	return out
 }

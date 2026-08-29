@@ -80,6 +80,12 @@ class ApiClient {
     return res.data;
   }
 
+  Future<dynamic> _put(String path, [Object? body]) async {
+    final res = await _dio.put(path, data: body, options: _auth);
+    if (res.statusCode! >= 400) _fail(res);
+    return res.data;
+  }
+
   Future<dynamic> _patch(String path, [Object? body]) async {
     final res = await _dio.patch(path, data: body, options: _auth);
     if (res.statusCode! >= 400) _fail(res);
@@ -530,6 +536,62 @@ class ApiClient {
     return data
         .map((e) => AIProvider.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
+  }
+
+  /// Create or update a connection. Passing an existing id edits it.
+  Future<AIProvider> saveProvider(AIProvider p) async {
+    final body = {
+      'id': p.id,
+      'name': p.name,
+      'kind': p.kind,
+      'model': p.model,
+      'base_url': p.baseUrl,
+      'vision': p.vision,
+      'priority': p.priority,
+      'enabled': p.enabled,
+    };
+    final data = p.id.isEmpty
+        ? await _post('/api/providers', body) as Map
+        : await _put('/api/providers/${p.id}', body) as Map;
+    return AIProvider.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteProvider(String id) => _delete('/api/providers/$id');
+
+  /// Check a connection actually answers. Returns the server's report.
+  Future<Map<String, dynamic>> probeProvider(String id) async {
+    final data = await _post('/api/providers/$id/probe') as Map;
+    return data.cast<String, dynamic>();
+  }
+
+  /// Models a connection can actually serve, asked of the engine itself rather
+  /// than typed in by hand.
+  Future<List<String>> ollamaModels({String? baseUrl}) async {
+    final data = await _get('/api/providers/ollama/models',
+        query: baseUrl == null || baseUrl.isEmpty
+            ? null
+            : {'base_url': baseUrl});
+    if (data is List) return data.map((e) => _modelName(e)).toList();
+    if (data is Map) {
+      final list = (data['models'] as List?) ?? const [];
+      return list.map((e) => _modelName(e)).toList();
+    }
+    return const [];
+  }
+
+  static String _modelName(dynamic e) {
+    if (e is String) return e;
+    if (e is Map) return '${e['name'] ?? e['id'] ?? e['model'] ?? ''}';
+    return '$e';
+  }
+
+  /// Assign a bot its own ordered model chain. Replaces the list; the order is
+  /// the fallback order.
+  Future<Instance> setInstanceModels(
+      String instanceId, List<String> providerIds) async {
+    final data = await _put('/api/instances/$instanceId/models',
+        {'provider_ids': providerIds}) as Map;
+    return Instance.fromJson(data.cast<String, dynamic>());
   }
 
   Future<List<AIProvider>> reorderProviders(List<String> ids) async {

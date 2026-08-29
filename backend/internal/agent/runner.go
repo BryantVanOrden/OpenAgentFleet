@@ -236,17 +236,19 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 
 		obsKey := r.storeObservation(ctx, task, obs)
 
-		resp, err := r.models.Complete(ctx, task.ProviderID, connectors.Request{
-			System:   buildSystem(inst, mountedTools),
-			JSONOnly: true,
-			Messages: []connectors.Message{{
-				Role: connectors.RoleUser,
-				Text: buildTurn(task, skill, obs, history, humanReply,
-					r.peerContext(ctx, inst.ID)),
-				Image:     obs.ScreenshotB64,
-				ImageMime: "image/webp",
-			}},
-		})
+		// This bot's own model chain, with any per-task pin at the head.
+		resp, err := r.models.CompleteFor(ctx,
+			connectors.PreferredChain(task.ProviderID, inst.ProviderIDs), connectors.Request{
+				System:   buildSystem(inst, mountedTools),
+				JSONOnly: true,
+				Messages: []connectors.Message{{
+					Role: connectors.RoleUser,
+					Text: buildTurn(task, skill, obs, history, humanReply,
+						r.peerContext(ctx, inst.ID)),
+					Image:     obs.ScreenshotB64,
+					ImageMime: "image/webp",
+				}},
+			})
 		humanReply = "" // consumed
 		if err != nil {
 			if errors.Is(err, connectors.ErrNoProvider) {

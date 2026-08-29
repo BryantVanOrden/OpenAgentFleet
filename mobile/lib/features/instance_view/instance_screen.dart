@@ -17,6 +17,7 @@ import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../agent_chat/chat_screen.dart';
 import 'memory_screen.dart';
+import 'model_chain_sheet.dart';
 import 'voice_picker.dart';
 
 /// One machine, three views: what it looks like, what it is doing, and talking
@@ -215,6 +216,11 @@ class _ControlMenu extends ConsumerWidget {
         return;
       }
 
+      if (action == 'models') {
+        await ModelChainSheet.show(context, instance);
+        return;
+      }
+
       if (action == 'memory') {
         await navigator.push(MaterialPageRoute(
           builder: (_) => BotMemoryScreen(
@@ -297,6 +303,17 @@ class _ControlMenu extends ConsumerWidget {
             subtitle: Text(
               instance.voice.isEmpty ? 'App default' : instance.voice,
             ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'models',
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('Models'),
+            subtitle: Text(instance.providerIds.isEmpty
+                ? 'Using the fleet order'
+                : '${instance.providerIds.length} assigned'),
           ),
         ),
         const PopupMenuItem(

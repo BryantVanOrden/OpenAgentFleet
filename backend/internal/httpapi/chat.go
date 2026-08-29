@@ -169,18 +169,19 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		maxTokens = 900
 	}
 
-	resp, err := s.models.Complete(r.Context(), req.ProviderID, connectors.Request{
-		System:   system,
-		Messages: msgs,
-		// A reasoning model spends its budget on a hidden thinking pass and
-		// then has nothing left to say: measured, qwen3.5 burned 489 of 500
-		// tokens thinking about "how is it going" and returned empty content
-		// once a screenshot and history were added. Neither of these modes
-		// wants hidden reasoning anyway -- in plan mode the reasoning IS the
-		// answer, and it belongs in the reply the operator reads.
-		DisableThinking: true,
-		MaxTokens:       maxTokens,
-	})
+	resp, err := s.models.CompleteFor(r.Context(),
+		connectors.PreferredChain(req.ProviderID, inst.ProviderIDs), connectors.Request{
+			System:   system,
+			Messages: msgs,
+			// A reasoning model spends its budget on a hidden thinking pass and
+			// then has nothing left to say: measured, qwen3.5 burned 489 of 500
+			// tokens thinking about "how is it going" and returned empty content
+			// once a screenshot and history were added. Neither of these modes
+			// wants hidden reasoning anyway -- in plan mode the reasoning IS the
+			// answer, and it belongs in the reply the operator reads.
+			DisableThinking: true,
+			MaxTokens:       maxTokens,
+		})
 	if err != nil {
 		failErr(w, err)
 		return

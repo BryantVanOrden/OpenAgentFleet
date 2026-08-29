@@ -134,7 +134,7 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// paraphrase of the question.
 	status := s.recentActivity(ctx, inst)
 
-	resp, err := s.models.Complete(ctx, "", connectors.Request{
+	resp, err := s.models.CompleteFor(ctx, inst.ProviderIDs, connectors.Request{
 		System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
 			"desktop agents, reporting to your operator. " + scope +
 			" was messaged.\n\n" + status + "\n\n" +

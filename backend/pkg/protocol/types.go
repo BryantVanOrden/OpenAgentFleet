@@ -89,11 +89,14 @@ type Instance struct {
 	SudoAccess bool `json:"sudo_access"`
 	// Voice this agent speaks in. Empty falls back to the operator's default.
 	// Distinct voices are what make a fleet legible by ear.
-	Voice     string            `json:"voice,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	LastError string            `json:"last_error,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	Voice string `json:"voice,omitempty"`
+	// ProviderIDs is this bot's own model fallback chain, most preferred first.
+	// Empty means the fleet-wide order, which is what every bot had before.
+	ProviderIDs []string          `json:"provider_ids,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	LastError   string            `json:"last_error,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // EgressPolicy constrains what the sandbox may talk to. An empty Allow list

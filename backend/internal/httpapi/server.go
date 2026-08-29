@@ -123,6 +123,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/vault/sessions", auth(roleOperator, s.handleSaveSharedSession))
 	mux.Handle("GET /api/vault/comms", auth(roleAny, s.handleListPeerMessages))
 	mux.Handle("POST /api/vault/comms", auth(roleOperator, s.handleSendPeerMessage))
+	// A bot's own model fallback chain.
+	mux.Handle("PUT /api/instances/{id}/models", auth(roleOperator, s.handleSetInstanceModels))
 	// What each bot has chosen to remember, and a way to take one back out.
 	mux.Handle("GET /api/instances/{id}/memories", auth(roleAny, s.handleListInstanceMemories))
 	mux.Handle("DELETE /api/instances/{id}/memories/{memoryId}", auth(roleOperator, s.handleForgetMemory))

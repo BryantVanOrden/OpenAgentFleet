@@ -39,6 +39,7 @@ class Instance {
     required this.profile,
     required this.shellAccess,
     this.sudoAccess = false,
+    this.providerIds = const [],
     this.voice = '',
     required this.createdAt,
     this.lastError = '',
@@ -53,6 +54,10 @@ class Instance {
 
   /// Whether sudo works inside this sandbox.
   final bool sudoAccess;
+
+  /// This bot's own model fallback chain, most preferred first. Empty means
+  /// the fleet-wide order.
+  final List<String> providerIds;
 
   /// Voice this agent speaks in. Empty uses the app-wide default. Per agent so
   /// a fleet is legible by ear rather than every bot sounding identical.
@@ -72,6 +77,9 @@ class Instance {
         ),
         shellAccess: j['shell_access'] as bool? ?? false,
         sudoAccess: j['sudo_access'] as bool? ?? false,
+        providerIds: ((j['provider_ids'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(growable: false),
         voice: j['voice'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
