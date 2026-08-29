@@ -283,7 +283,7 @@ class ApiClient {
   }
 
   Future<void> deleteSharedSecret(String key) =>
-      _dio.delete('/api/vault/secrets/${Uri.encodeComponent(key)}');
+      _delete('/api/vault/secrets/${Uri.encodeComponent(key)}');
 
   Future<List<SharedSession>> sharedSessions({String? domain}) async {
     final data = await _get('/api/vault/sessions',
