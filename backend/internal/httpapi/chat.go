@@ -242,6 +242,9 @@ func orDash(s string) string {
 // load, and the plan text becomes the task's goal so the run is anchored to
 // what was actually agreed rather than to the original one-line request.
 func (s *Server) handleApprovePlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermChat); !ok {
+		return
+	}
 	instanceID := r.PathValue("instanceID")
 	planID := r.PathValue("planID")
 
@@ -292,6 +295,9 @@ func (s *Server) handleApprovePlan(w http.ResponseWriter, r *http.Request) {
 
 // handleDiscardPlan closes a plan without running it.
 func (s *Server) handleDiscardPlan(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermChat); !ok {
+		return
+	}
 	if err := s.db.SetPlanState(r.Context(), r.PathValue("planID"), "discarded"); err != nil {
 		failErr(w, err)
 		return

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
 // Managing the chats you have with one bot.
@@ -15,6 +16,9 @@ import (
 // every conversation you had ever had with that agent.
 
 func (s *Server) handleListChatSessions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermRead); !ok {
+		return
+	}
 	id := r.PathValue("instanceID")
 	if _, err := s.db.Instance(r.Context(), id); err != nil {
 		failErr(w, err)
@@ -34,6 +38,9 @@ type chatSessionReq struct {
 }
 
 func (s *Server) handleCreateChatSession(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermChat); !ok {
+		return
+	}
 	id := r.PathValue("instanceID")
 	if _, err := s.db.Instance(r.Context(), id); err != nil {
 		failErr(w, err)
@@ -53,6 +60,9 @@ func (s *Server) handleCreateChatSession(w http.ResponseWriter, r *http.Request)
 
 // handleUpdateChatSession renames or pins a chat.
 func (s *Server) handleUpdateChatSession(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermChat); !ok {
+		return
+	}
 	instanceID := r.PathValue("instanceID")
 	chatID := r.PathValue("chatID")
 
@@ -108,6 +118,9 @@ func (s *Server) handleUpdateChatSession(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleDeleteChatSession(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("instanceID"), protocol.PermChat); !ok {
+		return
+	}
 	instanceID := r.PathValue("instanceID")
 	chatID := r.PathValue("chatID")
 

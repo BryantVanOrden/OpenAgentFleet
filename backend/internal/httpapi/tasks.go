@@ -84,10 +84,34 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+
+	// Filtered to the bots the caller may see. A task carries its goal, which
+	// is often the most revealing thing in the system — "rotate the production
+	// database credentials" tells you plenty without any other access.
+	instances, err := s.db.ListInstances(r.Context())
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	orgOf := make(map[string]string, len(instances))
+	for _, in := range instances {
+		orgOf[in.ID] = in.OrgID
+	}
+	acc := accessFrom(r.Context())
+
+	out := make([]protocol.Task, 0, len(list))
+	for _, t := range list {
+		if acc.Can(protocol.PermRead, orgOf[t.InstanceID], t.InstanceID) {
+			out = append(out, t)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermForTask(w, r, r.PathValue("id"), protocol.PermRead); !ok {
+		return
+	}
 	t, err := s.db.Task(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)
@@ -99,6 +123,9 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTaskSteps(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermForTask(w, r, r.PathValue("id"), protocol.PermRead); !ok {
+		return
+	}
 	steps, err := s.db.ListSteps(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)
@@ -108,6 +135,9 @@ func (s *Server) handleTaskSteps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermForTask(w, r, r.PathValue("id"), protocol.PermChat); !ok {
+		return
+	}
 	id := r.PathValue("id")
 	if !s.runner.Cancel(id) {
 		// Not in flight here — mark it cancelled anyway so a task orphaned by a
@@ -126,6 +156,9 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 
 // handleSynthesizeSkill extracts a reusable SKILL.md from any completed task run.
 func (s *Server) handleSynthesizeSkill(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermForTask(w, r, r.PathValue("id"), protocol.PermRead); !ok {
+		return
+	}
 	taskID := r.PathValue("id")
 	t, err := s.db.Task(r.Context(), taskID)
 	if err != nil {

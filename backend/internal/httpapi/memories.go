@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
+	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
 // What a bot has chosen to keep.
@@ -14,6 +15,9 @@ import (
 // conclusion indefinitely with nobody able to look, let alone correct it.
 
 func (s *Server) handleListInstanceMemories(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermRead); !ok {
+		return
+	}
 	id := r.PathValue("id")
 	if _, err := s.db.Instance(r.Context(), id); err != nil {
 		failErr(w, err)
@@ -32,6 +36,9 @@ func (s *Server) handleListInstanceMemories(w http.ResponseWriter, r *http.Reque
 
 // handleForgetMemory removes one memory from a bot.
 func (s *Server) handleForgetMemory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermEdit); !ok {
+		return
+	}
 	if !memory.GlobalEngine.Forget(r.Context(), r.PathValue("memoryId")) {
 		fail(w, http.StatusNotFound, "no such memory")
 		return

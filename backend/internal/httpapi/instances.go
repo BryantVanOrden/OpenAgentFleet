@@ -121,6 +121,9 @@ func (s *Server) handleDeleteInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInstanceStats(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermView); !ok {
+		return
+	}
 	st, err := s.fleet.Stats(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)
@@ -133,6 +136,9 @@ func (s *Server) handleInstanceStats(w http.ResponseWriter, r *http.Request) {
 // app uses it as a cheap poll when the operator does not want a live stream on
 // a metered connection.
 func (s *Server) handleObserve(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermRead); !ok {
+		return
+	}
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)
@@ -159,6 +165,9 @@ func (s *Server) handleObserve(w http.ResponseWriter, r *http.Request) {
 // through the same action vocabulary the agent uses, which means the audit trail
 // stays uniform whoever was at the controls.
 func (s *Server) handleManualAct(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermDesktop); !ok {
+		return
+	}
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)

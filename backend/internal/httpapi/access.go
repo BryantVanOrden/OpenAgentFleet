@@ -131,3 +131,33 @@ func (s *Server) speakerOf(r *http.Request) speaker {
 	}
 	return speaker{ID: c.Subject, Name: name}
 }
+
+// requirePermForTask checks a permission against the bot a task belongs to.
+//
+// A task is addressed by its own id, so the bot behind it has to be looked up
+// before the question can even be asked. Without this, task detail and task
+// cancellation were reachable across departments by anyone who knew an id.
+func (s *Server) requirePermForTask(w http.ResponseWriter, r *http.Request, taskID string, perm protocol.Permission) (*protocol.Task, bool) {
+	task, err := s.db.Task(r.Context(), taskID)
+	if err != nil {
+		failErr(w, err)
+		return nil, false
+	}
+	inst, err := s.db.Instance(r.Context(), task.InstanceID)
+	if err != nil {
+		failErr(w, err)
+		return nil, false
+	}
+	acc := accessFrom(r.Context())
+
+	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+		fail(w, http.StatusNotFound, "no such task")
+		return nil, false
+	}
+	if !acc.Can(perm, inst.OrgID, inst.ID) {
+		fail(w, http.StatusForbidden,
+			"you do not have permission to "+string(perm)+" this bot")
+		return nil, false
+	}
+	return task, true
+}

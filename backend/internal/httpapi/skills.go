@@ -65,6 +65,9 @@ func (s *Server) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------- recording studio ---
 
 func (s *Server) handleRecordStart(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermDesktop); !ok {
+		return
+	}
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)
@@ -92,6 +95,9 @@ func (s *Server) handleRecordStart(w http.ResponseWriter, r *http.Request) {
 // events are kept as an artifact so a compilation change can be re-run later
 // without asking the human to demonstrate again.
 func (s *Server) handleRecordStop(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermDesktop); !ok {
+		return
+	}
 	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
 	if err != nil {
 		failErr(w, err)
