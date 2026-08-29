@@ -604,15 +604,30 @@ const (
 
 // Provider is a configured model endpoint.
 type Provider struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Kind        ProviderKind `json:"kind"`
-	BaseURL     string       `json:"base_url,omitempty"`
-	Model       string       `json:"model"`
-	APIKeyRef   string       `json:"api_key_ref,omitempty"` // vault key, never the secret
-	Vision      bool         `json:"vision"`
-	Temperature float64      `json:"temperature"`
-	MaxTokens   int          `json:"max_tokens"`
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Kind      ProviderKind `json:"kind"`
+	BaseURL   string       `json:"base_url,omitempty"`
+	Model     string       `json:"model"`
+	APIKeyRef string       `json:"api_key_ref,omitempty"` // vault key, never the secret
+	// AuthMode is "api_key" or "oauth". OAuth exists for providers whose
+	// entitlement belongs to an account rather than to a key.
+	AuthMode string `json:"auth_mode,omitempty"`
+	// OAuthClientID is not a secret; the client secret and refresh token live
+	// in the vault under OAuthTokenRef.
+	OAuthClientID string `json:"oauth_client_id,omitempty"`
+	OAuthTokenRef string `json:"oauth_token_ref,omitempty"`
+	// OAuth endpoints. Empty falls back to Google's, which is what the
+	// google-flavoured provider kinds use.
+	OAuthDeviceURL string `json:"oauth_device_url,omitempty"`
+	OAuthTokenURL  string `json:"oauth_token_url,omitempty"`
+	OAuthScope     string `json:"oauth_scope,omitempty"`
+	// SignedIn is computed on read so the app can show sign-in state without
+	// ever being handed the token.
+	SignedIn    bool    `json:"signed_in,omitempty"`
+	Vision      bool    `json:"vision"`
+	Temperature float64 `json:"temperature"`
+	MaxTokens   int     `json:"max_tokens"`
 	// Priority orders the fallback chain; lower runs first.
 	Priority  int       `json:"priority"`
 	Enabled   bool      `json:"enabled"`

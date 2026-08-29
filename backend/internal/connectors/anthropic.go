@@ -23,6 +23,9 @@ type anthropic struct {
 	base string
 	key  string
 	hc   *http.Client
+	// tokens is set when the provider is signed in with an account rather than
+	// carrying an API key.
+	tokens *GoogleTokenSource
 }
 
 func (c *anthropic) ID() string   { return c.p.ID }
@@ -108,7 +111,18 @@ func (c *anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", anthropicVersion)
-	httpReq.Header.Set("x-api-key", c.key)
+
+	// A sign-in and a key are alternatives, not a fallback pair: sending both
+	// lets a stale key mask a working sign-in.
+	if c.tokens != nil {
+		token, err := c.tokens.Token(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", c.p.Name, err)
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	} else {
+		httpReq.Header.Set("x-api-key", c.key)
+	}
 
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {

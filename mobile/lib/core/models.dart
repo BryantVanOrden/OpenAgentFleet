@@ -737,6 +737,9 @@ class AIProvider {
     this.priority = 100,
     this.enabled = true,
     this.apiKeyRef = '',
+    this.authMode = 'api_key',
+    this.oauthClientId = '',
+    this.signedIn = false,
   });
 
   final String id;
@@ -754,6 +757,16 @@ class AIProvider {
 
   bool get hasKey => apiKeyRef.isNotEmpty;
 
+  /// 'api_key' or 'oauth'.
+  final String authMode;
+  final String oauthClientId;
+
+  /// Whether an account sign-in is stored. The token itself never leaves the
+  /// server, so this is all the app is told.
+  final bool signedIn;
+
+  bool get usesOAuth => authMode == 'oauth';
+
   factory AIProvider.fromJson(Map<String, dynamic> j) => AIProvider(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
@@ -764,6 +777,9 @@ class AIProvider {
         priority: (j['priority'] as num?)?.toInt() ?? 100,
         enabled: j['enabled'] as bool? ?? true,
         apiKeyRef: j['api_key_ref'] as String? ?? '',
+        authMode: j['auth_mode'] as String? ?? 'api_key',
+        oauthClientId: j['oauth_client_id'] as String? ?? '',
+        signedIn: j['signed_in'] as bool? ?? false,
       );
 }
 

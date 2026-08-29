@@ -21,6 +21,9 @@ type gemini struct {
 	base string
 	key  string
 	hc   *http.Client
+	// tokens is set when the provider is signed in with an account instead of
+	// carrying an API key. It yields a fresh access token per request.
+	tokens *GoogleTokenSource
 }
 
 func (c *gemini) ID() string   { return c.p.ID }
@@ -118,11 +121,25 @@ func (c *gemini) Complete(ctx context.Context, req Request) (*Response, error) {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-goog-api-key", c.key)
+
+	// An account sign-in and an API key are alternatives, not a fallback pair:
+	// sending both lets a stale key mask a working sign-in, and the failure
+	// then looks like the sign-in is broken.
+	secret := c.key
+	if c.tokens != nil {
+		token, err := c.tokens.Token(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", c.p.Name, err)
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+		secret = token
+	} else {
+		httpReq.Header.Set("x-goog-api-key", c.key)
+	}
 
 	resp, err := c.hc.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", c.p.Name, redactKey(err, c.key))
+		return nil, fmt.Errorf("%s: %w", c.p.Name, redactKey(err, secret))
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))

@@ -46,6 +46,10 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
     'openai-compatible',
   };
 
+  /// Engines that can be signed into with an account instead. Offered only
+  /// where it actually works, so the choice is never a dead end.
+  static const _canSignIn = {'gemini', 'antigravity'};
+
   late final _name =
       TextEditingController(text: widget.existing?.name ?? '');
   late final _baseUrl = TextEditingController(
@@ -60,6 +64,7 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
   /// the field stays closed, because the stored key cannot be read back and an
   /// empty box would look like "no key set".
   bool _replacingKey = false;
+  late String _authMode = widget.existing?.authMode ?? 'api_key';
   late bool _vision = widget.existing?.vision ?? true;
   late bool _enabled = widget.existing?.enabled ?? true;
 
@@ -127,7 +132,8 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
       );
       return;
     }
-    if (_needsKey.contains(_kind) &&
+    if (_authMode == 'api_key' &&
+        _needsKey.contains(_kind) &&
         _apiKey.text.trim().isEmpty &&
         !(widget.existing?.hasKey ?? false)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -153,6 +159,9 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
             priority: widget.existing?.priority ?? 100,
             enabled: _enabled,
             apiKeyRef: widget.existing?.apiKeyRef ?? '',
+            authMode: _authMode,
+            oauthClientId: widget.existing?.oauthClientId ?? '',
+            signedIn: widget.existing?.signedIn ?? false,
           ));
       navigator.pop(true);
     } catch (err) {
@@ -225,7 +234,56 @@ class _ProviderEditSheetState extends ConsumerState<ProviderEditSheet> {
               ),
               onEditingComplete: _loadModels,
             ),
-            if (_needsKey.contains(_kind)) ...[
+            if (_canSignIn.contains(_kind)) ...[
+              const SizedBox(height: 14),
+              Text('HOW TO AUTHENTICATE',
+                  style: TextStyle(
+                      color: Fleet.ink400,
+                      fontSize: 10,
+                      letterSpacing: 0.6,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'api_key', label: Text('API key')),
+                  ButtonSegment(value: 'oauth', label: Text('Sign in')),
+                ],
+                selected: {_authMode},
+                onSelectionChanged: (v) =>
+                    setState(() => _authMode = v.first),
+                showSelectedIcon: false,
+              ),
+              if (_authMode == 'oauth') ...[
+                const SizedBox(height: 12),
+                if (widget.existing == null)
+                  Text(
+                    'Save the connection first, then sign in to it from the '
+                    'list. Signing in needs somewhere to store the result.',
+                    style: TextStyle(
+                        color: Fleet.ink400, fontSize: 11.5, height: 1.45),
+                  )
+                else if (widget.existing!.signedIn)
+                  Row(
+                    children: [
+                      Icon(Icons.verified_user_outlined,
+                          size: 15, color: Fleet.good),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Signed in with a Google account.',
+                            style: TextStyle(
+                                color: Fleet.ink300, fontSize: 12)),
+                      ),
+                    ],
+                  )
+                else
+                  Text(
+                    'Not signed in yet — use "Sign in" from the connection\'s '
+                    'menu in the list.',
+                    style: TextStyle(color: Fleet.warn, fontSize: 11.5),
+                  ),
+              ],
+            ],
+            if (_needsKey.contains(_kind) && _authMode == 'api_key') ...[
               const SizedBox(height: 12),
               if ((widget.existing?.hasKey ?? false) && !_replacingKey)
                 Row(

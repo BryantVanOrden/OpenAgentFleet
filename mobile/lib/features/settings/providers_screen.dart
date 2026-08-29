@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'provider_edit_sheet.dart';
+import 'provider_signin_sheet.dart';
 
 /// The AI engines the fleet can think with.
 ///
@@ -72,6 +73,49 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
       await _refresh();
+    }
+  }
+
+  Future<void> _signIn(AIProvider p) async {
+    final ok = await ProviderSignInSheet.show(context, p);
+    if (!mounted) return;
+    if (ok == true) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Signed in to ${p.name}')));
+    }
+    await _refresh();
+  }
+
+  Future<void> _signOut(AIProvider p) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Sign out of ${p.name}?'),
+        content: const Text(
+          'The stored sign-in is deleted from the server vault and the '
+          'connection goes back to using an API key. Bots pointed at it fall '
+          'through to the next connection until you sign in again.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(apiProvider).providerSignOut(p.id);
+      await _refresh();
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text('$err')));
     }
   }
 
@@ -216,6 +260,10 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
             if (first) _chip('FIRST', Fleet.good),
             if (!p.enabled) _chip('OFF', Fleet.ink500),
             if (!p.vision) _chip('NO VISION', Fleet.warn),
+            // A connection set to sign in but never signed into looks
+            // configured and fails every request; say so on the row.
+            if (p.usesOAuth && !p.signedIn) _chip('SIGN IN', Fleet.warn),
+            if (p.usesOAuth && p.signedIn) _chip('ACCOUNT', Fleet.cool),
           ],
         ),
         subtitle: Text(
@@ -233,9 +281,20 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
           onSelected: (a) => switch (a) {
             'edit' => _edit(p),
             'probe' => _probe(p),
+            'signin' => _signIn(p),
+            'signout' => _signOut(p),
             _ => _delete(p),
           },
           itemBuilder: (_) => [
+            if (p.usesOAuth)
+              PopupMenuItem(
+                value: p.signedIn ? 'signout' : 'signin',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(p.signedIn ? Icons.logout : Icons.login),
+                  title: Text(p.signedIn ? 'Sign out' : 'Sign in with Google'),
+                ),
+              ),
             const PopupMenuItem(
               value: 'edit',
               child: ListTile(

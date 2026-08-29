@@ -172,6 +172,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/providers/{id}", auth(roleAdmin, s.handleDeleteProvider))
 	mux.Handle("POST /api/providers/reorder", auth(roleAdmin, s.handleReorderProviders))
 	mux.Handle("POST /api/providers/{id}/probe", auth(roleAdmin, s.handleProbeProvider))
+	// Signing in with an account rather than pasting a key.
+	mux.Handle("POST /api/providers/{id}/signin", auth(roleAdmin, s.handleStartProviderSignIn))
+	mux.Handle("GET /api/providers/{id}/signin", auth(roleAdmin, s.handleProviderSignInStatus))
+	mux.Handle("DELETE /api/providers/{id}/signin", auth(roleAdmin, s.handleProviderSignOut))
 	// Model discovery for any provider kind. The two routes below it predate
 	// this one and are kept so existing clients keep working; new code should
 	// use this, which covers every kind rather than two special cases.

@@ -130,17 +130,24 @@ func (s *Store) UpsertProvider(ctx context.Context, p *protocol.Provider) error 
 		p.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO providers(id,name,kind,base_url,model,api_key_ref,vision,temperature,max_tokens,priority,enabled,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12, now()))
+		`INSERT INTO providers(id,name,kind,base_url,model,api_key_ref,vision,temperature,max_tokens,priority,enabled,created_at,
+             auth_mode,oauth_client_id,oauth_token_ref,oauth_device_url,oauth_token_url,oauth_scope)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12, now()),$13,$14,$15,$16,$17,$18)
          ON CONFLICT (id) DO UPDATE SET name=$2,kind=$3,base_url=$4,model=$5,api_key_ref=$6,
-             vision=$7,temperature=$8,max_tokens=$9,priority=$10,enabled=$11`,
+             vision=$7,temperature=$8,max_tokens=$9,priority=$10,enabled=$11,
+             auth_mode=$13,oauth_client_id=$14,oauth_token_ref=$15,
+             oauth_device_url=$16,oauth_token_url=$17,oauth_scope=$18`,
 		p.ID, p.Name, string(p.Kind), p.BaseURL, p.Model, p.APIKeyRef, p.Vision,
-		p.Temperature, p.MaxTokens, p.Priority, p.Enabled, nullTime(p.CreatedAt))
+		p.Temperature, p.MaxTokens, p.Priority, p.Enabled, nullTime(p.CreatedAt),
+		authModeOr(p.AuthMode), p.OAuthClientID, p.OAuthTokenRef,
+		p.OAuthDeviceURL, p.OAuthTokenURL, p.OAuthScope)
 	return norm(err)
 }
 
 func (s *Store) ListProviders(ctx context.Context, onlyEnabled bool) ([]protocol.Provider, error) {
-	q := `SELECT id,name,kind,base_url,model,api_key_ref,vision,temperature,max_tokens,priority,enabled,created_at
+	q := `SELECT id,name,kind,base_url,model,api_key_ref,vision,temperature,max_tokens,priority,enabled,created_at,
+          COALESCE(auth_mode,'api_key'),COALESCE(oauth_client_id,''),COALESCE(oauth_token_ref,''),
+          COALESCE(oauth_device_url,''),COALESCE(oauth_token_url,''),COALESCE(oauth_scope,'')
           FROM providers`
 	if onlyEnabled {
 		q += ` WHERE enabled`
@@ -156,10 +163,13 @@ func (s *Store) ListProviders(ctx context.Context, onlyEnabled bool) ([]protocol
 		var p protocol.Provider
 		var kind string
 		if err := rows.Scan(&p.ID, &p.Name, &kind, &p.BaseURL, &p.Model, &p.APIKeyRef,
-			&p.Vision, &p.Temperature, &p.MaxTokens, &p.Priority, &p.Enabled, &p.CreatedAt); err != nil {
+			&p.Vision, &p.Temperature, &p.MaxTokens, &p.Priority, &p.Enabled, &p.CreatedAt,
+			&p.AuthMode, &p.OAuthClientID, &p.OAuthTokenRef,
+			&p.OAuthDeviceURL, &p.OAuthTokenURL, &p.OAuthScope); err != nil {
 			return nil, err
 		}
 		p.Kind = protocol.ProviderKind(kind)
+		p.SignedIn = p.OAuthTokenRef != ""
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -169,14 +179,19 @@ func (s *Store) Provider(ctx context.Context, id string) (*protocol.Provider, er
 	var p protocol.Provider
 	var kind string
 	err := s.pool.QueryRow(ctx,
-		`SELECT id,name,kind,base_url,model,api_key_ref,vision,temperature,max_tokens,priority,enabled,created_at
+		`SELECT id,name,kind,base_url,model,api_key_ref,vision,temperature,max_tokens,priority,enabled,created_at,
+         COALESCE(auth_mode,'api_key'),COALESCE(oauth_client_id,''),COALESCE(oauth_token_ref,''),
+         COALESCE(oauth_device_url,''),COALESCE(oauth_token_url,''),COALESCE(oauth_scope,'')
          FROM providers WHERE id=$1`, id).
 		Scan(&p.ID, &p.Name, &kind, &p.BaseURL, &p.Model, &p.APIKeyRef,
-			&p.Vision, &p.Temperature, &p.MaxTokens, &p.Priority, &p.Enabled, &p.CreatedAt)
+			&p.Vision, &p.Temperature, &p.MaxTokens, &p.Priority, &p.Enabled, &p.CreatedAt,
+			&p.AuthMode, &p.OAuthClientID, &p.OAuthTokenRef,
+			&p.OAuthDeviceURL, &p.OAuthTokenURL, &p.OAuthScope)
 	if err != nil {
 		return nil, norm(err)
 	}
 	p.Kind = protocol.ProviderKind(kind)
+	p.SignedIn = p.OAuthTokenRef != ""
 	return &p, nil
 }
 
@@ -765,4 +780,13 @@ func orEmptySlice(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// authModeOr defaults the auth mode, so a provider saved by an older client
+// keeps behaving as a key-authenticated one.
+func authModeOr(mode string) string {
+	if mode == "" {
+		return "api_key"
+	}
+	return mode
 }

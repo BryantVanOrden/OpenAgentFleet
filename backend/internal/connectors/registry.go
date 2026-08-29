@@ -57,7 +57,7 @@ func (r *Registry) Get(ctx context.Context, id string) (Connector, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, err := r.keys.Open(ctx, p.APIKeyRef)
+	key, err := r.keys.Open(ctx, secretRef(*p))
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (r *Registry) Chain(ctx context.Context, preferred string) ([]Connector, er
 	out := make([]Connector, 0, len(providers))
 	var penalised []Connector
 	for _, p := range providers {
-		key, err := r.keys.Open(ctx, p.APIKeyRef)
+		key, err := r.keys.Open(ctx, secretRef(p))
 		if err != nil {
 			r.log.Warn("provider key unavailable, skipping", "provider", p.Name, "err", err)
 			continue
@@ -271,4 +271,17 @@ func PreferredChain(preferred string, botChain []string) []string {
 		}
 	}
 	return out
+}
+
+// secretRef is where a provider's secret lives in the vault.
+//
+// A signed-in provider stores a credential blob under its own ref rather than
+// in api_key_ref, so switching a provider between a key and a sign-in does not
+// overwrite the credential it is not currently using — and switching back does
+// not require re-entering it.
+func secretRef(p protocol.Provider) string {
+	if p.AuthMode == "oauth" && p.OAuthTokenRef != "" {
+		return p.OAuthTokenRef
+	}
+	return p.APIKeyRef
 }

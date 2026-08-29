@@ -99,13 +99,29 @@ func Build(p protocol.Provider, apiKey string, hc *http.Client) (Connector, erro
 		if base == "" {
 			base = "https://api.anthropic.com"
 		}
-		return &anthropic{p: p, base: base, key: apiKey, hc: hc}, nil
+		a := &anthropic{p: p, base: base, key: apiKey, hc: hc}
+		if p.AuthMode == "oauth" {
+			ts, err := tokenSourceFor(p, apiKey, hc)
+			if err != nil {
+				return nil, err
+			}
+			a.key, a.tokens = "", ts
+		}
+		return a, nil
 
 	case protocol.ProviderGemini, protocol.ProviderAntigravity:
 		if base == "" {
 			base = "https://generativelanguage.googleapis.com"
 		}
-		return &gemini{p: p, base: base, key: apiKey, hc: hc}, nil
+		g := &gemini{p: p, base: base, key: apiKey, hc: hc}
+		if p.AuthMode == "oauth" {
+			ts, err := tokenSourceFor(p, apiKey, hc)
+			if err != nil {
+				return nil, err
+			}
+			g.key, g.tokens = "", ts
+		}
+		return g, nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider kind %q", p.Kind)
@@ -121,4 +137,24 @@ func mimeOr(m string) string {
 		return "image/webp"
 	}
 	return m
+}
+
+// tokenSourceFor builds the token source for a signed-in provider.
+//
+// The secret handed to Build is the sealed credential blob rather than an API
+// key. A provider marked as signed in but holding nothing fails here rather
+// than silently sending unauthenticated requests, which would surface much
+// later as a confusing 401 from the model.
+func tokenSourceFor(p protocol.Provider, secret string, hc *http.Client) (*GoogleTokenSource, error) {
+	creds := DecodeGoogleCredentials(secret)
+	if creds.RefreshToken == "" {
+		return nil, fmt.Errorf("%s: signed-in provider has no stored credential; sign in again", p.Name)
+	}
+	return &GoogleTokenSource{
+		ClientID:     p.OAuthClientID,
+		ClientSecret: creds.ClientSecret,
+		RefreshToken: creds.RefreshToken,
+		TokenURL:     p.OAuthTokenURL,
+		HC:           hc,
+	}, nil
 }

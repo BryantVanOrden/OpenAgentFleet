@@ -553,6 +553,8 @@ class ApiClient {
       'vision': p.vision,
       'priority': p.priority,
       'enabled': p.enabled,
+      'auth_mode': p.authMode,
+      if (p.oauthClientId.isNotEmpty) 'oauth_client_id': p.oauthClientId,
       if (p.apiKeyRef.isNotEmpty) 'api_key_ref': p.apiKeyRef,
       if (apiKey.isNotEmpty) 'api_key': apiKey,
     };
@@ -563,6 +565,40 @@ class ApiClient {
   }
 
   Future<void> deleteProvider(String id) => _delete('/api/providers/$id');
+
+  // ------------------------------------------------------ provider sign-in ---
+
+  /// Begin signing in to a provider with a Google account.
+  ///
+  /// Returns the code to show and the URL to open. The device code stays on
+  /// the server; the app only ever handles the short user-facing one.
+  Future<({String userCode, String verificationUrl, int interval})>
+      startProviderSignIn(
+    String id, {
+    required String clientId,
+    String clientSecret = '',
+    String scope = '',
+  }) async {
+    final data = await _post('/api/providers/$id/signin', {
+      'client_id': clientId,
+      'client_secret': clientSecret,
+      if (scope.isNotEmpty) 'scope': scope,
+    }) as Map;
+    return (
+      userCode: '${data['user_code'] ?? ''}',
+      verificationUrl: '${data['verification_url'] ?? ''}',
+      interval: (data['interval'] as num?)?.toInt() ?? 5,
+    );
+  }
+
+  /// Poll while the operator approves. Returns true once signed in.
+  Future<bool> providerSignInComplete(String id) async {
+    final data = await _get('/api/providers/$id/signin') as Map;
+    return data['status'] == 'signed_in';
+  }
+
+  Future<void> providerSignOut(String id) =>
+      _delete('/api/providers/$id/signin');
 
   /// Check a connection actually answers. Returns the server's report.
   Future<Map<String, dynamic>> probeProvider(String id) async {
