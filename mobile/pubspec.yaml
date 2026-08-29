@@ -25,6 +25,11 @@ dependencies:
   webview_flutter_android: ^4.3.2
   webview_flutter_wkwebview: ^3.17.0
 
+  # Opening the desktop in the system browser on platforms with no embeddable
+  # webview — Linux and Windows. There, a real browser is the better client
+  # anyway: full keyboard, real mouse, its own window.
+  url_launcher: ^6.3.1
+
   # Voice. On-device rather than server-side: Android and iOS both ship good
   # recognisers and synthesisers, the backend has no STT/TTS provider, and the
   # sandbox's "TTS" is a sine-wave generator, not speech. Keeping it on-device

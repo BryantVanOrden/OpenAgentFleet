@@ -5,7 +5,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show Factory, kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/models.dart';
@@ -329,8 +331,74 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
     }
   }
 
+  /// webview_flutter has no Linux or Windows implementation, so the desktop
+  /// cannot be embedded there.
   static bool get _canEmbedWebView =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+
+  /// ...but "no embedded view" is not "no takeover". On a desktop there is a
+  /// real browser one launch away, and it is a better VNC client than an
+  /// embedded webview: a proper window, a real keyboard, a real mouse. Only
+  /// the web build has nowhere to send it.
+  static bool get _canOpenExternally => !kIsWeb;
+
+  bool get _canTakeOver => _canEmbedWebView || _canOpenExternally;
+
+  /// Hand the desktop to the system browser.
+  Future<void> _openInBrowser() async {
+    final url = ref.read(apiProvider).desktopUrl(widget.instance.id);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final ok = await launchUrl(Uri.parse(url),
+          mode: LaunchMode.externalApplication);
+      if (!ok && mounted) await _offerUrl(url);
+    } catch (err) {
+      // A desktop whose default browser is missing or misconfigured should not
+      // be a dead end: the URL carries its own auth token, so handing it over
+      // is the whole of what the button was going to do anyway.
+      if (mounted) {
+        await _offerUrl(url);
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text('$err')));
+      }
+    }
+  }
+
+  /// Shown when no browser could be launched: the address, ready to copy.
+  Future<void> _offerUrl(String url) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Fleet.ink850,
+        title: const Text('Open the desktop manually'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'No browser could be launched automatically. Paste this into one:',
+              style: TextStyle(color: Fleet.ink300, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            SelectableText(url, style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: url));
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('Copy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Raise the phone's keyboard for the remote desktop.
   ///
@@ -556,14 +624,24 @@ class _DesktopTabState extends ConsumerState<_DesktopTab> {
                       child: Tooltip(
                         message: _canEmbedWebView
                             ? 'Drive the desktop directly'
-                            : 'Interactive takeover needs an embedded browser',
+                            : _canOpenExternally
+                                ? 'Opens the desktop in your browser'
+                                : 'Takeover is unavailable on this platform',
                         child: FilledButton.icon(
-                          onPressed: (_streaming || !_canEmbedWebView) ? null : _startStream,
+                          onPressed: !_canTakeOver || (_streaming && _canEmbedWebView)
+                              ? null
+                              : _canEmbedWebView
+                                  ? _startStream
+                                  : _openInBrowser,
                           icon: Icon(
-                            _canEmbedWebView ? Icons.cast_connected : Icons.desktop_access_disabled_outlined,
+                            _canEmbedWebView
+                                ? Icons.cast_connected
+                                : _canOpenExternally
+                                    ? Icons.open_in_new
+                                    : Icons.desktop_access_disabled_outlined,
                             size: 18,
                           ),
-                          label: Text(_canEmbedWebView ? 'Take over' : 'Console only'),
+                          label: Text(_canTakeOver ? 'Take over' : 'Unavailable'),
                         ),
                       ),
                     ),
