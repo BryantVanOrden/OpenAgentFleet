@@ -185,3 +185,48 @@ func redactAll(list []protocol.Instance) []protocol.Instance {
 	}
 	return out
 }
+
+// handleSetInstanceAccess toggles what an agent is allowed to do.
+//
+// Only shell_access is settable here, and deliberately so. It is checked by the
+// orchestrator on every shell action, so flipping it takes effect on the next
+// step of a running agent -- which is exactly what you want when a run starts
+// doing something you would rather it could not.
+//
+// sudo_access is not settable: it decides whether the container is created with
+// no-new-privileges, which the kernel applies at creation. Changing it on a
+// running container is not possible, and pretending otherwise would be a switch
+// that silently does nothing. It is chosen when the instance is provisioned.
+func (s *Server) handleSetInstanceAccess(w http.ResponseWriter, r *http.Request) {
+	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+
+	var req struct {
+		ShellAccess *bool `json:"shell_access"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.ShellAccess == nil {
+		fail(w, http.StatusBadRequest, "shell_access is required")
+		return
+	}
+	// The platform-wide kill switch still wins: an operator cannot grant shell
+	// on a deployment that has disabled it entirely.
+	if *req.ShellAccess && !s.cfg.AllowShell {
+		fail(w, http.StatusForbidden, "shell access is disabled for this deployment")
+		return
+	}
+
+	inst.ShellAccess = *req.ShellAccess
+	if err := s.db.UpdateInstance(r.Context(), inst); err != nil {
+		failErr(w, err)
+		return
+	}
+	s.bus.Emit("instance.state", inst.ID, "", inst)
+	writeJSON(w, http.StatusOK, redact(*inst))
+}

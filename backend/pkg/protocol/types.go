@@ -78,15 +78,19 @@ type Instance struct {
 	// VNCViewURL is the same desktop served by a -viewonly VNC server. The
 	// auditor role is proxied here, so "may watch, may not touch" is enforced by
 	// the server rather than by a client-side flag anyone could edit away.
-	VNCViewURL  string            `json:"vnc_view_url,omitempty"`
-	StreamURL   string            `json:"stream_url,omitempty"` // WebRTC signalling
-	AgentdURL   string            `json:"agentd_url,omitempty"` // internal only
-	Egress      EgressPolicy      `json:"egress"`
-	ShellAccess bool              `json:"shell_access"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	LastError   string            `json:"last_error,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	VNCViewURL  string       `json:"vnc_view_url,omitempty"`
+	StreamURL   string       `json:"stream_url,omitempty"` // WebRTC signalling
+	AgentdURL   string       `json:"agentd_url,omitempty"` // internal only
+	Egress      EgressPolicy `json:"egress"`
+	ShellAccess bool         `json:"shell_access"`
+	// SudoAccess drops the container's no-new-privileges option so sudo works
+	// inside the sandbox. Fixed at creation: the kernel applies it when the
+	// container starts, so changing it means recreating the instance.
+	SudoAccess bool              `json:"sudo_access"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	LastError  string            `json:"last_error,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+	UpdatedAt  time.Time         `json:"updated_at"`
 }
 
 // EgressPolicy constrains what the sandbox may talk to. An empty Allow list

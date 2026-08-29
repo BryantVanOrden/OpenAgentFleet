@@ -124,3 +124,15 @@ func TierNames(tiers []protocol.TierProfile) string {
 	}
 	return strings.Join(names, ", ")
 }
+
+// securityOpts returns the container security options for an instance.
+//
+// no-new-privileges is the control that makes sudo fail inside the sandbox;
+// the sudoers deny-list baked into the image is a guardrail behind it, not a
+// boundary. Granting sudo means giving that up, so it is opt-in per instance.
+func securityOpts(sudo bool) []string {
+	if sudo {
+		return nil
+	}
+	return []string{"no-new-privileges"}
+}

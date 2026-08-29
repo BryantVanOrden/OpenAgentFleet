@@ -63,6 +63,7 @@ type CreateRequest struct {
 	Override          *protocol.ResourceOverride `json:"override,omitempty"`
 	Egress            protocol.EgressPolicy      `json:"egress"`
 	ShellAccess       bool                       `json:"shell_access"`
+	SudoAccess        bool                       `json:"sudo_access"`
 	Labels            map[string]string          `json:"labels,omitempty"`
 	OwnerID           string                     `json:"-"`
 }
@@ -110,6 +111,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		Override:          req.Override,
 		Egress:            req.Egress,
 		ShellAccess:       req.ShellAccess && m.cfg.AllowShell,
+		SudoAccess:        req.SudoAccess,
 		Labels:            req.Labels,
 		CreatedAt:         time.Now().UTC(),
 		UpdatedAt:         time.Now().UTC(),
@@ -159,7 +161,13 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 			NetworkMode: m.cfg.SandboxNetwork,
 			// SYS_ADMIN is deliberately absent. NET_ADMIN is only added when the
 			// instance actually carries an egress policy to program.
-			SecurityOpt:   []string{"no-new-privileges"},
+			//
+			// no-new-privileges is what actually stops sudo inside the sandbox:
+			// the kernel ignores sudo's setuid bit, so the sudoers deny-list in
+			// the image is only a guardrail behind it. Dropping it is therefore
+			// a real reduction in containment, which is why it is opt-in per
+			// instance and cannot be changed without recreating the container.
+			SecurityOpt:   securityOpts(inst.SudoAccess),
 			RestartPolicy: restartPolicy{Name: "unless-stopped"},
 			Ulimits:       []ulimit{{Name: "nofile", Soft: 8192, Hard: 16384}},
 			Tmpfs:         map[string]string{"/tmp": "rw,exec,size=1g"},

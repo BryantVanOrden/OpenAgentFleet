@@ -211,10 +211,10 @@ func (s *Store) CreateInstance(ctx context.Context, in *protocol.Instance) error
 	tools, _ := json.Marshal(in.PreinstalledTools)
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO instances(id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
-             vnc_url,stream_url,agentd_url,egress,shell_access,labels,last_error,created_at,updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+             vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,labels,last_error,created_at,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 		in.ID, in.Name, in.OwnerID, in.ArchetypeID, in.SystemPrompt, string(tools), string(in.Tier), string(in.Driver), string(in.State), in.Runtime,
-		profile, override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, labels,
+		profile, override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, in.SudoAccess, labels,
 		in.LastError, in.CreatedAt, in.UpdatedAt)
 	return norm(err)
 }
@@ -228,10 +228,10 @@ func (s *Store) UpdateInstance(ctx context.Context, in *protocol.Instance) error
 	in.UpdatedAt = time.Now().UTC()
 	_, err := s.pool.Exec(ctx,
 		`UPDATE instances SET name=$2,tier=$3,driver=$4,state=$5,runtime_id=$6,profile=$7,override=$8,
-             vnc_url=$9,stream_url=$10,agentd_url=$11,egress=$12,shell_access=$13,labels=$14,
-             last_error=$15,archetype_id=$16,system_prompt=$17,preinstalled_tools=$18,updated_at=$19 WHERE id=$1`,
+             vnc_url=$9,stream_url=$10,agentd_url=$11,egress=$12,shell_access=$13,sudo_access=$14,labels=$15,
+             last_error=$16,archetype_id=$17,system_prompt=$18,preinstalled_tools=$19,updated_at=$20 WHERE id=$1`,
 		in.ID, in.Name, string(in.Tier), string(in.Driver), string(in.State), in.Runtime, profile,
-		override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, labels,
+		override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, in.SudoAccess, labels,
 		in.LastError, in.ArchetypeID, in.SystemPrompt, string(tools), in.UpdatedAt)
 	return norm(err)
 }
@@ -281,7 +281,7 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 }
 
 const instanceSelect = `SELECT id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
-    vnc_url,stream_url,agentd_url,egress,shell_access,labels,last_error,created_at,updated_at FROM instances`
+    vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,labels,last_error,created_at,updated_at FROM instances`
 
 func scanInstances(rows interface {
 	Next() bool
@@ -296,7 +296,7 @@ func scanInstances(rows interface {
 		var profile, override, egress, labels []byte
 		if err := rows.Scan(&in.ID, &in.Name, &in.OwnerID, &archID, &sysPrompt, &toolsStr, &tier, &driver, &state, &in.Runtime,
 			&profile, &override, &in.VNCURL, &in.StreamURL, &in.AgentdURL, &egress,
-			&in.ShellAccess, &labels, &in.LastError, &in.CreatedAt, &in.UpdatedAt); err != nil {
+			&in.ShellAccess, &in.SudoAccess, &labels, &in.LastError, &in.CreatedAt, &in.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if archID != nil {
@@ -629,13 +629,20 @@ func (s *Store) PushTargets(ctx context.Context, userID string) ([]string, []str
 // -------------------------------------------------------------------- chat ---
 
 type ChatMessage struct {
-	ID         string    `json:"id"`
-	InstanceID string    `json:"instance_id"`
-	TaskID     string    `json:"task_id,omitempty"`
-	Role       string    `json:"role"`
-	Body       string    `json:"body"`
-	ImageKey   string    `json:"image_key,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string `json:"id"`
+	InstanceID string `json:"instance_id"`
+	TaskID     string `json:"task_id,omitempty"`
+	Role       string `json:"role"`
+	Body       string `json:"body"`
+	ImageKey   string `json:"image_key,omitempty"`
+	// Kind is "message" for ordinary conversation or "plan" for a proposal the
+	// operator can approve into a task. Defaulted in SQL so existing rows keep
+	// rendering as plain messages.
+	Kind string `json:"kind,omitempty"`
+	// PlanState is "" while a plan is still open, then "approved" or
+	// "discarded" -- so an answered plan stops offering its buttons.
+	PlanState string    `json:"plan_state,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (s *Store) AppendChat(ctx context.Context, m *ChatMessage) error {
@@ -645,11 +652,31 @@ func (s *Store) AppendChat(ctx context.Context, m *ChatMessage) error {
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now().UTC()
 	}
+	if m.Kind == "" {
+		m.Kind = "message"
+	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO chat_messages(id,instance_id,task_id,role,body,image_key,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		m.ID, m.InstanceID, m.TaskID, m.Role, m.Body, m.ImageKey, m.CreatedAt)
+		`INSERT INTO chat_messages(id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		m.ID, m.InstanceID, m.TaskID, m.Role, m.Body, m.ImageKey, m.Kind, m.PlanState, m.CreatedAt)
 	return norm(err)
+}
+
+// SetPlanState records that a proposed plan was approved or discarded.
+func (s *Store) SetPlanState(ctx context.Context, id, state string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE chat_messages SET plan_state=$2 WHERE id=$1 AND kind='plan'`, id, state)
+	return norm(err)
+}
+
+func (s *Store) ChatMessageByID(ctx context.Context, id string) (ChatMessage, error) {
+	var m ChatMessage
+	err := s.pool.QueryRow(ctx,
+		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at
+         FROM chat_messages WHERE id=$1`, id).
+		Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body,
+			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt)
+	return m, norm(err)
 }
 
 func (s *Store) ListChat(ctx context.Context, instanceID string, limit int) ([]ChatMessage, error) {
@@ -657,7 +684,8 @@ func (s *Store) ListChat(ctx context.Context, instanceID string, limit int) ([]C
 		limit = 200
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT id,instance_id,task_id,role,body,image_key,created_at FROM chat_messages
+		`SELECT id,instance_id,task_id,role,body,image_key,kind,plan_state,created_at
+         FROM chat_messages
          WHERE instance_id=$1 ORDER BY created_at DESC LIMIT $2`, instanceID, limit)
 	if err != nil {
 		return nil, norm(err)
@@ -666,7 +694,8 @@ func (s *Store) ListChat(ctx context.Context, instanceID string, limit int) ([]C
 	out := []ChatMessage{}
 	for rows.Next() {
 		var m ChatMessage
-		if err := rows.Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body, &m.ImageKey, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.InstanceID, &m.TaskID, &m.Role, &m.Body,
+			&m.ImageKey, &m.Kind, &m.PlanState, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

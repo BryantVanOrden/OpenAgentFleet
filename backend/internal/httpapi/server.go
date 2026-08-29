@@ -77,6 +77,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/instances/{id}/stop", auth(roleOperator, s.handleInstanceAction))
 	mux.Handle("POST /api/instances/{id}/pause", auth(roleOperator, s.handleInstanceAction))
 	mux.Handle("POST /api/instances/{id}/resume", auth(roleOperator, s.handleInstanceAction))
+	mux.Handle("PUT /api/instances/{id}/access", auth(roleOperator, s.handleSetInstanceAccess))
 	mux.Handle("GET /api/instances/{id}/stats", auth(roleAny, s.handleInstanceStats))
 	mux.Handle("POST /api/instances/{id}/act", auth(roleOperator, s.handleManualAct))
 	mux.Handle("GET /api/instances/{id}/observe", auth(roleAny, s.handleObserve))
@@ -176,6 +177,9 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("GET /api/chat/{instanceID}", auth(roleAny, s.handleChatHistory))
 	mux.Handle("POST /api/chat/{instanceID}", auth(roleOperator, s.handleChatSend))
+	// A plan proposed in chat becomes a task only when the operator says so.
+	mux.Handle("POST /api/chat/{instanceID}/plans/{planID}/approve", auth(roleOperator, s.handleApprovePlan))
+	mux.Handle("POST /api/chat/{instanceID}/plans/{planID}/discard", auth(roleOperator, s.handleDiscardPlan))
 
 	mux.Handle("POST /api/devices", auth(roleAny, s.handleRegisterDevice))
 	mux.Handle("DELETE /api/devices/{token}", auth(roleAny, s.handleUnregisterDevice))
