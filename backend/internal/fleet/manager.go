@@ -65,7 +65,9 @@ type CreateRequest struct {
 	ShellAccess       bool                       `json:"shell_access"`
 	SudoAccess        bool                       `json:"sudo_access"`
 	Labels            map[string]string          `json:"labels,omitempty"`
-	// OrgID is the department the bot is created into.
+	// OrgID is the department the bot is created into. A bot can be shared
+	// with more afterwards; creating into several at once is not a thing
+	// anyone has asked to do.
 	OrgID string `json:"org_id,omitempty"`
 	// CustomTools are tools the operator added by hand, with how to fetch
 	// them. The archetype catalogue cannot know about an internal CLI.
@@ -154,7 +156,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		ID:                id,
 		Name:              name,
 		OwnerID:           req.OwnerID,
-		OrgID:             req.OrgID,
+		OrgIDs:            orgIDsFor(req.OrgID),
 		ArchetypeID:       req.ArchetypeID,
 		SystemPrompt:      persona,
 		PreinstalledTools: req.PreinstalledTools,
@@ -854,4 +856,15 @@ func customToolNames(tools []protocol.CustomTool) []string {
 		out = append(out, t.Name)
 	}
 	return out
+}
+
+
+// orgIDsFor turns the single department a bot is created into into the list it
+// is stored as. Creating into none is legitimate: an unassigned bot is visible
+// only to a global admin until it is filed.
+func orgIDsFor(orgID string) []string {
+	if strings.TrimSpace(orgID) == "" {
+		return nil
+	}
+	return []string{orgID}
 }

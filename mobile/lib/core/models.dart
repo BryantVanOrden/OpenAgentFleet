@@ -40,7 +40,7 @@ class Instance {
     required this.shellAccess,
     this.sudoAccess = false,
     this.providerIds = const [],
-    this.orgId = '',
+    this.orgIds = const [],
     this.voice = '',
     this.voiceSpeed = 0,
     this.archetypeId = '',
@@ -63,9 +63,13 @@ class Instance {
   /// the fleet-wide order.
   final List<String> providerIds;
 
-  /// The department this bot belongs to. Empty is unassigned, which only a
+  /// The departments this bot belongs to. Empty is unassigned, which only a
   /// deployment administrator can see.
-  final String orgId;
+  ///
+  /// Several, because a bot two teams both rely on used to have to be filed
+  /// under one of them and be invisible to the other. A member of any of
+  /// these can reach it.
+  final List<String> orgIds;
 
   /// Voice this agent speaks in. Empty uses the app-wide default. Per agent so
   /// a fleet is legible by ear rather than every bot sounding identical.
@@ -100,7 +104,9 @@ class Instance {
         providerIds: ((j['provider_ids'] as List?) ?? const [])
             .map((e) => '$e')
             .toList(growable: false),
-        orgId: j['org_id'] as String? ?? '',
+        orgIds: ((j['org_ids'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(growable: false),
         voice: j['voice'] as String? ?? '',
         voiceSpeed: (j['voice_speed'] as num?)?.toDouble() ?? 0,
         archetypeId: j['archetype_id'] as String? ?? '',

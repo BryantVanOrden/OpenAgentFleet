@@ -61,7 +61,7 @@ func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+	if !acc.Can(protocol.PermView, inst.OrgIDs, inst.ID) {
 		// 404, not 403: confirming a bot exists but is not yours is itself a
 		// disclosure, and a desktop URL is easy to guess at.
 		fail(w, http.StatusNotFound, "no such instance")
@@ -73,7 +73,7 @@ func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
 	// x11vnc for exactly this. noVNC's own `view_only` parameter is
 	// client-side and survives only until someone edits the URL, so it would
 	// not make the claim in docs/SECURITY.md true.
-	readOnly := !acc.Can(protocol.PermDesktop, inst.OrgID, inst.ID)
+	readOnly := !acc.Can(protocol.PermDesktop, inst.OrgIDs, inst.ID)
 	if inst.State != protocol.InstanceRunning {
 		fail(w, http.StatusConflict, "instance is "+string(inst.State))
 		return

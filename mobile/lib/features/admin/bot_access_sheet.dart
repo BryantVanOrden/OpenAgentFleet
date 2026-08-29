@@ -190,7 +190,7 @@ class _BotAccessSheetState extends ConsumerState<BotAccessSheet> {
           ),
           Text(
             'Exceptions to the department role. Everyone else follows their '
-            'role in ${widget.instance.orgId.isEmpty ? 'no department' : 'this bot\'s department'}.',
+            'role in ${widget.instance.orgIds.isEmpty ? 'no department' : widget.instance.orgIds.length == 1 ? 'this bot\'s department' : 'any of this bot\'s departments'}.',
             style: TextStyle(color: Fleet.ink400, fontSize: 11, height: 1.4),
           ),
           const SizedBox(height: 12),

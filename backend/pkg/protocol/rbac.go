@@ -169,7 +169,7 @@ func (a Access) InOrg(orgID string) bool {
 //
 // A per-bot grant wins outright, including when it is empty — that is how a
 // single bot is hidden from someone who can otherwise see the whole org.
-func (a Access) Can(perm Permission, orgID, instanceID string) bool {
+func (a Access) Can(perm Permission, orgIDs []string, instanceID string) bool {
 	if a.GlobalAdmin {
 		return true
 	}
@@ -178,24 +178,32 @@ func (a Access) Can(perm Permission, orgID, instanceID string) bool {
 			return hasPerm(grant, perm)
 		}
 	}
-	role, ok := a.OrgRoles[orgID]
-	if !ok {
-		// Not a member. An unassigned bot (no org) is visible only to a global
-		// admin, which the check above has already handled.
-		return false
+	// A bot can be shared with several departments, and membership of any one
+	// of them is enough. Taking the union rather than a single org is the
+	// whole point of sharing: a bot support and engineering both rely on must
+	// be reachable from either, at whatever each department's role allows.
+	//
+	// An unassigned bot has no orgs at all and so falls through to false --
+	// visible only to a global admin, which is handled above.
+	for _, orgID := range orgIDs {
+		if role, ok := a.OrgRoles[orgID]; ok {
+			if hasPerm(DefaultPermissions(role), perm) {
+				return true
+			}
+		}
 	}
-	return hasPerm(DefaultPermissions(role), perm)
+	return false
 }
 
 // CanInOrg is Can for something that is not a single bot — creating a bot,
 // reading the org's secrets, managing its members.
 func (a Access) CanInOrg(perm Permission, orgID string) bool {
-	return a.Can(perm, orgID, "")
+	return a.Can(perm, []string{orgID}, "")
 }
 
 // PermissionsFor lists what the user may do to one bot, for the UI to render
 // without guessing at the rules.
-func (a Access) PermissionsFor(orgID, instanceID string) []Permission {
+func (a Access) PermissionsFor(orgIDs []string, instanceID string) []Permission {
 	if a.GlobalAdmin {
 		return DefaultPermissions(OrgRoleOwner)
 	}
@@ -204,10 +212,22 @@ func (a Access) PermissionsFor(orgID, instanceID string) []Permission {
 		copy(out, grant)
 		return out
 	}
-	if role, ok := a.OrgRoles[orgID]; ok {
-		return DefaultPermissions(role)
+	// The union across every department the bot is shared with, so the UI
+	// renders what the user can actually do rather than what one arbitrary
+	// department would allow.
+	var out []Permission
+	for _, orgID := range orgIDs {
+		role, ok := a.OrgRoles[orgID]
+		if !ok {
+			continue
+		}
+		for _, p := range DefaultPermissions(role) {
+			if !hasPerm(out, p) {
+				out = append(out, p)
+			}
+		}
 	}
-	return nil
+	return out
 }
 
 func hasPerm(list []Permission, want Permission) bool {
@@ -253,4 +273,20 @@ func ValidOrgRole(r OrgRole) bool {
 		}
 	}
 	return false
+}
+
+// SoleOrg returns the one department a bot belongs to, or "" when it belongs
+// to none or to several.
+//
+// Used where something the bot produces has to be filed somewhere — a secret
+// it saved, a session it captured. With one department the answer is obvious.
+// With several there is no way to tell which of them a credential belongs to,
+// and guessing either leaks it to a department that should not have it or
+// hides it from the one that should. Empty means admin-only, which is the
+// failure that can be corrected rather than the one that cannot.
+func SoleOrg(orgIDs []string) string {
+	if len(orgIDs) == 1 {
+		return orgIDs[0]
+	}
+	return ""
 }

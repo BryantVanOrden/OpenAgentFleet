@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/inline_error.dart';
+import 'org_bots_sheet.dart';
 import 'org_members_screen.dart';
 
 /// Departments, and who is in them.
@@ -211,8 +212,19 @@ class _OrgsScreenState extends ConsumerState<OrgsScreen> {
         trailing: PopupMenuButton<String>(
           color: Fleet.ink850,
           icon: Icon(Icons.more_vert, size: 19, color: Fleet.ink400),
-          onSelected: (a) => a == 'edit' ? _edit(o) : _delete(o),
+          onSelected: (a) => switch (a) {
+            'edit' => _edit(o),
+            'bots' => OrgBotsSheet.show(context, o).then((_) => _refresh()),
+            _ => _delete(o),
+          },
           itemBuilder: (_) => [
+            const PopupMenuItem(
+              value: 'bots',
+              child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.smart_toy_outlined),
+                  title: Text('Bots in this department')),
+            ),
             const PopupMenuItem(
               value: 'edit',
               child: ListTile(

@@ -429,9 +429,15 @@ class ApiClient {
       _put('/api/instances/$instanceId/grants',
           {'user_id': userId, 'permissions': permissions});
 
-  Future<Instance> setInstanceOrg(String instanceId, String orgId) async {
-    final data =
-        await _put('/api/instances/$instanceId/org', {'org_id': orgId}) as Map;
+  /// Set which departments a bot belongs to.
+  ///
+  /// The whole set at once rather than add/remove: two administrators editing
+  /// at the same time should disagree about the result, not silently compose
+  /// into a third set neither of them chose.
+  Future<Instance> setInstanceOrgs(
+      String instanceId, List<String> orgIds) async {
+    final data = await _put('/api/instances/$instanceId/org',
+        {'org_ids': orgIds}) as Map;
     return Instance.fromJson(data.cast<String, dynamic>());
   }
 

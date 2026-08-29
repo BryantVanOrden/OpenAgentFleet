@@ -14,11 +14,11 @@ func access(role OrgRole, orgID string) Access {
 func TestNoCrossOrgAccess(t *testing.T) {
 	a := access(OrgRoleOwner, "org-a")
 
-	if !a.Can(PermView, "org-a", "bot-1") {
+	if !a.Can(PermView, []string{"org-a"}, "bot-1") {
 		t.Error("an owner cannot see a bot in their own org")
 	}
 	for _, perm := range AllPermissions {
-		if a.Can(perm, "org-b", "bot-2") {
+		if a.Can(perm, []string{"org-b"}, "bot-2") {
 			t.Errorf("an owner of org-a has %q in org-b", perm)
 		}
 	}
@@ -30,7 +30,7 @@ func TestViewerCannotAct(t *testing.T) {
 	a := access(OrgRoleViewer, "org-a")
 
 	for _, allowed := range []Permission{PermView, PermRead} {
-		if !a.Can(allowed, "org-a", "bot-1") {
+		if !a.Can(allowed, []string{"org-a"}, "bot-1") {
 			t.Errorf("a viewer lacks %q", allowed)
 		}
 	}
@@ -38,7 +38,7 @@ func TestViewerCannotAct(t *testing.T) {
 		PermChat, PermDesktop, PermEdit, PermDelete, PermCreate,
 		PermSecrets, PermManageMembers,
 	} {
-		if a.Can(denied, "org-a", "bot-1") {
+		if a.Can(denied, []string{"org-a"}, "bot-1") {
 			t.Errorf("a viewer has %q", denied)
 		}
 	}
@@ -48,14 +48,14 @@ func TestViewerCannotAct(t *testing.T) {
 func TestMemberDrivesButCannotEditOrDelete(t *testing.T) {
 	a := access(OrgRoleMember, "org-a")
 
-	if !a.Can(PermDesktop, "org-a", "bot-1") {
+	if !a.Can(PermDesktop, []string{"org-a"}, "bot-1") {
 		t.Error("a member cannot use the desktop, which is the normal way to work")
 	}
-	if !a.Can(PermChat, "org-a", "bot-1") {
+	if !a.Can(PermChat, []string{"org-a"}, "bot-1") {
 		t.Error("a member cannot talk to a bot")
 	}
 	for _, denied := range []Permission{PermEdit, PermDelete, PermCreate, PermSecrets} {
-		if a.Can(denied, "org-a", "bot-1") {
+		if a.Can(denied, []string{"org-a"}, "bot-1") {
 			t.Errorf("a member has %q", denied)
 		}
 	}
@@ -76,21 +76,21 @@ func TestGrantWidensAndNarrows(t *testing.T) {
 	// A viewer given the desktop on one machine.
 	widened := access(OrgRoleViewer, "org-a")
 	widened.Grants["bot-1"] = []Permission{PermView, PermRead, PermDesktop}
-	if !widened.Can(PermDesktop, "org-a", "bot-1") {
+	if !widened.Can(PermDesktop, []string{"org-a"}, "bot-1") {
 		t.Error("a grant did not widen a viewer's access")
 	}
 	// ...and still cannot drive anything else.
-	if widened.Can(PermDesktop, "org-a", "bot-2") {
+	if widened.Can(PermDesktop, []string{"org-a"}, "bot-2") {
 		t.Error("a grant on one bot leaked to another")
 	}
 
 	// An owner cut back on one sensitive machine.
 	narrowed := access(OrgRoleOwner, "org-a")
 	narrowed.Grants["bot-secret"] = []Permission{PermView}
-	if narrowed.Can(PermDesktop, "org-a", "bot-secret") {
+	if narrowed.Can(PermDesktop, []string{"org-a"}, "bot-secret") {
 		t.Error("a narrowing grant did not restrict an owner")
 	}
-	if !narrowed.Can(PermDesktop, "org-a", "bot-other") {
+	if !narrowed.Can(PermDesktop, []string{"org-a"}, "bot-other") {
 		t.Error("narrowing one bot restricted the rest")
 	}
 }
@@ -102,7 +102,7 @@ func TestEmptyGrantHidesABot(t *testing.T) {
 	a.Grants["bot-hidden"] = []Permission{}
 
 	for _, perm := range AllPermissions {
-		if a.Can(perm, "org-a", "bot-hidden") {
+		if a.Can(perm, []string{"org-a"}, "bot-hidden") {
 			t.Errorf("an empty grant still allowed %q", perm)
 		}
 	}
@@ -112,7 +112,7 @@ func TestEmptyGrantHidesABot(t *testing.T) {
 func TestGlobalAdminBypasses(t *testing.T) {
 	a := Access{UserID: "root", GlobalAdmin: true}
 	for _, perm := range AllPermissions {
-		if !a.Can(perm, "any-org", "any-bot") {
+		if !a.Can(perm, []string{"any-org"}, "any-bot") {
 			t.Errorf("a global admin lacks %q", perm)
 		}
 	}
@@ -125,11 +125,11 @@ func TestGlobalAdminBypasses(t *testing.T) {
 // predates orgs does not become invisible — nor world-readable.
 func TestUnassignedBotIsAdminOnly(t *testing.T) {
 	a := access(OrgRoleOwner, "org-a")
-	if a.Can(PermView, "", "orphan") {
+	if a.Can(PermView, []string{""}, "orphan") {
 		t.Error("an org owner can see a bot belonging to no org")
 	}
 	admin := Access{GlobalAdmin: true}
-	if !admin.Can(PermView, "", "orphan") {
+	if !admin.Can(PermView, []string{""}, "orphan") {
 		t.Error("a global admin cannot see an unassigned bot")
 	}
 }
@@ -139,7 +139,7 @@ func TestUnassignedBotIsAdminOnly(t *testing.T) {
 func TestUnknownRoleGrantsNothing(t *testing.T) {
 	a := Access{OrgRoles: map[string]OrgRole{"org-a": OrgRole("superuser")}}
 	for _, perm := range AllPermissions {
-		if a.Can(perm, "org-a", "bot-1") {
+		if a.Can(perm, []string{"org-a"}, "bot-1") {
 			t.Errorf("an unknown role granted %q", perm)
 		}
 	}
@@ -152,7 +152,7 @@ func TestUnknownRoleGrantsNothing(t *testing.T) {
 func TestNoMembershipGrantsNothing(t *testing.T) {
 	a := Access{UserID: "u1"}
 	for _, perm := range AllPermissions {
-		if a.Can(perm, "org-a", "bot-1") {
+		if a.Can(perm, []string{"org-a"}, "bot-1") {
 			t.Errorf("a non-member has %q", perm)
 		}
 	}
@@ -174,5 +174,94 @@ func TestValidation(t *testing.T) {
 	}
 	if !ValidOrgRole(OrgRoleOwner) || ValidOrgRole(OrgRole("god")) {
 		t.Error("role validation is wrong")
+	}
+}
+
+// A bot shared with two departments is reachable from either.
+//
+// Before this, a bot carried exactly one department, so a machine support and
+// engineering both relied on had to be filed under one of them and be
+// invisible to the other, or duplicated.
+func TestSharedBotIsReachableFromEitherDepartment(t *testing.T) {
+	support := access(OrgRoleMember, "support")
+	engineering := access(OrgRoleMember, "engineering")
+	sales := access(OrgRoleMember, "sales")
+
+	shared := []string{"support", "engineering"}
+
+	if !support.Can(PermView, shared, "triage-bot") {
+		t.Error("support cannot see a bot shared with support")
+	}
+	if !engineering.Can(PermView, shared, "triage-bot") {
+		t.Error("engineering cannot see a bot shared with engineering")
+	}
+	// Sharing widens who can reach a bot; it must not widen it to everyone.
+	if sales.Can(PermView, shared, "triage-bot") {
+		t.Error("sales can see a bot shared with neither of their departments")
+	}
+}
+
+// Sharing takes the union of what each department allows, never the minimum.
+//
+// Someone who is an owner in one of a bot's departments keeps an owner's
+// authority over it; being a mere viewer somewhere else it also lives must not
+// quietly demote them.
+func TestSharedBotPermissionsAreTheUnion(t *testing.T) {
+	// Owner of support, viewer of engineering.
+	a := Access{
+		UserID: "u1",
+		OrgRoles: map[string]OrgRole{
+			"support":     OrgRoleOwner,
+			"engineering": OrgRoleViewer,
+		},
+	}
+	shared := []string{"support", "engineering"}
+
+	if !a.Can(PermEdit, shared, "triage-bot") {
+		t.Error("an owner in one of the bot's departments lost edit on it")
+	}
+
+	perms := a.PermissionsFor(shared, "triage-bot")
+	if len(perms) < len(DefaultPermissions(OrgRoleOwner)) {
+		t.Errorf("union is %d permissions, want at least an owner's %d: %v",
+			len(perms), len(DefaultPermissions(OrgRoleOwner)), perms)
+	}
+	// No duplicates, or the UI renders the same capability twice.
+	seen := map[Permission]bool{}
+	for _, p := range perms {
+		if seen[p] {
+			t.Errorf("%q appears twice in the union", p)
+		}
+		seen[p] = true
+	}
+}
+
+// A per-bot grant still overrides everything, however many departments the
+// bot is in — that is how one machine is hidden from someone who can
+// otherwise see a department it lives in.
+func TestPerBotGrantStillWinsOverSeveralDepartments(t *testing.T) {
+	a := Access{
+		UserID:   "u1",
+		OrgRoles: map[string]OrgRole{"support": OrgRoleOwner},
+		Grants:   map[string][]Permission{"secret-bot": {}},
+	}
+
+	if a.Can(PermView, []string{"support", "engineering"}, "secret-bot") {
+		t.Error("an empty grant did not hide a bot shared across departments")
+	}
+	if !a.Can(PermView, []string{"support"}, "other-bot") {
+		t.Error("the grant leaked onto a bot it was not for")
+	}
+}
+
+// An unassigned bot belongs to nobody but a global admin.
+func TestBotInNoDepartmentIsAdminOnly(t *testing.T) {
+	member := access(OrgRoleOwner, "support")
+	if member.Can(PermView, nil, "orphan") {
+		t.Error("an unassigned bot was visible to a department owner")
+	}
+	admin := Access{UserID: "root", GlobalAdmin: true}
+	if !admin.Can(PermView, nil, "orphan") {
+		t.Error("a global admin cannot see an unassigned bot")
 	}
 }

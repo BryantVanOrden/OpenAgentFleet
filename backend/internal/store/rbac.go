@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
@@ -211,9 +212,55 @@ func (s *Store) AccessFor(ctx context.Context, userID string, globalAdmin bool) 
 	return acc, grows.Err()
 }
 
-// SetInstanceOrg moves a bot into a department.
-func (s *Store) SetInstanceOrg(ctx context.Context, instanceID, orgID string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE instances SET org_id=$2 WHERE id=$1`, instanceID, nullIfEmpty(orgID))
-	return norm(err)
+// SetInstanceOrgs replaces the set of departments a bot belongs to.
+//
+// The whole set at once, in one transaction: applying a diff row by row leaves
+// a window where the bot is in neither the old department nor the new one, and
+// anything checking permissions in that window gets the wrong answer.
+func (s *Store) SetInstanceOrgs(ctx context.Context, instanceID string, orgIDs []string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return norm(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM instance_orgs WHERE instance_id=$1`, instanceID); err != nil {
+		return norm(err)
+	}
+	for _, orgID := range orgIDs {
+		if strings.TrimSpace(orgID) == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO instance_orgs(instance_id,org_id) VALUES ($1,$2)
+			 ON CONFLICT DO NOTHING`, instanceID, orgID); err != nil {
+			return norm(err)
+		}
+	}
+	return norm(tx.Commit(ctx))
+}
+
+// InstanceOrgs returns the departments each of the given bots belongs to.
+//
+// One query for the whole fleet rather than one per bot: every list endpoint
+// resolves this before filtering, and a query per row would make membership
+// the slowest thing in the API.
+func (s *Store) InstanceOrgs(ctx context.Context) (map[string][]string, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT instance_id, org_id FROM instance_orgs ORDER BY org_id`)
+	if err != nil {
+		return nil, norm(err)
+	}
+	defer rows.Close()
+
+	out := map[string][]string{}
+	for rows.Next() {
+		var instanceID, orgID string
+		if err := rows.Scan(&instanceID, &orgID); err != nil {
+			return nil, err
+		}
+		out[instanceID] = append(out[instanceID], orgID)
+	}
+	return out, rows.Err()
 }

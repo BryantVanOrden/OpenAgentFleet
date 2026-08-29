@@ -101,9 +101,15 @@ type Instance struct {
 	// pace is the other half of that, but pinning every existing bot to a
 	// rate nobody chose would not be.
 	VoiceSpeed float64 `json:"voice_speed,omitempty"`
-	// OrgID is the department this bot belongs to. Empty means unassigned,
+	// OrgIDs are the departments this bot belongs to. Empty means unassigned,
 	// which only a global admin can see.
-	OrgID string `json:"org_id,omitempty"`
+	//
+	// Several, not one: a bot two teams both rely on had to be filed under
+	// one of them and be invisible to the other. A member of any of these
+	// departments can reach the bot, at whatever that department's role
+	// allows -- so sharing a bot widens who can use it and never narrows it.
+	OrgIDs []string `json:"org_ids,omitempty"`
+
 	// CustomTools are operator-added tools with how to fetch them.
 	CustomTools []CustomTool `json:"custom_tools,omitempty"`
 	// ProviderIDs is this bot's own model fallback chain, most preferred first.

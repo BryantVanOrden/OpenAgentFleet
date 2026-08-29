@@ -72,7 +72,7 @@ func userIDOf(c *claims) string {
 func visibleInstances(acc protocol.Access, all []protocol.Instance) []protocol.Instance {
 	out := make([]protocol.Instance, 0, len(all))
 	for _, in := range all {
-		if acc.Can(protocol.PermView, in.OrgID, in.ID) {
+		if acc.Can(protocol.PermView, in.OrgIDs, in.ID) {
 			out = append(out, in)
 		}
 	}
@@ -92,11 +92,11 @@ func (s *Server) requirePerm(w http.ResponseWriter, r *http.Request, instanceID 
 	}
 	acc := accessFrom(r.Context())
 
-	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+	if !acc.Can(protocol.PermView, inst.OrgIDs, inst.ID) {
 		fail(w, http.StatusNotFound, "no such instance")
 		return nil, false
 	}
-	if !acc.Can(perm, inst.OrgID, inst.ID) {
+	if !acc.Can(perm, inst.OrgIDs, inst.ID) {
 		fail(w, http.StatusForbidden,
 			"you do not have permission to "+string(perm)+" this bot")
 		return nil, false
@@ -150,11 +150,11 @@ func (s *Server) requirePermForTask(w http.ResponseWriter, r *http.Request, task
 	}
 	acc := accessFrom(r.Context())
 
-	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+	if !acc.Can(protocol.PermView, inst.OrgIDs, inst.ID) {
 		fail(w, http.StatusNotFound, "no such task")
 		return nil, false
 	}
-	if !acc.Can(perm, inst.OrgID, inst.ID) {
+	if !acc.Can(perm, inst.OrgIDs, inst.ID) {
 		fail(w, http.StatusForbidden,
 			"you do not have permission to "+string(perm)+" this bot")
 		return nil, false

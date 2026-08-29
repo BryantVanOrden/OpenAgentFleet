@@ -159,24 +159,52 @@ func (s *Server) handleSetInstanceOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
+		// OrgIDs is the full set of departments this bot belongs to. Sent
+		// whole rather than as add/remove: two admins editing at once should
+		// disagree about the result, not silently compose into a third set
+		// neither of them chose.
+		OrgIDs []string `json:"org_ids"`
+		// OrgID is the single-department form this endpoint used to take.
+		// Still accepted so an older client keeps working.
 		OrgID string `json:"org_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	// Moving a bot into a department you cannot manage would hand it to people
-	// you have no standing over — and, if you are not in that org either, make
-	// it vanish from your own view.
-	if !accessFrom(r.Context()).CanInOrg(protocol.PermCreate, req.OrgID) {
-		fail(w, http.StatusForbidden, "you cannot move a bot into that organisation")
-		return
+	orgs := req.OrgIDs
+	if orgs == nil && req.OrgID != "" {
+		orgs = []string{req.OrgID}
 	}
-	if err := s.db.SetInstanceOrg(r.Context(), inst.ID, req.OrgID); err != nil {
+
+	// Every department involved has to be one you may act in — both the ones
+	// being added and the ones being removed.
+	//
+	// Adding: putting a bot into a department you cannot manage hands it to
+	// people you have no standing over. Removing: taking a bot out of a
+	// department you are not in makes it vanish for people who were relying
+	// on it, and you would never see that it had.
+	acc := accessFrom(r.Context())
+	touched := map[string]bool{}
+	for _, id := range orgs {
+		touched[id] = true
+	}
+	for _, id := range inst.OrgIDs {
+		touched[id] = true
+	}
+	for id := range touched {
+		if !acc.CanInOrg(protocol.PermCreate, id) {
+			fail(w, http.StatusForbidden,
+				"you cannot change this bot's membership of that organisation")
+			return
+		}
+	}
+
+	if err := s.db.SetInstanceOrgs(r.Context(), inst.ID, orgs); err != nil {
 		failErr(w, err)
 		return
 	}
-	inst.OrgID = req.OrgID
+	inst.OrgIDs = orgs
 	writeJSON(w, http.StatusOK, redact(*inst))
 }
 
@@ -210,7 +238,7 @@ func (s *Server) handleSetBotGrant(w http.ResponseWriter, r *http.Request) {
 	// Handing out access is a stronger act than editing settings, so it needs
 	// the permission that governs access rather than the one that governs
 	// configuration.
-	if !accessFrom(r.Context()).CanInOrg(protocol.PermManageMembers, inst.OrgID) {
+	if !accessFrom(r.Context()).Can(protocol.PermManageMembers, inst.OrgIDs, "") {
 		fail(w, http.StatusForbidden, "you cannot change who has access to this bot")
 		return
 	}
@@ -260,7 +288,7 @@ func (s *Server) handleMyPermissions(w http.ResponseWriter, r *http.Request) {
 
 	perBot := map[string][]protocol.Permission{}
 	for _, in := range instances {
-		if p := acc.PermissionsFor(in.OrgID, in.ID); len(p) > 0 {
+		if p := acc.PermissionsFor(in.OrgIDs, in.ID); len(p) > 0 {
 			perBot[in.ID] = p
 		}
 	}

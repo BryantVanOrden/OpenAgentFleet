@@ -39,11 +39,11 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acc := accessFrom(r.Context())
-	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+	if !acc.Can(protocol.PermView, inst.OrgIDs, inst.ID) {
 		fail(w, http.StatusNotFound, "no such instance")
 		return
 	}
-	if !acc.Can(protocol.PermChat, inst.OrgID, inst.ID) {
+	if !acc.Can(protocol.PermChat, inst.OrgIDs, inst.ID) {
 		fail(w, http.StatusForbidden, "you cannot start work on this bot")
 		return
 	}
@@ -106,9 +106,9 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	orgOf := make(map[string]string, len(instances))
+	orgOf := make(map[string][]string, len(instances))
 	for _, in := range instances {
-		orgOf[in.ID] = in.OrgID
+		orgOf[in.ID] = in.OrgIDs
 	}
 	acc := accessFrom(r.Context())
 

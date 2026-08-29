@@ -9,7 +9,7 @@ import (
 )
 
 func inst(id, orgID string) protocol.Instance {
-	return protocol.Instance{ID: id, Name: id, OrgID: orgID}
+	return protocol.Instance{ID: id, Name: id, OrgIDs: []string{orgID}}
 }
 
 // A listing must return what the caller may see, not everything with the rest
@@ -30,8 +30,8 @@ func TestListingIsFilteredNotJustGated(t *testing.T) {
 		t.Fatalf("org-a member sees %d bots, want 2: %+v", len(got), got)
 	}
 	for _, in := range got {
-		if in.OrgID != "org-a" {
-			t.Errorf("leaked %s from %s", in.ID, in.OrgID)
+		if len(in.OrgIDs) != 1 || in.OrgIDs[0] != "org-a" {
+			t.Errorf("leaked %s from %v", in.ID, in.OrgIDs)
 		}
 	}
 
@@ -114,7 +114,7 @@ func TestMissingAccessDeniesEverything(t *testing.T) {
 		t.Fatal("a request with no access resolved as admin")
 	}
 	for _, perm := range protocol.AllPermissions {
-		if acc.Can(perm, "org-a", "bot-1") {
+		if acc.Can(perm, []string{"org-a"}, "bot-1") {
 			t.Errorf("a request with no access had %q", perm)
 		}
 	}
@@ -145,10 +145,10 @@ func TestDesktopIsSeparateFromRead(t *testing.T) {
 	viewer := protocol.Access{
 		OrgRoles: map[string]protocol.OrgRole{"org-a": protocol.OrgRoleViewer},
 	}
-	if !viewer.Can(protocol.PermRead, "org-a", "bot-1") {
+	if !viewer.Can(protocol.PermRead, []string{"org-a"}, "bot-1") {
 		t.Error("a viewer cannot read")
 	}
-	if viewer.Can(protocol.PermDesktop, "org-a", "bot-1") {
+	if viewer.Can(protocol.PermDesktop, []string{"org-a"}, "bot-1") {
 		t.Error("a viewer can drive a desktop")
 	}
 }

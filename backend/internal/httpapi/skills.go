@@ -164,9 +164,9 @@ func (s *Server) handleRefineSkill(w http.ResponseWriter, r *http.Request) {
 		// fleet for a matching run must not reach into another department's.
 		acc := accessFrom(r.Context())
 		instances, _ := s.db.ListInstances(r.Context())
-		orgOf := make(map[string]string, len(instances))
+		orgOf := make(map[string][]string, len(instances))
 		for _, in := range instances {
-			orgOf[in.ID] = in.OrgID
+			orgOf[in.ID] = in.OrgIDs
 		}
 		for i := range tasks {
 			if !acc.Can(protocol.PermRead, orgOf[tasks[i].InstanceID], tasks[i].InstanceID) {
