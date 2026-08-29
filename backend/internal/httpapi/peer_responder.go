@@ -178,8 +178,15 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	if to == "" {
 		to = "broadcast"
 	}
-	vault.GlobalBus.SendMessage(ctx, inst.ID, inst.Name, to, peerReplyKind, body, nil)
-	s.log.Info("agent answered a peer message", "instance", inst.Name, "to", to)
+	// Answer in the thread the question was asked in. Without this a reply in a
+	// thread the operator created between two bots would be re-filed into the
+	// default two-party thread, and the conversation would split in half.
+	conv := msg.ConversationID
+	if to == "broadcast" {
+		conv = protocol.BroadcastConversationID
+	}
+	vault.GlobalBus.SendMessageIn(ctx, conv, inst.ID, inst.Name, to, peerReplyKind, body, nil)
+	s.log.Info("agent answered a peer message", "instance", inst.Name, "to", to, "conversation", conv)
 }
 
 // isOperator reports whether a message came from a human rather than an agent.

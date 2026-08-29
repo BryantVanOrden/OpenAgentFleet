@@ -277,13 +277,68 @@ class ApiClient {
     String fromInstanceName = 'Mobile Operator',
     String toInstanceId = 'broadcast',
     String kind = 'message',
+    String? conversationId,
   }) async {
     final data = await _post('/api/vault/comms', {
       'content': content,
       'from_instance_name': fromInstanceName,
       'to_instance_id': toInstanceId,
       'kind': kind,
+      if (conversationId != null) 'conversation_id': conversationId,
     }) as Map;
+    return PeerMessage.fromJson(data.cast<String, dynamic>());
+  }
+
+  // ------------------------------------------------------------- memories ---
+
+  /// What this bot has chosen to remember.
+  Future<List<BotMemory>> instanceMemories(String id) async {
+    final data = await _get('/api/instances/$id/memories') as List? ?? const [];
+    return data
+        .map((e) => BotMemory.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<void> forgetMemory(String instanceId, String memoryId) =>
+      _delete('/api/instances/$instanceId/memories/$memoryId');
+
+  // -------------------------------------------------------- conversations ---
+
+  Future<List<Conversation>> conversations() async {
+    final data = await _get('/api/comms/conversations') as List? ?? const [];
+    return data
+        .map((e) => Conversation.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Open a thread. Include [Conversation.operatorId] among the members to be
+  /// in it yourself; leave it out to put two bots together and watch.
+  Future<Conversation> createConversation({
+    required List<String> members,
+    String title = '',
+  }) async {
+    final data = await _post('/api/comms/conversations', {
+      'title': title,
+      'members': members,
+    }) as Map;
+    return Conversation.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteConversation(String id) =>
+      _delete('/api/comms/conversations/$id');
+
+  Future<List<PeerMessage>> conversationMessages(String id) async {
+    final data =
+        await _get('/api/comms/conversations/$id/messages') as List? ?? const [];
+    return data
+        .map((e) => PeerMessage.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Fold a thread's history into a single summary message. The originals stay
+  /// on the server; this changes what is replayed, not what happened.
+  Future<PeerMessage> compactConversation(String id) async {
+    final data = await _post('/api/comms/conversations/$id/compact') as Map;
     return PeerMessage.fromJson(data.cast<String, dynamic>());
   }
 

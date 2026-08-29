@@ -6,17 +6,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'conversation_screen.dart';
+import 'new_conversation_sheet.dart';
 
-/// The fleet's group chat.
+/// Fleet comms: every conversation in the fleet.
 ///
 /// This is the same peer bus agents use for message_peer and delegate_task, so
-/// what you see here is the actual conversation between bots rather than a
-/// summary of it — and anything you send lands in their inbox on their next
-/// turn. It lives under Fleet, not Vault: a conversation between agents is not
-/// a credential store, and filing it there made it invisible.
+/// what you see is the actual traffic rather than a summary of it. It lives
+/// under Fleet, not Vault: a conversation between agents is not a credential
+/// store, and filing it there made it invisible.
 ///
-/// Agents are always reachable, so there is no team to assemble first. Sending
-/// with no recipient broadcasts to everyone.
+/// Threads are real objects you create and delete. Put two agents in a thread
+/// and they can work something out between themselves while you read along;
+/// close it when they are done.
 class CommsScreen extends ConsumerStatefulWidget {
   const CommsScreen({super.key});
 
@@ -25,12 +27,7 @@ class CommsScreen extends ConsumerStatefulWidget {
 }
 
 class _CommsScreenState extends ConsumerState<CommsScreen> {
-  final _controller = TextEditingController();
-  final _scroll = ScrollController();
-
-  List<PeerMessage> _messages = const [];
-  String _to = 'broadcast';
-  bool _busy = false;
+  List<Conversation> _conversations = const [];
   bool _loading = true;
   String? _error;
   Timer? _poll;
@@ -40,25 +37,22 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     super.initState();
     _refresh();
     // The peer bus has no websocket topic of its own, so this polls. Five
-    // seconds keeps a conversation feeling live without hammering the API.
+    // seconds keeps the list feeling live without hammering the API.
     _poll = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
   }
 
   @override
   void dispose() {
     _poll?.cancel();
-    _controller.dispose();
-    _scroll.dispose();
     super.dispose();
   }
 
   Future<void> _refresh() async {
     try {
-      final list = await ref.read(apiProvider).peerMessages();
+      final list = await ref.read(apiProvider).conversations();
       if (!mounted) return;
       setState(() {
-        // The API returns newest first; a conversation reads oldest first.
-        _messages = list.reversed.toList();
+        _conversations = list;
         _loading = false;
         _error = null;
       });
@@ -71,22 +65,73 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
     }
   }
 
-  Future<void> _send() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _busy = true);
+  /// A readable name for a thread, falling back to who is in it.
+  String _titleOf(Conversation c, List<Instance> instances) {
+    if (c.title.isNotEmpty) return c.title;
+    if (c.isBroadcast) return 'Everyone';
+
+    final names = c.members.map((m) {
+      if (m == Conversation.operatorId) return 'You';
+      final match = instances.where((i) => i.id == m).firstOrNull;
+      return match?.name ?? m.substring(0, m.length.clamp(0, 8));
+    }).toList();
+    return names.isEmpty ? 'Conversation' : names.join('  ·  ');
+  }
+
+  Future<void> _newConversation() async {
+    final created = await showModalBottomSheet<Conversation>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const NewConversationSheet(),
+    );
+    if (created == null || !mounted) return;
+    await _refresh();
+    if (!mounted) return;
+    _open(created);
+  }
+
+  void _open(Conversation c) {
+    final instances = ref.read(instancesProvider).valueOrNull ?? const [];
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => ConversationScreen(
+            conversation: c,
+            title: _titleOf(c, instances),
+          ),
+        ))
+        .then((_) => _refresh());
+  }
+
+  Future<void> _delete(Conversation c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this conversation?'),
+        content: const Text(
+          'The thread is removed from this list. What was said in it is kept on '
+          'the server — closing a thread should not destroy the record of what '
+          'your agents agreed.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(apiProvider).sendPeerMessage(
-            content: text,
-            toInstanceId: _to,
-          );
-      _controller.clear();
+      await ref.read(apiProvider).deleteConversation(c.id);
       await _refresh();
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text('$err')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -104,27 +149,25 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'What your agents say to each other. Anything you send arrives '
-                'in their inbox on the next step.',
+                'Every conversation in the fleet. Open one to read along or '
+                'join in.',
                 style: TextStyle(color: Fleet.ink400, fontSize: 11),
               ),
             ),
           ),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(child: _buildList()),
-          _buildComposer(instances),
-        ],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _newConversation,
+        icon: const Icon(Icons.add_comment_outlined),
+        label: const Text('New chat'),
       ),
+      body: _buildBody(instances),
     );
   }
 
-  Widget _buildList() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  Widget _buildBody(List<Instance> instances) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
         child: Padding(
@@ -135,179 +178,52 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
         ),
       );
     }
-    if (_messages.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.forum_outlined, size: 34, color: Fleet.ink600),
-              const SizedBox(height: 12),
-              Text(
-                'Nothing said yet.\n\nAgents message each other here as they '
-                'work — no group has to be set up. You can start the '
-                'conversation below.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Fleet.ink400, fontSize: 13, height: 1.4),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
-    return ListView.builder(
-      controller: _scroll,
-      padding: const EdgeInsets.all(12),
-      itemCount: _messages.length,
-      itemBuilder: (_, i) => _MessageTile(message: _messages[i]),
-    );
-  }
-
-  Widget _buildComposer(List<Instance> instances) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Fleet.ink900,
-        border: Border(top: BorderSide(color: Fleet.ink800)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.alternate_email, size: 14, color: Fleet.ink400),
-              const SizedBox(width: 6),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _to,
-                    isDense: true,
-                    isExpanded: true,
-                    style: TextStyle(color: Fleet.ink200, fontSize: 12),
-                    dropdownColor: Fleet.ink850,
-                    items: [
-                      const DropdownMenuItem(
-                          value: 'broadcast',
-                          child: Text('Everyone (broadcast)')),
-                      for (final i in instances)
-                        DropdownMenuItem(value: i.id, child: Text(i.name)),
-                    ],
-                    onChanged: (v) => setState(() => _to = v ?? 'broadcast'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  enabled: !_busy,
-                  minLines: 1,
-                  maxLines: 3,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    hintText: 'Say something to the fleet',
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  onSubmitted: (_) => _send(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _busy ? null : _send,
-                child: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send_rounded, size: 18),
-              ),
-            ],
-          ),
-        ],
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+        itemCount: _conversations.length,
+        itemBuilder: (_, i) => _tile(_conversations[i], instances),
       ),
     );
   }
-}
 
-class _MessageTile extends StatelessWidget {
-  const _MessageTile({required this.message});
-  final PeerMessage message;
-
-  @override
-  Widget build(BuildContext context) {
-    final broadcast = message.toInstanceId == 'broadcast';
-    // Operator messages are the ones you sent; showing them aligned like your
-    // own chat makes the thread readable at a glance.
-    final mine = message.fromInstanceName.toLowerCase().contains('operator');
-
-    final kindColour = switch (message.kind) {
-      'delegation' => Fleet.warn,
-      'question' => Fleet.cool,
-      _ => Fleet.ink300,
+  Widget _tile(Conversation c, List<Instance> instances) {
+    final icon = switch (c.kind) {
+      'direct' => Icons.person_outline,
+      'pair' => Icons.swap_horiz_rounded,
+      _ => c.isBroadcast ? Icons.campaign_outlined : Icons.groups_outlined,
     };
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        mainAxisAlignment:
-            mine ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: mine ? Fleet.live.withValues(alpha: 0.14) : Fleet.ink800,
-                borderRadius: BorderRadius.circular(12),
-                border: mine
-                    ? Border.all(color: Fleet.live.withValues(alpha: 0.3))
-                    : null,
+    final subtitle = switch (c.kind) {
+      'pair' => 'Two agents — you are watching',
+      'direct' => 'You and one agent',
+      _ => c.isBroadcast ? 'Everyone in the fleet' : 'Group',
+    };
+
+    return Card(
+      color: Fleet.ink850,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(icon, size: 20, color: Fleet.ink300),
+        title: Text(_titleOf(c, instances),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          '$subtitle · ${c.messageCount} message'
+          '${c.messageCount == 1 ? '' : 's'}',
+          style: TextStyle(color: Fleet.ink400, fontSize: 11),
+        ),
+        trailing: c.isBroadcast
+            // The broadcast channel is where an unaddressed message lands, so
+            // there is nowhere for its traffic to go if it were removed.
+            ? Icon(Icons.lock_outline, size: 15, color: Fleet.ink600)
+            : IconButton(
+                tooltip: 'Delete conversation',
+                icon: Icon(Icons.delete_outline, size: 19, color: Fleet.ink400),
+                onPressed: () => _delete(c),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          broadcast
-                              ? '${message.fromInstanceName} → everyone'
-                              : '${message.fromInstanceName} → ${message.toInstanceId}',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: kindColour.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          message.kind,
-                          style: TextStyle(fontSize: 9, color: kindColour),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
-                  Text(message.content,
-                      style: const TextStyle(fontSize: 13, height: 1.35)),
-                ],
-              ),
-            ),
-          ),
-        ],
+        onTap: () => _open(c),
       ),
     );
   }

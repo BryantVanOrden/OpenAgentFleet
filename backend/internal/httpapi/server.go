@@ -123,6 +123,15 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/vault/sessions", auth(roleOperator, s.handleSaveSharedSession))
 	mux.Handle("GET /api/vault/comms", auth(roleAny, s.handleListPeerMessages))
 	mux.Handle("POST /api/vault/comms", auth(roleOperator, s.handleSendPeerMessage))
+	// What each bot has chosen to remember, and a way to take one back out.
+	mux.Handle("GET /api/instances/{id}/memories", auth(roleAny, s.handleListInstanceMemories))
+	mux.Handle("DELETE /api/instances/{id}/memories/{memoryId}", auth(roleOperator, s.handleForgetMemory))
+	// Conversations: the named threads comms messages are filed into.
+	mux.Handle("GET /api/comms/conversations", auth(roleAny, s.handleListConversations))
+	mux.Handle("POST /api/comms/conversations", auth(roleOperator, s.handleCreateConversation))
+	mux.Handle("DELETE /api/comms/conversations/{id}", auth(roleOperator, s.handleDeleteConversation))
+	mux.Handle("GET /api/comms/conversations/{id}/messages", auth(roleAny, s.handleListConversationMessages))
+	mux.Handle("POST /api/comms/conversations/{id}/compact", auth(roleOperator, s.handleCompactConversation))
 
 	// Model Context Protocol (MCP) Bridge
 	mux.Handle("GET /api/mcp/servers", auth(roleAny, s.handleListMCPServers))

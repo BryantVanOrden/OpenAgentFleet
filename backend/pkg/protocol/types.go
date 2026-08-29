@@ -301,7 +301,13 @@ type PeerInfo struct {
 
 // PeerMessage represents an inter-bot message or delegation.
 type PeerMessage struct {
-	ID               string         `json:"id"`
+	ID string `json:"id"`
+	// ConversationID is the thread this message belongs to. Messages predating
+	// conversations carry an empty one and are placed by their recipient.
+	ConversationID string `json:"conversation_id,omitempty"`
+	// Compacted marks a message that a summary has replaced. It stays in the
+	// database and stops being shown or replayed.
+	Compacted        bool           `json:"compacted,omitempty"`
 	FromInstanceID   string         `json:"from_instance_id"`
 	FromInstanceName string         `json:"from_instance_name"`
 	ToInstanceID     string         `json:"to_instance_id"` // Target instance or "broadcast"
@@ -309,6 +315,41 @@ type PeerMessage struct {
 	Content          string         `json:"content"`
 	Data             map[string]any `json:"data,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
+}
+
+// Conversation kinds. A conversation is an explicit, named thread rather than
+// something inferred from who happened to message whom: the operator creates
+// and deletes them, and agents talk inside them.
+const (
+	// ConversationDirect is you and one agent.
+	ConversationDirect = "direct"
+	// ConversationPair is two agents talking to each other. You can read it
+	// without being in it — watching agents coordinate is the point.
+	ConversationPair = "pair"
+	// ConversationGroup is any other set of members, you included.
+	ConversationGroup = "group"
+)
+
+// BroadcastConversationID is the built-in channel every agent can hear. It is
+// not stored, cannot be deleted, and is where an unaddressed message lands.
+const BroadcastConversationID = "broadcast"
+
+// OperatorMemberID identifies you in a conversation's member list. Agents are
+// identified by instance ID, and no instance can hold this ID.
+const OperatorMemberID = "operator"
+
+// Conversation is a thread in fleet comms.
+type Conversation struct {
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+	// Members are instance IDs, plus OperatorMemberID when you are in it.
+	Members   []string  `json:"members"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// Populated on read for the conversation list; not stored.
+	LastMessageAt time.Time `json:"last_message_at,omitzero"`
+	MessageCount  int       `json:"message_count"`
 }
 
 // SharedSecret represents a variable or secret accessible across the fleet.

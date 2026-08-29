@@ -31,14 +31,18 @@ type Bus struct {
 	secrets  map[string]protocol.SharedSecret
 	sessions map[string]protocol.SharedSession
 	messages []protocol.PeerMessage
+	// conversations are the named threads messages are filed into. The
+	// broadcast channel is implicit and never held here.
+	conversations map[string]protocol.Conversation
 	// seq disambiguates messages sent within the same nanosecond tick, for the
 	// same reason memory.Engine carries one: a timestamp is not an identity,
 	// and a burst is exactly when collisions happen.
 	seq uint64
 
 	// store is optional. When nil the bus is in-memory only.
-	store PeerStore
-	log   *slog.Logger
+	store     PeerStore
+	convStore ConversationStore
+	log       *slog.Logger
 }
 
 var GlobalBus = NewBus()
@@ -48,6 +52,8 @@ func NewBus() *Bus {
 		secrets:  make(map[string]protocol.SharedSecret),
 		sessions: make(map[string]protocol.SharedSession),
 		messages: make([]protocol.PeerMessage, 0),
+
+		conversations: make(map[string]protocol.Conversation),
 	}
 }
 
@@ -163,11 +169,24 @@ func (b *Bus) ListSessions(ctx context.Context, domain string) []protocol.Shared
 
 // ---------------------------------------------------------------- Inter-Agent P2P ---
 
+// SendMessage posts a message and files it in whichever thread it belongs to.
+// Use SendMessageIn to place it in a specific one.
 func (b *Bus) SendMessage(ctx context.Context, fromID, fromName, toID, kind, content string, data map[string]any) protocol.PeerMessage {
+	return b.SendMessageIn(ctx, "", fromID, fromName, toID, kind, content, data)
+}
+
+// SendMessageIn posts a message into a named conversation.
+//
+// An empty conversationID means "work it out": broadcast when unaddressed,
+// otherwise the two-party thread between sender and recipient. That is what
+// makes agents talking to each other appear in their own thread without the
+// agents themselves knowing conversations exist.
+func (b *Bus) SendMessageIn(ctx context.Context, conversationID, fromID, fromName, toID, kind, content string, data map[string]any) protocol.PeerMessage {
 	b.mu.Lock()
 	b.seq++
 	msg := protocol.PeerMessage{
 		ID:               fmt.Sprintf("peer-msg-%d-%d", time.Now().UnixNano(), b.seq),
+		ConversationID:   conversationID,
 		FromInstanceID:   fromID,
 		FromInstanceName: fromName,
 		ToInstanceID:     toID,
@@ -175,6 +194,9 @@ func (b *Bus) SendMessage(ctx context.Context, fromID, fromName, toID, kind, con
 		Content:          content,
 		Data:             data,
 		CreatedAt:        time.Now().UTC(),
+	}
+	if msg.ConversationID == "" {
+		msg.ConversationID = b.conversationOf(msg)
 	}
 	b.messages = append(b.messages, msg)
 	st, log := b.store, b.log
@@ -205,6 +227,11 @@ func (b *Bus) ListMessages(ctx context.Context, instanceID string, limit int) []
 	out := make([]protocol.PeerMessage, 0)
 	for i := len(b.messages) - 1; i >= 0; i-- {
 		m := b.messages[i]
+		if m.Compacted {
+			// Compacted history is replaced by its summary, which is itself a
+			// message in the thread and is returned normally.
+			continue
+		}
 		if instanceID == "" || m.ToInstanceID == "broadcast" || m.ToInstanceID == instanceID || m.FromInstanceID == instanceID {
 			out = append(out, m)
 			if len(out) >= limit {

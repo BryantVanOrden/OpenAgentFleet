@@ -16,6 +16,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../agent_chat/chat_screen.dart';
+import 'memory_screen.dart';
 import 'voice_picker.dart';
 
 /// One machine, three views: what it looks like, what it is doing, and talking
@@ -213,6 +214,16 @@ class _ControlMenu extends ConsumerWidget {
         return;
       }
 
+      if (action == 'memory') {
+        await navigator.push(MaterialPageRoute(
+          builder: (_) => BotMemoryScreen(
+            instanceId: instance.id,
+            instanceName: instance.name,
+          ),
+        ));
+        return;
+      }
+
       if (action == 'shell') {
         try {
           final updated =
@@ -285,6 +296,15 @@ class _ControlMenu extends ConsumerWidget {
             subtitle: Text(
               instance.voice.isEmpty ? 'App default' : instance.voice,
             ),
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'memory',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.psychology_outlined),
+            title: Text('Memory'),
+            subtitle: Text('What this bot has kept'),
           ),
         ),
         PopupMenuItem(

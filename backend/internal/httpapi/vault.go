@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -126,6 +127,10 @@ func (s *Server) handleListPeerMessages(w http.ResponseWriter, r *http.Request) 
 }
 
 type SendPeerMessageReq struct {
+	// ConversationID files the message in a thread. Empty means the message
+	// is placed by its recipient, which is what agents that know nothing about
+	// conversations still do.
+	ConversationID   string         `json:"conversation_id"`
 	FromInstanceID   string         `json:"from_instance_id"`
 	FromInstanceName string         `json:"from_instance_name"`
 	ToInstanceID     string         `json:"to_instance_id"`
@@ -147,9 +152,42 @@ func (s *Server) handleSendPeerMessage(w http.ResponseWriter, r *http.Request) {
 	if req.ToInstanceID == "" {
 		req.ToInstanceID = "broadcast"
 	}
+	// Addressing a two-party thread implies the recipient, so the operator does
+	// not have to say both. Without this, a message typed into a pair thread
+	// would broadcast to the whole fleet.
+	if req.ToInstanceID == "broadcast" && req.ConversationID != "" &&
+		req.ConversationID != protocol.BroadcastConversationID {
+		if to, ok := s.otherMemberOf(r.Context(), req.ConversationID, req.FromInstanceID); ok {
+			req.ToInstanceID = to
+		}
+	}
 	if req.FromInstanceName == "" {
 		req.FromInstanceName = "Operator"
 	}
-	msg := vault.GlobalBus.SendMessage(r.Context(), req.FromInstanceID, req.FromInstanceName, req.ToInstanceID, req.Kind, req.Content, req.Data)
+	msg := vault.GlobalBus.SendMessageIn(r.Context(), req.ConversationID, req.FromInstanceID,
+		req.FromInstanceName, req.ToInstanceID, req.Kind, req.Content, req.Data)
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+// otherMemberOf resolves who a message in this thread is for, given who sent
+// it. Only meaningful for two-party threads; a group message stays a broadcast
+// because there is no single recipient to pick.
+func (s *Server) otherMemberOf(ctx context.Context, conversationID, senderID string) (string, bool) {
+	if senderID == "" {
+		senderID = protocol.OperatorMemberID
+	}
+	for _, c := range vault.GlobalBus.ListConversations(ctx) {
+		if c.ID != conversationID {
+			continue
+		}
+		if len(c.Members) != 2 {
+			return "", false
+		}
+		for _, m := range c.Members {
+			if m != senderID && m != protocol.OperatorMemberID {
+				return m, true
+			}
+		}
+	}
+	return "", false
 }

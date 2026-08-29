@@ -8,7 +8,7 @@ import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../core/voice/voice_service.dart';
-import '../settings/voice_settings_card.dart';
+import '../../core/voice/voice_prefs.dart';
 
 /// Talking to a machine.
 ///
@@ -65,9 +65,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// settings are still applied underneath so the fallback sounds right too.
   Future<void> _speakReply(String body) async {
     final prefs = ref.read(sharedPreferencesProvider);
-    final chosen = widget.voice.isNotEmpty
-        ? widget.voice
-        : (prefs.getString('voice.server') ?? '');
+    final chosen = widget.voice;
     _voice.useServerVoice(
       chosen.isEmpty ? null : chosen,
       speed: (prefs.getDouble('voice.rate') ?? 0.5) / 0.5,

@@ -21,6 +21,7 @@ import (
 type Store interface {
 	UpsertMemory(ctx context.Context, m protocol.MemoryRecord) error
 	ListMemories(ctx context.Context, namespace string, limit int) ([]protocol.MemoryRecord, error)
+	DeleteMemory(ctx context.Context, id string) error
 }
 
 // hydrateLimit caps what is loaded back on boot. Search is a linear scan over
@@ -125,13 +126,46 @@ func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) err
 	return nil
 }
 
-// Search retrieves the top-K relevant memories matching a query.
+// BotNamespace is the private memory namespace of a single instance.
+//
+// Each agent remembers into its own namespace so that what one agent learned
+// about its own desktop, its own credentials, its own half-finished work does
+// not surface as advice in another agent's recall. Shared knowledge still has a
+// home: anything written to "fleet" or "global" is visible to everyone.
+func BotNamespace(instanceID string) string {
+	if instanceID == "" {
+		return "fleet"
+	}
+	return "bot:" + instanceID
+}
+
+// Search retrieves the top-K relevant memories matching a query in one
+// namespace, plus whatever is shared.
 func (e *Engine) Search(ctx context.Context, namespace, query string, limit int) []protocol.MemoryRecord {
+	return e.SearchScoped(ctx, []string{namespace}, query, limit)
+}
+
+// SearchScoped is Search across several namespaces at once, which is what a
+// recall actually wants: the agent's own memory and the shared pool ranked
+// together, so the best answer wins rather than whichever pool was asked first.
+func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query string, limit int) []protocol.MemoryRecord {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	if limit <= 0 {
 		limit = 5
+	}
+
+	// "global" is readable from every namespace, so an empty or global-only
+	// scope means "no restriction" exactly as it did before.
+	allowed := make(map[string]bool, len(namespaces))
+	unrestricted := len(namespaces) == 0
+	for _, ns := range namespaces {
+		if ns == "" || ns == "global" {
+			unrestricted = true
+			continue
+		}
+		allowed[ns] = true
 	}
 
 	qVec := computeBagOfWordsVector(query)
@@ -142,7 +176,7 @@ func (e *Engine) Search(ctx context.Context, namespace, query string, limit int)
 
 	var scored []scoredMemory
 	for _, m := range e.memories {
-		if namespace != "" && namespace != "global" && m.Namespace != namespace && m.Namespace != "global" {
+		if !unrestricted && !allowed[m.Namespace] && m.Namespace != "global" {
 			continue
 		}
 
@@ -250,4 +284,48 @@ func cosineSimilarity(a, b []float32) float64 {
 		return 0
 	}
 	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// ListNamespace returns everything remembered in one namespace, newest first.
+//
+// Unlike Search this does no ranking and takes no query: it answers "what has
+// this agent chosen to keep", which is a question about the whole namespace
+// rather than about relevance to anything.
+func (e *Engine) ListNamespace(ctx context.Context, namespace string, limit int) []protocol.MemoryRecord {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 100
+	}
+	out := make([]protocol.MemoryRecord, 0)
+	for _, m := range e.memories {
+		if m.Namespace == namespace {
+			out = append(out, m)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// Forget removes one memory. An agent that recorded something wrong keeps
+// recalling it until someone can take it out.
+func (e *Engine) Forget(ctx context.Context, id string) bool {
+	e.mu.Lock()
+	_, existed := e.memories[id]
+	delete(e.memories, id)
+	st, log := e.store, e.log
+	e.mu.Unlock()
+
+	if existed && st != nil {
+		if err := st.DeleteMemory(ctx, id); err != nil && log != nil {
+			log.Warn("memory not deleted from store", "id", id, "err", err)
+		}
+	}
+	return existed
 }

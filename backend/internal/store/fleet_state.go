@@ -29,10 +29,11 @@ func (s *Store) InsertPeerMessage(ctx context.Context, m protocol.PeerMessage) e
 		m.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO peer_messages(id,from_instance_id,from_instance_name,to_instance_id,kind,content,data_json,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		`INSERT INTO peer_messages(id,from_instance_id,from_instance_name,to_instance_id,kind,content,data_json,created_at,conversation_id,compacted)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (id) DO NOTHING`,
-		m.ID, m.FromInstanceID, m.FromInstanceName, m.ToInstanceID, m.Kind, m.Content, data, m.CreatedAt)
+		m.ID, m.FromInstanceID, m.FromInstanceName, m.ToInstanceID, m.Kind, m.Content, data, m.CreatedAt,
+		nullIfEmpty(m.ConversationID), m.Compacted)
 	return norm(err)
 }
 
@@ -46,7 +47,7 @@ func (s *Store) ListPeerMessages(ctx context.Context, instanceID string, limit i
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT id,from_instance_id,from_instance_name,to_instance_id,kind,content,COALESCE(data_json,''),created_at
+	q := `SELECT id,from_instance_id,from_instance_name,to_instance_id,kind,content,COALESCE(data_json,''),created_at,COALESCE(conversation_id,''),compacted
           FROM peer_messages`
 	args := []any{limit}
 	if instanceID != "" {
@@ -65,7 +66,7 @@ func (s *Store) ListPeerMessages(ctx context.Context, instanceID string, limit i
 		var m protocol.PeerMessage
 		var data string
 		if err := rows.Scan(&m.ID, &m.FromInstanceID, &m.FromInstanceName, &m.ToInstanceID,
-			&m.Kind, &m.Content, &data, &m.CreatedAt); err != nil {
+			&m.Kind, &m.Content, &data, &m.CreatedAt, &m.ConversationID, &m.Compacted); err != nil {
 			return nil, err
 		}
 		if data != "" {
@@ -149,4 +150,13 @@ func (s *Store) ListMemories(ctx context.Context, namespace string, limit int) (
 func (s *Store) DeleteMemory(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM episodic_memories WHERE id=$1`, id)
 	return norm(err)
+}
+
+// nullIfEmpty keeps optional text columns NULL rather than empty-string, so
+// "unassigned" is one value in the database instead of two.
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

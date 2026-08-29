@@ -38,6 +38,13 @@ func (f *fakeMemStore) ListMemories(_ context.Context, namespace string, limit i
 	return out, nil
 }
 
+func (f *fakeMemStore) DeleteMemory(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.rows, id)
+	return nil
+}
+
 func (f *fakeMemStore) get(id string) (protocol.MemoryRecord, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

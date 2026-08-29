@@ -358,9 +358,15 @@ func (r *Runner) execute(
 	case protocol.ActFail:
 		return "failed: " + clip(a.Summary, 200), terminalFail
 
-	// remember/recall are handled here rather than in agentd: episodic memory is
-	// fleet-wide, so a discovery made on one desktop has to be retrievable from
-	// another. agentd only ever sees its own sandbox.
+	// remember/recall are handled here rather than in agentd: memory outlives
+	// the sandbox and is queried from the API side, and agentd only ever sees
+	// its own desktop.
+	//
+	// Each agent remembers into its own namespace. One shared pool meant every
+	// agent recalled every other agent's notes, so a scout's finding about its
+	// own machine came back as guidance to an unrelated bot mid-task. Recall
+	// still reads the shared "fleet" pool alongside, so deliberately fleet-wide
+	// knowledge reaches everyone.
 	//
 	// These were advertised in the system prompt with nothing behind them, so a
 	// model that followed the instruction got "unsupported action" back and
@@ -372,7 +378,7 @@ func (r *Runner) execute(
 		}
 		title := firstNonEmpty(a.Target, clip(content, 60))
 		if err := memory.GlobalEngine.StoreMemory(ctx, protocol.MemoryRecord{
-			Namespace:        "fleet",
+			Namespace:        memory.BotNamespace(inst.ID),
 			Title:            title,
 			Content:          content,
 			Tags:             []string{"agent", inst.Name},
@@ -388,7 +394,8 @@ func (r *Runner) execute(
 		if query == "" {
 			return "failed: recall needs a query", terminalNone
 		}
-		hits := memory.GlobalEngine.Search(ctx, "fleet", query, 5)
+		hits := memory.GlobalEngine.SearchScoped(ctx,
+			[]string{memory.BotNamespace(inst.ID), "fleet"}, query, 5)
 		if len(hits) == 0 {
 			// An explicit miss, not an error: "nothing recorded about X" is
 			// information the agent should act on rather than retry.

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'host_usage_card.dart';
-import 'voice_settings_card.dart';
 import '../auth/login_screen.dart';
 import 'theme_card.dart';
 
@@ -89,8 +88,6 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          const VoiceSettingsCard(),
           const SizedBox(height: 20),
           const HostUsageCard(),
           const SizedBox(height: 20),

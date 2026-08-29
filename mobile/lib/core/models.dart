@@ -446,9 +446,17 @@ class PeerMessage {
     required this.kind,
     required this.content,
     required this.createdAt,
+    this.conversationId = '',
+    this.compactedCount = 0,
   });
 
   final String id;
+
+  /// The thread this message belongs to.
+  final String conversationId;
+
+  /// For a summary message, how many messages it stands in for.
+  final int compactedCount;
   final String fromInstanceId;
   final String fromInstanceName;
   final String toInstanceId;
@@ -464,6 +472,93 @@ class PeerMessage {
         kind: j['kind'] as String? ?? 'message',
         content: j['content'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        conversationId: j['conversation_id'] as String? ?? '',
+        compactedCount:
+            ((j['data'] as Map?)?['compacted_messages'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Something a bot decided was worth keeping.
+///
+/// Agents choose what to remember; this is what that turned out to be. Worth
+/// looking at: a wrong conclusion recorded once is recalled indefinitely.
+class BotMemory {
+  const BotMemory({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.tags,
+    required this.createdAt,
+    this.sourceTaskId = '',
+  });
+
+  final String id;
+  final String title;
+  final String content;
+  final List<String> tags;
+  final DateTime createdAt;
+
+  /// The task the agent was running when it recorded this, if any.
+  final String sourceTaskId;
+
+  factory BotMemory.fromJson(Map<String, dynamic> j) => BotMemory(
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        content: j['content'] as String? ?? '',
+        tags: ((j['tags'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(growable: false),
+        createdAt:
+            DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        sourceTaskId: j['source_task_id'] as String? ?? '',
+      );
+}
+
+/// A thread in fleet comms: you and a bot, two bots, or a group.
+///
+/// Threads are created and deleted deliberately rather than inferred from who
+/// happened to message whom, so you can put two agents in a room before they
+/// have anything to say to each other.
+class Conversation {
+  const Conversation({
+    required this.id,
+    required this.kind,
+    required this.title,
+    required this.members,
+    required this.messageCount,
+    this.lastMessageAt,
+  });
+
+  /// The always-present channel every agent hears.
+  static const broadcastId = 'broadcast';
+
+  /// How you are identified in a member list.
+  static const operatorId = 'operator';
+
+  final String id;
+
+  /// 'direct', 'pair' or 'group'.
+  final String kind;
+  final String title;
+  final List<String> members;
+  final int messageCount;
+  final DateTime? lastMessageAt;
+
+  bool get isBroadcast => id == broadcastId;
+
+  /// A pair thread is two agents talking with you watching, which is worth
+  /// showing differently from a thread you are in.
+  bool get isPair => kind == 'pair';
+
+  factory Conversation.fromJson(Map<String, dynamic> j) => Conversation(
+        id: j['id'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'group',
+        title: j['title'] as String? ?? '',
+        members: ((j['members'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(growable: false),
+        messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
+        lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
       );
 }
 

@@ -23,6 +23,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 		if err := vault.GlobalBus.AttachStore(ctx, s.db, s.logger()); err != nil {
 			s.logger().Error("peer message history not loaded; the bus stays in-memory", "err", err)
 		}
+		if err := vault.GlobalBus.AttachConversationStore(ctx, s.db); err != nil {
+			s.logger().Error("conversations not loaded; threads stay in-memory", "err", err)
+		}
 		if err := memory.GlobalEngine.AttachStore(ctx, s.db, s.logger()); err != nil {
 			s.logger().Error("episodic memory not loaded; the index stays in-memory", "err", err)
 		}
