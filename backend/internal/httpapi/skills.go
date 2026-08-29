@@ -146,9 +146,11 @@ func (s *Server) handleRefineSkill(w http.ResponseWriter, r *http.Request) {
 
 	var task *protocol.Task
 	if req.TaskID != "" {
-		task, err = s.db.Task(r.Context(), req.TaskID)
-		if err != nil {
-			failErr(w, err)
+		// The task comes from the body, so the check happens here rather than
+		// at the top: refinement reads a whole trajectory, which is the bot's
+		// work in detail.
+		var ok bool
+		if task, ok = s.requirePermForTask(w, r, req.TaskID, protocol.PermRead); !ok {
 			return
 		}
 	} else {
@@ -158,7 +160,18 @@ func (s *Server) handleRefineSkill(w http.ResponseWriter, r *http.Request) {
 			failErr(w, err)
 			return
 		}
+		// Same rule when the task is found rather than named: scanning the
+		// fleet for a matching run must not reach into another department's.
+		acc := accessFrom(r.Context())
+		instances, _ := s.db.ListInstances(r.Context())
+		orgOf := make(map[string]string, len(instances))
+		for _, in := range instances {
+			orgOf[in.ID] = in.OrgID
+		}
 		for i := range tasks {
+			if !acc.Can(protocol.PermRead, orgOf[tasks[i].InstanceID], tasks[i].InstanceID) {
+				continue
+			}
 			if tasks[i].SkillID == skillID && tasks[i].State == protocol.TaskSucceeded {
 				task = &tasks[i]
 				break

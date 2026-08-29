@@ -29,9 +29,22 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "goal is required")
 		return
 	}
+	// The bot comes from the body here rather than the path, so the check is
+	// written out rather than reusing the path-based helper. Starting work on
+	// a bot is PermChat: it is the same act as telling it to do something in
+	// conversation, by a different door.
 	inst, err := s.db.Instance(r.Context(), req.InstanceID)
 	if err != nil {
 		failErr(w, err)
+		return
+	}
+	acc := accessFrom(r.Context())
+	if !acc.Can(protocol.PermView, inst.OrgID, inst.ID) {
+		fail(w, http.StatusNotFound, "no such instance")
+		return
+	}
+	if !acc.Can(protocol.PermChat, inst.OrgID, inst.ID) {
+		fail(w, http.StatusForbidden, "you cannot start work on this bot")
 		return
 	}
 	if inst.State != protocol.InstanceRunning {

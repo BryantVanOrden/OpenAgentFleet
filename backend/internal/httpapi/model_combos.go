@@ -99,9 +99,8 @@ func (s *Server) handleDeleteModelCombo(w http.ResponseWriter, r *http.Request) 
 // is not something an operator should have to simulate in their head to find
 // out that their expensive reasoner is never reached.
 func (s *Server) handleResolveChain(w http.ResponseWriter, r *http.Request) {
-	inst, err := s.db.Instance(r.Context(), r.PathValue("id"))
-	if err != nil {
-		failErr(w, err)
+	inst, ok := s.requirePerm(w, r, r.PathValue("id"), protocol.PermView)
+	if !ok {
 		return
 	}
 	providers, err := s.db.ListProviders(r.Context(), false)
