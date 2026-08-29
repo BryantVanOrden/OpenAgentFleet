@@ -124,12 +124,14 @@ func (e *Engine) GetPipeline(ctx context.Context, id string) (protocol.WorkflowP
 }
 
 func (e *Engine) DeletePipeline(ctx context.Context, id string) {
-	if e.store != nil {
-		_ = e.store.DeletePipeline(ctx, id)
-	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	delete(e.pipelines, id)
+	st := e.store
+	e.mu.Unlock()
+
+	if st != nil {
+		_ = st.DeletePipeline(ctx, id)
+	}
 }
 
 func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.PipelineRun, error) {
@@ -169,6 +171,7 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 		StartedAt:     time.Now().UTC(),
 	}
 	e.runs[runID] = run
+	snapshot := snapshotRun(run)
 	e.mu.Unlock()
 
 	// Real execution, in dependency order. What is stored as a graph now runs
@@ -217,7 +220,7 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 		e.mu.Unlock()
 	}()
 
-	return run, nil
+	return snapshot, nil
 }
 
 func (e *Engine) ListRuns(ctx context.Context, pipelineID string) []protocol.PipelineRun {
@@ -227,8 +230,28 @@ func (e *Engine) ListRuns(ctx context.Context, pipelineID string) []protocol.Pip
 	out := make([]protocol.PipelineRun, 0)
 	for _, r := range e.runs {
 		if pipelineID == "" || r.PipelineID == pipelineID {
-			out = append(out, r)
+			out = append(out, snapshotRun(r))
 		}
 	}
 	return out
+}
+
+// snapshotRun detaches a run from the goroutine still executing it.
+//
+// PipelineRun carries a map, so handing the struct out by value still shares
+// the results with the executor. The API layer then serialises that map while
+// a node writes to it, which is a concurrent map access — a fatal error, not a
+// recoverable one, so polling a running pipeline could take the orchestrator
+// down.
+func snapshotRun(r protocol.PipelineRun) protocol.PipelineRun {
+	results := make(map[string]string, len(r.NodeResults))
+	for k, v := range r.NodeResults {
+		results[k] = v
+	}
+	r.NodeResults = results
+	if r.FinishedAt != nil {
+		at := *r.FinishedAt
+		r.FinishedAt = &at
+	}
+	return r
 }
