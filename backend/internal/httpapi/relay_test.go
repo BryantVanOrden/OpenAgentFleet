@@ -270,3 +270,40 @@ func TestHandoffTasksAreMarked(t *testing.T) {
 		t.Error("an operator's own task was treated as a handoff")
 	}
 }
+
+// A parked task is live work, not finished work.
+//
+// Requiring the publisher's task to be exactly running silently broke the
+// feature: an agent that published and then stopped to ask something was
+// dropped from the relay, so the artefact sat in the catalog and nobody was
+// ever handed it.
+func TestParkedPublisherStillHandsOn(t *testing.T) {
+	live := []protocol.TaskState{
+		protocol.TaskRunning,
+		protocol.TaskAwaitingHuman,
+		protocol.TaskQueued,
+	}
+	finished := []protocol.TaskState{
+		protocol.TaskSucceeded,
+		protocol.TaskFailed,
+		protocol.TaskCancelled,
+	}
+
+	isLive := func(st protocol.TaskState) bool {
+		switch st {
+		case protocol.TaskRunning, protocol.TaskAwaitingHuman, protocol.TaskQueued:
+			return true
+		}
+		return false
+	}
+	for _, st := range live {
+		if !isLive(st) {
+			t.Errorf("%s should still be able to hand work on", st)
+		}
+	}
+	for _, st := range finished {
+		if isLive(st) {
+			t.Errorf("%s is finished and should be forgotten", st)
+		}
+	}
+}

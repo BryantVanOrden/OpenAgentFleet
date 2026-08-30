@@ -430,14 +430,27 @@ func (s *Server) handOffFrom(ctx context.Context, instanceID, produced string) {
 	if !ok {
 		return
 	}
-	// The task must still be the one the agent is running.
+	// The task must not be one that has finished for good.
 	//
 	// The relay held on to tasks that had been cancelled, so when an agent
 	// later published something for an entirely different request, it handed
 	// work on for the old one -- "ToolCheck is done with the test, over to you
 	// Auditor" arrived in the middle of a job about writing documentation.
+	//
+	// But requiring it to be exactly running was too strict, and silently
+	// broke the thing this exists for: an agent that publishes and then stops
+	// to ask something is parked, not finished, and dropping it there meant
+	// the artefact was in the catalog and nobody was ever handed it. Parked is
+	// live -- the work exists and the next agent can start on it.
 	task, err := s.db.Task(ctx, taskID)
-	if err != nil || task.State != protocol.TaskRunning {
+	if err != nil {
+		s.relay.forget(taskID)
+		return
+	}
+	switch task.State {
+	case protocol.TaskRunning, protocol.TaskAwaitingHuman, protocol.TaskQueued:
+		// Still this agent's current work.
+	default:
 		s.relay.forget(taskID)
 		return
 	}
