@@ -250,3 +250,23 @@ func TestBriefForIsSpecificToTheHop(t *testing.T) {
 		}
 	}
 }
+
+// Work handed from one agent to another is marked, so it does not stop to ask
+// a person.
+//
+// It arrives with concrete instructions from a colleague, nobody is standing
+// by to answer, and each wait holds up everyone downstream: one run spent
+// three eight-minute waits in twenty minutes.
+func TestHandoffTasksAreMarked(t *testing.T) {
+	task := &protocol.Task{
+		Params: map[string]string{protocol.ParamHandoff: "1"},
+	}
+	if task.Params[protocol.ParamHandoff] == "" {
+		t.Error("a handoff task is not marked as one")
+	}
+	// An ordinary task is not marked, so it still waits for a person.
+	ordinary := &protocol.Task{}
+	if ordinary.Params[protocol.ParamHandoff] != "" {
+		t.Error("an operator's own task was treated as a handoff")
+	}
+}

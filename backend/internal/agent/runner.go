@@ -818,6 +818,12 @@ func (r *Runner) escalate(
 	if err != nil {
 		asks = 1 // unknown: assume it has asked, and do not stall on it
 	}
+	// Work handed over by a colleague does not wait for a person at all. It
+	// arrived with instructions, nobody is standing by to answer, and every
+	// wait holds up each agent downstream.
+	if task.Params[protocol.ParamHandoff] != "" {
+		asks = 2
+	}
 
 	reply, err := r.waitForReply(ctx, alert.ID, asks)
 	if err != nil {

@@ -938,3 +938,11 @@ func ValidWorkKind(kind string) bool {
 	}
 	return false
 }
+
+
+// ParamHandoff marks a task that one agent handed to another.
+//
+// Such a task carries concrete instructions from a colleague, so stopping to
+// ask a person is almost never the right move: nobody is waiting to answer,
+// and each wait holds up everyone downstream.
+const ParamHandoff = "handoff"

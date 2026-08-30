@@ -357,6 +357,12 @@ func (s *Server) handOff(ctx context.Context, taskID, result string) {
 		State:      protocol.TaskQueued,
 		MaxSteps:   s.cfg.MaxSteps,
 		CreatedAt:  time.Now().UTC(),
+		// Marked as a handoff so the runner does not park it waiting for a
+		// person. A colleague handed this agent concrete work with concrete
+		// instructions; there is no question a human is going to answer, and
+		// each wait costs eight minutes of a chain standing still. Measured:
+		// three such waits in twenty minutes on one run.
+		Params: map[string]string{protocol.ParamHandoff: "1"},
 	}
 	bg := context.WithoutCancel(ctx)
 	if err := s.db.CreateTask(bg, task); err != nil {
