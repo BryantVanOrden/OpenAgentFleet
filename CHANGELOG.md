@@ -105,6 +105,22 @@ twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
 
+Agents can now run the work they are asked to test. `read_work` writes anything
+a browser can show into the sandbox and leads its answer with the `file://`
+path. A tester sent to try an app could previously read its source and nothing
+else: one spent forty steps looking for somewhere to run it — typing
+`http://localhost:8080/rollr.html`, which nothing serves, then searching the
+web and landing on a real company that happens to share the name. The copy
+travels through the orchestrator's channel into the container rather than the
+agent's, so it works with shell access turned off, which is how every bot in
+this fleet is configured.
+
+Typing a URL replaces the address bar instead of appending to it. `type`
+appends, so an agent retrying an address built one out of every attempt —
+`.../work/rollr.htmlfile:///home/agent/work/rollr.htmlhttp://localhost:8080/...`
+— and the page never loaded, which read as the page being broken rather than
+the typing being wrong.
+
 Firefox no longer opens on its first-run onboarding modal. An agent sent to
 test a web page found a "Welcome to Firefox" dialog over it, clicked Continue,
 got a nearly identical onboarding panel, and was judged to be clicking into the
