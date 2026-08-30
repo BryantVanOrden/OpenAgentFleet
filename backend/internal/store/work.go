@@ -164,9 +164,16 @@ func checkAppDocument(content string) error {
 				"Publish source code as work_kind \"file\" instead",
 			strings.Join(missing, " and "))
 	}
-	// Self-contained is the whole containment story: the web view has no
-	// network, so an external reference is not a style choice, it is a
-	// resource that will never arrive.
+	// The view that runs these denies the page any network with a
+	// Content-Security-Policy (see mini_app_screen.dart), so an external
+	// reference is a resource that will never arrive.
+	//
+	// This scan is the courtesy, not the control. It catches the honest
+	// mistake at publish time and says so while the agent can still fix it;
+	// it cannot catch a URL built at runtime, and it is not trying to. The
+	// policy is what actually holds -- this comment used to claim the view had
+	// no network as though that were free, which it was not until the policy
+	// existed.
 	for _, ref := range []string{"src=\"http", "src='http", "href=\"http", "href='http"} {
 		if strings.Contains(lower, ref) {
 			return fmt.Errorf(

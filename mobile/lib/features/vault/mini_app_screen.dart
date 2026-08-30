@@ -51,7 +51,41 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
             ? NavigationDecision.navigate
             : NavigationDecision.prevent,
       ))
-      ..loadHtmlString(widget.item.content);
+      // A Content-Security-Policy is what actually stops the page reaching the
+      // network. The navigation delegate only sees top-level navigation, so on
+      // its own it does nothing about fetch, XMLHttpRequest, a WebSocket, or
+      // an <img> src assigned at runtime -- and a publish-time scan for
+      // src="http can be walked around with string concatenation. Enforcing it
+      // in the document is the only place that holds.
+      //
+      // default-src 'self' with no origin to be 'self' of, plus 'unsafe-inline'
+      // and 'unsafe-eval' so an inline game still runs, and connect-src 'none'
+      // so nothing can call out.
+      ..loadHtmlString(_sandboxed(widget.item.content));
+  }
+
+  /// Prepends a Content-Security-Policy that denies the page any network.
+  ///
+  /// Inserted rather than required of the author: an agent writing a game
+  /// should not have to remember a security header, and one that forgot would
+  /// otherwise be trusted. Put first inside `<head>` so it applies before
+  /// anything in the document can act.
+  static String _sandboxed(String html) {
+    const csp = '<meta http-equiv="Content-Security-Policy" '
+        "content=\"default-src 'none'; "
+        "img-src data: blob:; media-src data: blob:; "
+        "style-src 'unsafe-inline'; "
+        "script-src 'unsafe-inline' 'unsafe-eval'; "
+        "font-src data:; "
+        'connect-src \'none\'; form-action \'none\'; base-uri \'none\'">';
+
+    final head = RegExp(r'<head[^>]*>', caseSensitive: false).firstMatch(html);
+    if (head != null) {
+      return html.replaceRange(head.end, head.end, csp);
+    }
+    // No head element: the browser will make one, so put the policy at the top
+    // where it still lands inside it.
+    return csp + html;
   }
 
   @override

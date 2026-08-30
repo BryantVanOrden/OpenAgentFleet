@@ -487,6 +487,12 @@ func (r *Runner) execute(
 		if err != nil {
 			return "failed to read the catalog: " + err.Error(), terminalNone
 		}
+		// Scoped to this bot's departments, the same way the HTTP layer scopes
+		// a person's view. Reading the whole catalog and matching on name let
+		// a bot in one department read another department's work by guessing
+		// what it was called -- the catalog is shared within a department, not
+		// across the deployment.
+		all = readableWork(all, inst, r.authorOrgs(ctx))
 		for _, w := range all {
 			if !strings.EqualFold(w.Name, name) {
 				continue
@@ -1065,4 +1071,66 @@ func (r *Runner) workspaceNamed(ctx context.Context, name string, inst *protocol
 		return "", err
 	}
 	return ws.ID, nil
+}
+
+
+// readableWork filters the catalog to what one bot may see.
+//
+// An item filed to a department is readable by a bot in that department. An
+// item filed nowhere is readable by the bot that published it and by bots that
+// share a department with it -- a bot in several departments files its work
+// nowhere, because there is no single department a shared bot's output belongs
+// to, and its colleagues still have to be able to build on it.
+func readableWork(all []protocol.WorkItem, inst *protocol.Instance, authorOrgs map[string][]string) []protocol.WorkItem {
+	mine := make(map[string]bool, len(inst.OrgIDs))
+	for _, o := range inst.OrgIDs {
+		mine[o] = true
+	}
+	shares := func(orgs []string) bool {
+		for _, o := range orgs {
+			if mine[o] {
+				return true
+			}
+		}
+		// Two bots that are both unfiled are not being kept apart by anything.
+		return len(orgs) == 0 && len(inst.OrgIDs) == 0
+	}
+
+	out := make([]protocol.WorkItem, 0, len(all))
+	for _, w := range all {
+		switch {
+		case w.CreatedBy == inst.ID:
+			// Always your own.
+		case w.OrgID != "":
+			if !mine[w.OrgID] {
+				continue
+			}
+		case w.CreatedBy != "":
+			// Filed nowhere because the bot that made it is in several
+			// departments. Fall back to that bot's departments, so colleagues
+			// can build on it and outsiders still cannot.
+			if !shares(authorOrgs[w.CreatedBy]) {
+				continue
+			}
+		default:
+			// Published by a person into no department: admin-only, and an
+			// agent is not an admin.
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// authorOrgs maps each bot to its departments, for the fallback above.
+func (r *Runner) authorOrgs(ctx context.Context) map[string][]string {
+	instances, err := r.db.ListInstances(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string][]string, len(instances))
+	for _, in := range instances {
+		out[in.ID] = in.OrgIDs
+	}
+	return out
 }

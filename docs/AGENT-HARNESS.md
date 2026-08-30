@@ -17,7 +17,7 @@ could not verify is tagged **unverified**. Read `ARCHITECTURE.md` first.
 >   longer talks about a scale factor; it states the image's own dimensions, and
 >   `backend/internal/agent/coordspace.go` calibrates each model's convention by
 >   measurement rather than instruction.
-> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 33.
+> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 32.
 >   The additions include `python`, `spawn_agent`, `mount_tool`, `unmount_tool`,
 >   `call_tool`, `deep_search`, `remember`, `recall`, `speak`, `message_peer`,
 >   `delegate_task`, `share_secret`, `share_session`, `snapshot`, `rollback`,

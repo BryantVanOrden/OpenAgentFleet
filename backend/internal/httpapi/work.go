@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -15,18 +16,52 @@ import (
 // Scoped like secrets: an item filed to a department is visible to that
 // department, and an unfiled item is admin-only. Filtered here rather than in
 // the client, or every department's work would go over the wire to everyone.
-func visibleWork(acc protocol.Access, all []protocol.WorkItem) []protocol.WorkItem {
+func visibleWork(acc protocol.Access, all []protocol.WorkItem, authorOrgs map[string][]string) []protocol.WorkItem {
 	out := make([]protocol.WorkItem, 0, len(all))
 	for _, w := range all {
-		if w.OrgID == "" {
-			if acc.GlobalAdmin {
-				out = append(out, w)
-			}
-			continue
-		}
-		if acc.CanInOrg(protocol.PermRead, w.OrgID) {
+		if canSeeWork(acc, w, authorOrgs) {
 			out = append(out, w)
 		}
+	}
+	return out
+}
+
+// canSeeWork answers for one item.
+//
+// An item filed to a department is that department's. An item with no
+// department falls back to the departments of the bot that made it -- which
+// matters because a bot shared between two departments files its work
+// nowhere: there is no single department a shared bot's output belongs to, and
+// picking one would hand it to the wrong people. Without this fallback the
+// exact arrangement multi-department bots exist to enable made that bot's
+// output invisible to both of them.
+//
+// If you may see the bot, you may see what it published. Work the operator
+// filed nowhere stays admin-only, as an unfiled secret does.
+func canSeeWork(acc protocol.Access, w protocol.WorkItem, authorOrgs map[string][]string) bool {
+	if acc.GlobalAdmin {
+		return true
+	}
+	if w.OrgID != "" {
+		return acc.CanInOrg(protocol.PermRead, w.OrgID)
+	}
+	if w.CreatedBy == "" {
+		// Published by a person into no department.
+		return false
+	}
+	return acc.Can(protocol.PermRead, authorOrgs[w.CreatedBy], w.CreatedBy)
+}
+
+// workAuthorOrgs maps each bot to the departments it belongs to, for the
+// fallback above. One query for the fleet rather than one per item.
+func (s *Server) workAuthorOrgs(ctx context.Context) map[string][]string {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string][]string, len(instances))
+	for _, in := range instances {
+		out[in.ID] = in.OrgIDs
 	}
 	return out
 }
@@ -37,7 +72,8 @@ func (s *Server) handleListWork(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, visibleWork(accessFrom(r.Context()), all))
+	writeJSON(w, http.StatusOK,
+		visibleWork(accessFrom(r.Context()), all, s.workAuthorOrgs(r.Context())))
 }
 
 func (s *Server) handleGetWork(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +84,7 @@ func (s *Server) handleGetWork(w http.ResponseWriter, r *http.Request) {
 	}
 	// 404 rather than 403 for something you may not see: telling someone an
 	// item exists but is not theirs is itself a disclosure.
-	if len(visibleWork(accessFrom(r.Context()), []protocol.WorkItem{*item})) == 0 {
+	if !canSeeWork(accessFrom(r.Context()), *item, s.workAuthorOrgs(r.Context())) {
 		fail(w, http.StatusNotFound, "no such work item")
 		return
 	}
@@ -93,7 +129,7 @@ func (s *Server) handleDeleteWork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acc := accessFrom(r.Context())
-	if len(visibleWork(acc, []protocol.WorkItem{*item})) == 0 {
+	if !canSeeWork(acc, *item, s.workAuthorOrgs(r.Context())) {
 		fail(w, http.StatusNotFound, "no such work item")
 		return
 	}

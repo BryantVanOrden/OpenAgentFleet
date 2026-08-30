@@ -25,7 +25,7 @@ This is the primary risk and it has no complete fix. What is done:
   the prompt under a heading that names it as coming from the human, and nothing
   the agent can see on screen can forge that position.
 - The action vocabulary is closed in the sense that a model cannot invent a new
-  *transport*: anything it emits that is not one of the 24 kinds in
+  *transport*: anything it emits that is not one of the 32 kinds in
   `validActions` (`backend/internal/agent/parse.go`) is a parse error, and three
   in a row fail the task. It is **not** closed in the sense of "closed set of
   effects" — `python`, `mount_tool` and `call_tool` carry model-authored source
@@ -377,10 +377,16 @@ What contains it:
 - The document is loaded with `loadHtmlString`, not from a URL, so it runs on
   an opaque origin. It has no cookies, no `localStorage` shared with anything,
   and no access to the app's session token.
-- The web view has no network. Navigation away is refused by the navigation
-  delegate, and a `src`/`href` that loads over the network is refused at
-  publish time — not as a style rule, but because such a resource would never
-  arrive, and an app that half-loads is worse than one rejected.
+- The web view has no network, enforced by a Content-Security-Policy the
+  viewer injects into every app before it runs: `default-src 'none'` with
+  `connect-src 'none'`, and `script-src 'unsafe-inline'` so an inline game
+  still works. Verified against a browser, which refuses the request citing
+  the directive — including a URL assembled at runtime from string pieces.
+  Navigation away is separately refused by the navigation delegate.
+- The publish-time scan for `src="http` is a courtesy, not the control. It
+  catches the honest mistake while the agent can still correct it, and cannot
+  catch a URL built at runtime. Saying otherwise was the mistake this entry
+  used to make.
 - The content must actually be an HTML document. A bot published a Python file
   as an app and nothing stopped it; that now fails with a message telling the
   agent to use `work_kind: "file"` instead.

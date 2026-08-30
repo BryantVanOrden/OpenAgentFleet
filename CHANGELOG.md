@@ -24,10 +24,13 @@ refer to each other's work by what it is called. Publishing an existing name is
 an edit that bumps the version.
 
 An app runs from a string rather than a URL, so it has an opaque origin, no
-cookies, no access to the app's token and no network to reach. Content that is
-not a web page, or that loads something over the network, is refused at publish
-time with a message telling the agent what to do instead — a bot published a
-Python file as an app, and nothing had stopped it.
+cookies and no access to the app's token, and the view injects a
+Content-Security-Policy that denies it any network at all. Content that is not
+a web page is refused at publish time with a message telling the agent what to
+do instead — a bot published a Python file as an app, and nothing had stopped
+it. The publish-time scan for external references is a courtesy that catches an
+honest mistake early; the policy is what actually holds, since a URL built at
+runtime walks past any scan.
 
 ### API keys, and disabling people
 

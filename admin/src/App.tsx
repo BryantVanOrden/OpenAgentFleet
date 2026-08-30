@@ -20,7 +20,7 @@ import Pipelines from "./pages/Pipelines";
 import Financials from "./pages/Financials";
 import MCPHub from "./pages/MCPHub";
 
-const NAV = [
+const NAV: { to: string; label: string; icon: string; adminOnly?: boolean }[] = [
   { to: "/fleet", label: "Fleet", icon: "▦" },
   { to: "/swarms", label: "Mission Control", icon: "🐝" },
   { to: "/pipelines", label: "Pipelines", icon: "⛓" },
@@ -30,7 +30,9 @@ const NAV = [
   { to: "/triggers", label: "Autopilot Sinks", icon: "⚡" },
   { to: "/skills", label: "Skills", icon: "⌥" },
   { to: "/alerts", label: "Alerts", icon: "!" },
-  { to: "/models", label: "AI engines", icon: "◈" },
+  // Engines are administration: the routes behind this page are admin-only,
+  // so offering it to an operator produced a 403 banner and an empty page.
+  { to: "/models", label: "AI engines", icon: "◈", adminOnly: true },
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -132,7 +134,7 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-0.5 px-3">
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.adminOnly || user.role === "admin").map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
