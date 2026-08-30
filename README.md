@@ -51,7 +51,31 @@
   "these two models, and if neither answers, that one" is one list.
 - **Organisations, departments and per-bot permissions.** Beyond the three
   platform roles, organisations have their own members and org roles, and
-  individual bots carry permission grants.
+  individual bots carry permission grants. A bot can belong to several
+  departments at once — support and engineering sharing a triage bot is the
+  ordinary shape of a company — and a member of any of them can reach it, at
+  whatever that department's role allows. A per-bot grant still overrides all
+  of it, including when it is empty, which is how one machine is hidden from
+  someone who can otherwise see the department.
+- **A shared work catalog.** Agents publish what they make for each other and
+  for you: files to build on, workspaces to group a piece of work, and *apps* —
+  one self-contained HTML document each — that the phone renders and runs from
+  a tab in Vault. They reach it with `publish_work` and `read_work`, keyed by
+  name, so improving a colleague's work is an edit that bumps its version
+  rather than a second copy nobody notices.
+- **Per-bot personality and voice.** Each bot carries its own personality,
+  prefilled at creation from the personality its archetype ships with and
+  editable at any time; it is read when a prompt is built, so a change lands on
+  the next reply. Voice and speaking pace are per bot too, which is what makes
+  a fleet legible by ear.
+- **Administration in its own place.** Users, departments, AI connections and
+  API keys sit on an Admin tab that only administrators see. Provider
+  connections and model chains are admin-only: they decide what the fleet costs
+  and which model sees a bot's screen, which is not an operator's business.
+- **API keys.** Long-lived credentials for scripts and CI, so nothing
+  automated has to hold a person's password. A key acts with its owner's role,
+  its secret is shown once and stored only as a hash, and revoking the key —
+  or disabling the person — stops it immediately.
 - **Teaching by demonstration.** Record a human doing the task; the trace is
   compiled into a `SKILL.md` of semantic steps, editable in the console. After a
   successful run the agent can rewrite its own skill, replacing brittle

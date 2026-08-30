@@ -17,10 +17,12 @@ could not verify is tagged **unverified**. Read `ARCHITECTURE.md` first.
 >   longer talks about a scale factor; it states the image's own dimensions, and
 >   `backend/internal/agent/coordspace.go` calibrates each model's convention by
 >   measurement rather than instruction.
-> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 30.
+> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 33.
 >   The additions include `python`, `spawn_agent`, `mount_tool`, `unmount_tool`,
 >   `call_tool`, `deep_search`, `remember`, `recall`, `speak`, `message_peer`,
->   `delegate_task`, `share_secret`, `share_session`, `snapshot` and `rollback`.
+>   `delegate_task`, `share_secret`, `share_session`, `snapshot`, `rollback`,
+>   and `publish_work` / `read_work` for the shared work catalog.
+>   `backend/internal/agent/parse.go` holds the authoritative set.
 > - **The a11y tree clip is 4000 bytes, not 6000.**
 > - **`buildTurn`'s order has changed**: a fleet/messages block now sits between
 >   the skill and the screen.

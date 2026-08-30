@@ -4,6 +4,108 @@ Notable changes to AgentFleet. Dates are release dates; the format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 
+## [Unreleased]
+
+Twelve commits since the 1.1.0 notes were written. Where v1.1.0 was about
+several of each thing, this is about the agents producing something you can
+keep, and about telling administration apart from use.
+
+### A shared work catalog
+
+Agents could message each other and share credentials but had nowhere to put
+the work itself, so whatever one produced lived in its container and died with
+it — a second bot asked to build on it had to be told what to rebuild rather
+than handed the thing.
+
+They now publish files, workspaces, and *apps*: one self-contained HTML
+document each, which the phone renders and runs from a third tab in Vault. Two
+new actions, `publish_work` and `read_work`, both keyed by name, because agents
+refer to each other's work by what it is called. Publishing an existing name is
+an edit that bumps the version.
+
+An app runs from a string rather than a URL, so it has an opaque origin, no
+cookies, no access to the app's token and no network to reach. Content that is
+not a web page, or that loads something over the network, is refused at publish
+time with a message telling the agent what to do instead — a bot published a
+Python file as an app, and nothing had stopped it.
+
+### API keys, and disabling people
+
+There was no way in but a password login returning a short-lived token, so
+anything automated had to be handed somebody's password. Keys are issued per
+user and per purpose, carry their owner's role, record when they were last
+used, and are stored only as a hash. Revoking a key, or disabling the account
+it belongs to, stops it at the next request.
+
+Accounts can now be disabled rather than deleted — deleting cascades a
+person's keys away and orphans what they made — and an administrator can reset
+a password, which on a deployment with no mail server is the only way back in.
+
+### Administration is its own place
+
+Users, departments, AI connections and API keys moved to an Admin tab that only
+administrators see. They used to sit in Settings, offered to everyone, with the
+server doing the refusing.
+
+Provider connections, model combinations and per-bot fallback chains are now
+admin-only, reading included. Listing was open to any signed-in user and the
+mutating routes needed only operator, so someone handed a single bot to drive
+could read every provider's base URL and OAuth client id and rewrite the chain
+the whole fleet falls back through.
+
+### A bot can belong to several departments
+
+`instances.org_id` held exactly one, so a bot two teams both relied on had to be
+filed under one of them and be invisible to the other. Membership is a join
+table now and permission checks take the union across a bot's departments:
+sharing widens who can reach a machine and never narrows it.
+
+### Personality, voice and pace, per bot
+
+Each bot carries its own personality, prefilled at creation from the one its
+archetype ships with — which nothing had ever read, so every bot was created
+with an empty one — and editable at any time. Voice speed joins voice as a
+per-bot setting.
+
+### Fixed
+
+- **Fleet comms answered every message as a status update.** Asked to work
+  together and build something, four agents each replied "I am currently idle
+  and available" and nobody did anything. The prompt behind those replies was
+  written to answer "what is everyone up to" and told the agent never to claim
+  it had started anything. An agent now tells a request from a question, and a
+  request produces a plan that starts real work.
+- **Sandboxes were addressed by a pinned IP.** Docker hands out a new address
+  every restart, so after a host reboot one bot pointed at a dead address — a
+  500 on every desktop call — and another pointed at an address a *different*
+  bot had since been given, which would have shown one agent's desktop under
+  another's name. They are addressed by container alias now, and reconcile
+  repairs stale addresses instead of only syncing lifecycle state.
+- **The read-only desktop had never worked across a restart.** `VNCViewURL` had
+  no database column at all, so it was empty after every restart and every
+  auditor was refused with a message blaming the age of the instance.
+- **Half of every API key issued was dead on arrival.** The key parser split on
+  every underscore and the secret half is base64url, whose alphabet contains
+  one.
+- **`/api/orgs` returned 500 to every caller.** Two raw SQL statements still
+  queried the dropped `instances.org_id`; searching for the Go field name does
+  not look inside query strings. A test now reads the SQL and fails if it
+  happens again.
+- **A new chat opened at the bottom of its list.** Threads were ordered by last
+  message and a new one has none, so making a chat put it where it was hardest
+  to find.
+- **A new chat made from the broadcast was not a broadcast.** It carried the
+  current roster as a member list, so it grouped apart from the everyone
+  channel and silently excluded every bot added afterwards.
+
+### Changed
+
+- The default local vision model is `qwen3.5:4b`, in `.env.example`, the
+  compose default, the code fallback and the model catalogue — which still
+  advertised the previous one as "Default" and did not list qwen3.5 at all.
+
+---
+
 ## [1.1.0] — 2026-08-29
 
 Sixty commits since v1.0.0. The theme is that v1.0.0 was built for one operator

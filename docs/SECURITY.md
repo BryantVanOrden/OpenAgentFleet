@@ -303,9 +303,17 @@ tunnel is fragile. So the sandbox runs **two** VNC servers against the same
 display: the interactive one on 6901, and a second `x11vnc -viewonly` on 6902
 (`sandbox/supervisord.conf`). `handleVNCProxy` decides from the caller's role
 which upstream to splice them to — anything below `operator` gets 6902, where
-input events have nowhere to go. It fails closed: an instance provisioned before
-the view-only server existed has no `VNCViewURL`, and the proxy returns 409
-rather than quietly handing an auditor the interactive port.
+input events have nowhere to go. It fails closed: an instance with no
+`VNCViewURL` gets a 409 rather than the interactive port.
+
+Failing closed was load-bearing. `VNCViewURL` was set when a bot was
+provisioned and then never stored — there was no column for it — so it was
+empty from the next restart onward and every auditor was refused. The feature
+had not worked across a restart since it was written, and the message blamed
+the age of the instance rather than the missing column. It is persisted now.
+The lesson is the one worth keeping: the failure mode was "nobody can watch"
+rather than "an auditor got a keyboard", which is the direction a mistake here
+has to fall.
 
 The proxy also strips `Authorization`, `Cookie` and `?token=` before forwarding,
 so the platform JWT never reaches the sandbox.
@@ -317,6 +325,33 @@ verified on every connection.
 
 `POST /api/auth/bootstrap` creates the first administrator and refuses once any
 user exists, so leaving it routed is not a standing hole.
+
+### API keys
+
+A script or a CI job authenticates with a long-lived key rather than a
+password: `Authorization: Bearer af_<id>_<secret>`. The id is the public half,
+so a request finds its row without hashing against every key; only a SHA-256 of
+the secret half is stored, compared in constant time. Losing the database
+therefore does not hand anyone a working key, and there is no way to read a
+secret back — it is displayed once, when it is issued.
+
+A key carries its owner's role, so every check behaves identically whether a
+person or a script made the call, and there is no second permission model to
+keep in step. Revoking a key, or disabling the account it belongs to, stops it
+at the next request. Revoked keys keep their row: a key that has been used is
+part of the audit trail, and deleting it would make past activity untraceable.
+
+Accounts are disabled rather than deleted for the same reason — deleting
+cascades a person's keys away and orphans what they made.
+
+### Engines are administration, not use
+
+Provider connections, model combinations and per-bot fallback chains are
+admin-only, reading included. They were reachable by any signed-in user, and
+the mutating combination and chain routes needed only operator — so someone
+handed a single bot to drive could read every provider's base URL and OAuth
+client id, and rewrite the chain the whole fleet falls back through. A test
+over the route table now fails if any of them is opened up again.
 
 ## The Docker socket
 
@@ -330,6 +365,31 @@ important thing to understand about deploying this:
 - Treat orchestrator admin as host root. Do not expose this platform to the
   public internet without a reverse proxy, TLS, and a hard look at who has an
   account.
+
+## Agent-authored apps
+
+The shared work catalog lets an agent publish an *app* — one HTML document —
+that the operator's phone renders and runs. That is a real surface: a model
+writing markup that a human's app executes.
+
+What contains it:
+
+- The document is loaded with `loadHtmlString`, not from a URL, so it runs on
+  an opaque origin. It has no cookies, no `localStorage` shared with anything,
+  and no access to the app's session token.
+- The web view has no network. Navigation away is refused by the navigation
+  delegate, and a `src`/`href` that loads over the network is refused at
+  publish time — not as a style rule, but because such a resource would never
+  arrive, and an app that half-loads is worse than one rejected.
+- The content must actually be an HTML document. A bot published a Python file
+  as an app and nothing stopped it; that now fails with a message telling the
+  agent to use `work_kind: "file"` instead.
+
+What is *not* contained: the document is arbitrary JavaScript running in a web
+view on your phone. It cannot reach AgentFleet or the network, but it can
+consume CPU and it can draw anything it likes. Treat an app the way you would
+treat a script a colleague sent you — the catalog says which bot published it
+and at which version, which is there so that question has an answer.
 
 ## Known gaps
 
