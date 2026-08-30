@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"os"
+	"strconv"
 )
 
 // Role values used in Request.Messages.
@@ -128,8 +130,25 @@ func Build(p protocol.Provider, apiKey string, hc *http.Client) (Connector, erro
 	}
 }
 
+// defaultClient is the HTTP client every provider talks through.
+//
+// Three minutes was a guess, and it is the wrong one for a local model. A
+// single small model serving a fleet queues requests: with four agents working
+// and a screenshot on each turn, a reply can sit in Ollama's queue for longer
+// than that through no fault of anyone's, and the timeout surfaced as "every
+// model provider failed", which failed the whole task. Generous by default,
+// and settable for deployments where it should be tighter.
 func defaultClient() *http.Client {
-	return &http.Client{Timeout: 3 * time.Minute}
+	return &http.Client{Timeout: providerTimeout()}
+}
+
+func providerTimeout() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("PROVIDER_TIMEOUT_SEC")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return 6 * time.Minute
 }
 
 func mimeOr(m string) string {

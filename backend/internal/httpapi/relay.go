@@ -367,13 +367,13 @@ func (s *Server) watchForHandoffs(ctx context.Context) {
 				result = "They did not finish: " + fmt.Sprint(payload["error"]) +
 					". Whatever they left in the catalog is what there is."
 			}
-			s.handOff(ctx, ev.TaskID, result)
+			s.handOff(ctx, ev.TaskID, result, "")
 		}
 	}
 }
 
 // handOff gives the next agent the work, with what the last one produced.
-func (s *Server) handOff(ctx context.Context, taskID, result string) {
+func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 	c, finished, successor, ok := s.relay.next(taskID)
 	if !ok {
 		return
@@ -397,7 +397,7 @@ func (s *Server) handOff(ctx context.Context, taskID, result string) {
 			"The original request was: %s",
 		finished.Name, finished.Stage, successor.Stage,
 		clipLine(result, 600), successor.Plan,
-		briefFor(finished.Stage, successor.Stage), c.Request)
+		briefFor(finished.Stage, successor.Stage, produced), c.Request)
 
 	task := &protocol.Task{
 		ID:         store.NewID(),
@@ -503,7 +503,7 @@ func (s *Server) handOffFrom(ctx context.Context, instanceID, produced string) {
 		s.relay.forget(taskID)
 		return
 	}
-	s.handOff(ctx, taskID, "They published "+produced)
+	s.handOff(ctx, taskID, "They published "+produced, produced)
 }
 
 // taskFor returns the live task an agent is running as part of a job.
@@ -596,9 +596,29 @@ func (r *relay) forgetOthers(request string) {
 // builder stopped to ask what was wanted rather than applying it. A model
 // given a concrete instruction -- fix these, republish under the same name --
 // does not need to ask.
-func briefFor(from, to relayStage) string {
+func briefFor(from, to relayStage, produced string) string {
 	const readFirst = "Start with read_work to see what is actually in the " +
 		"catalog. Work on what is there, not on what you imagine is there."
+
+	// Name the report, or the catalog fills up with near-duplicates.
+	//
+	// Told only to "publish your findings as a file", each round invented a
+	// fresh name: convtest_defects.md, then convtest_defects_v2, then
+	// convtest_additional_defects, then convtest_final_defects. Five files
+	// describing one app, none of them obviously the current one. The build
+	// hop already pins its name and stays a single item across versions; the
+	// test and review hops need the same instruction.
+	reportName := func(suffix string) string {
+		if produced == "" {
+			return "Publish it under one name and reuse that same name on every " +
+				"later round, so it becomes a new version rather than a second file."
+		}
+		return fmt.Sprintf("Publish it with publish_work under exactly this "+
+			"work_name: %q. If that already exists, publish under it anyway -- "+
+			"it becomes a new version. Do not invent a variant name like "+
+			"%q or %q.",
+			produced+suffix, produced+suffix+"_v2", produced+"_final"+suffix)
+	}
 
 	switch {
 	case to == stageBuild && from == stageReview,
@@ -611,15 +631,15 @@ func briefFor(from, to relayStage) string {
 			"file is published and the defects are addressed, finish with done."
 	case to == stageTest:
 		return readFirst + " Try it as a user would and write down what actually " +
-			"happens. Publish your findings with publish_work as a file. Be " +
-			"specific: name the file, the line, what goes wrong and what would " +
-			"fix it. \"Looks good\" ends the work; a concrete defect keeps it " +
-			"moving. Then finish with done."
+			"happens. Be specific: name the file, the line, what goes wrong and " +
+			"what would fix it. \"Looks good\" ends the work; a concrete defect " +
+			"keeps it moving. " + reportName("_test_report") +
+			" Then finish with done."
 	case to == stageReview:
 		return readFirst + " Read it as somebody who will have to maintain it. " +
-			"Publish your defects with publish_work as a file, each one naming " +
-			"the file, the line, what is wrong and what would fix it. If it is " +
-			"genuinely sound, say so and say why. Then finish with done."
+			"List your defects, each one naming the file, the line, what is " +
+			"wrong and what would fix it. If it is genuinely sound, say so and " +
+			"say why. " + reportName("_review") + " Then finish with done."
 	case to == stageBuild:
 		return readFirst + " Build what the design calls for and publish it with " +
 			"publish_work. Then finish with done."

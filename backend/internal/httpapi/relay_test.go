@@ -222,7 +222,7 @@ func TestTerminalStateDecidesWhenToHandOn(t *testing.T) {
 // "Do your part" was too vague to act on: handed a review to apply, the builder
 // stopped to ask what was wanted rather than applying it.
 func TestBriefForIsSpecificToTheHop(t *testing.T) {
-	fix := briefFor(stageReview, stageBuild)
+	fix := briefFor(stageReview, stageBuild, "convtest")
 	if !strings.Contains(fix, "SAME work_name") {
 		t.Error("a fix hop does not say to republish under the same name")
 	}
@@ -230,7 +230,7 @@ func TestBriefForIsSpecificToTheHop(t *testing.T) {
 		t.Error("a fix hop does not tell the agent to stop asking and fix them")
 	}
 
-	test := briefFor(stageBuild, stageTest)
+	test := briefFor(stageBuild, stageTest, "convtest")
 	if !strings.Contains(test, "Looks good") {
 		t.Error("a test hop does not warn against a content-free pass")
 	}
@@ -239,9 +239,9 @@ func TestBriefForIsSpecificToTheHop(t *testing.T) {
 	for name, b := range map[string]string{
 		"fix":    fix,
 		"test":   test,
-		"review": briefFor(stageTest, stageReview),
-		"build":  briefFor(stageDesign, stageBuild),
-		"other":  briefFor(stageUnknown, stageUnknown),
+		"review": briefFor(stageTest, stageReview, "convtest"),
+		"build":  briefFor(stageDesign, stageBuild, "convtest"),
+		"other":  briefFor(stageUnknown, stageUnknown, "convtest"),
 	} {
 		if !strings.Contains(b, "read_work") {
 			t.Errorf("the %s brief does not say to read the catalog first", name)
@@ -436,20 +436,53 @@ func TestWaitingAfterAStartJoinsTheSameJob(t *testing.T) {
 // reported as one that could not start. The bug was upstream of all of that.
 func TestStageOfMatchesWholeWords(t *testing.T) {
 	cases := map[string]relayStage{
-		"write a one-file HTML markdown preview box":     stageBuild,
-		"build a preview pane":                           stageBuild,
-		"write the previewer":                            stageBuild,
+		"write a one-file HTML markdown preview box": stageBuild,
+		"build a preview pane":                       stageBuild,
+		"write the previewer":                        stageBuild,
 		// The real words still work, in their usual forms.
-		"review the finished code":                       stageReview,
-		"reviews mdbox and publishes defects":            stageReview,
-		"tests mdbox and publishes findings":             stageTest,
-		"testing it on a phone":                          stageTest,
-		"designs the game first":                         stageDesign,
-		"generates the complete HTML file":               stageBuild,
+		"review the finished code":            stageReview,
+		"reviews mdbox and publishes defects": stageReview,
+		"tests mdbox and publishes findings":  stageTest,
+		"testing it on a phone":               stageTest,
+		"designs the game first":              stageDesign,
+		"generates the complete HTML file":    stageBuild,
 	}
 	for plan, want := range cases {
 		if got := stageOf(plan); got != want {
 			t.Errorf("stageOf(%q) = %s, want %s", plan, got, want)
 		}
+	}
+}
+
+// Each review round used to invent a new file name -- convtest_defects.md,
+// then _v2, then _additional, then _final -- so one app collected five reports
+// and none of them was obviously the current one.
+func TestReportHopsNameTheFileTheyPublish(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		to   relayStage
+		want string
+	}{
+		{"test", stageTest, "convtest_test_report"},
+		{"review", stageReview, "convtest_review"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := briefFor(stageBuild, tc.to, "convtest")
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("brief does not name %q:\n%s", tc.want, got)
+			}
+			if !strings.Contains(got, "new version") {
+				t.Errorf("brief does not say to republish under the same name:\n%s", got)
+			}
+		})
+	}
+}
+
+// With nothing published yet there is no name to derive, but the instruction
+// not to spray variants still has to survive.
+func TestReportHopsStillSayReuseOneNameWithoutAProducedItem(t *testing.T) {
+	got := briefFor(stageBuild, stageReview, "")
+	if !strings.Contains(got, "reuse that same name") {
+		t.Errorf("brief lost its one-name instruction:\n%s", got)
 	}
 }
