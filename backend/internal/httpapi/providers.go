@@ -7,6 +7,8 @@ import (
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"os"
+	"strings"
 )
 
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +144,14 @@ func (s *Server) handleDynamicModels(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = protocol.ProviderOllama
 	}
+	if base == "" && kind == protocol.ProviderOllama {
+		// Both clients omit base_url when the provider's field is blank, and
+		// discovery's own default is "localhost", which inside this container
+		// is nothing at all. Every such request fell back to the curated
+		// catalogue and offered models this machine does not have. Use the
+		// address the deployment actually configured.
+		base = s.defaultOllamaBase()
+	}
 
 	models, err := connectors.ListDynamicModels(r.Context(), kind, base, key)
 	if models == nil {
@@ -224,3 +234,16 @@ func slug(s string) string {
 }
 
 func jsonBytes(v any) ([]byte, error) { return json.Marshal(v) }
+
+// defaultOllamaBase is where Ollama lives when a request did not say, matching
+// the address the provider seeder uses at first boot.
+func (s *Server) defaultOllamaBase() string {
+	if base := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL")); base != "" {
+		return base
+	}
+	gw := s.cfg.HostGateway
+	if gw == "" {
+		gw = "host.docker.internal"
+	}
+	return "http://" + gw + ":11434"
+}

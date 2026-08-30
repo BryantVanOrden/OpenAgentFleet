@@ -1,14 +1,17 @@
 package connectors
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
@@ -89,6 +92,74 @@ func ListDynamicModels(ctx context.Context, kind protocol.ProviderKind, base, ke
 	}
 }
 
+// What a model can do, asked rather than guessed.
+//
+// This used to read the capabilities out of the model's name: anything
+// containing "vl", "vision" or "llava" could see. That is wrong in both
+// directions, and it was wrong about the default model in .env.example --
+// qwen3.5:4b reports "vision" and was being offered as text-only, so the
+// desktop agents' screenshots had nowhere to go. Ollama has answered this
+// question directly since 0.5; ask it.
+type ollamaCaps struct {
+	list  []string
+	known bool
+}
+
+func (c ollamaCaps) has(want string, fallback bool) bool {
+	if !c.known {
+		return fallback
+	}
+	return slices.Contains(c.list, want)
+}
+
+// thinkingLabel reports reasoning support, defaulting to the old fixed label
+// when the model did not say.
+func thinkingLabel(c ollamaCaps) string {
+	if c.has("thinking", false) {
+		return "Reasoning"
+	}
+	return "Standard"
+}
+
+// visionByName is the old name heuristic, kept only for when /api/show cannot
+// be reached. "vl" is a two-letter substring and matches more than it should,
+// but a bad guess beats no answer on a fallback path.
+func visionByName(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "vl") || strings.Contains(n, "vision") ||
+		strings.Contains(n, "llava") || strings.Contains(n, "gemma3") ||
+		strings.Contains(n, "minicpm-v") || strings.Contains(n, "moondream")
+}
+
+func ollamaCapabilities(ctx context.Context, hc *http.Client, base, model string) ollamaCaps {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	body, err := json.Marshal(map[string]string{"model": model})
+	if err != nil {
+		return ollamaCaps{}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/show", bytes.NewReader(body))
+	if err != nil {
+		return ollamaCaps{}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := hc.Do(req)
+	if err != nil {
+		return ollamaCaps{}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ollamaCaps{}
+	}
+	var out struct {
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.Capabilities == nil {
+		return ollamaCaps{}
+	}
+	return ollamaCaps{list: out.Capabilities, known: true}
+}
+
 func listOllamaDynamic(ctx context.Context, hc *http.Client, base string) ([]ModelDescriptor, error) {
 	if base == "" {
 		base = "http://localhost:11434"
@@ -117,18 +188,24 @@ func listOllamaDynamic(ctx context.Context, hc *http.Client, base string) ([]Mod
 		return fellBack(fallbackOllama(), "could not read the model list from %s", base)
 	}
 
-	var results []ModelDescriptor
-	for _, m := range out.Models {
-		isVision := strings.Contains(m.Name, "vl") || strings.Contains(m.Name, "vision") || strings.Contains(m.Name, "llava")
-		results = append(results, ModelDescriptor{
-			ID:          m.Name,
-			Name:        m.Name,
-			Speed:       "Local GPU/CPU",
-			Thinking:    "Standard",
-			Vision:      isVision,
-			Description: fmt.Sprintf("Locally hosted Ollama model (%s)", m.Name),
-		})
+	results := make([]ModelDescriptor, len(out.Models))
+	var wg sync.WaitGroup
+	for i, m := range out.Models {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			caps := ollamaCapabilities(ctx, hc, base, name)
+			results[i] = ModelDescriptor{
+				ID:          name,
+				Name:        name,
+				Speed:       "Local GPU/CPU",
+				Thinking:    thinkingLabel(caps),
+				Vision:      caps.has("vision", visionByName(name)),
+				Description: fmt.Sprintf("Locally hosted Ollama model (%s)", name),
+			}
+		}(i, m.Name)
 	}
+	wg.Wait()
 	return results, nil
 }
 
