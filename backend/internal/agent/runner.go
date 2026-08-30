@@ -137,7 +137,19 @@ func (r *Runner) ResumeInterrupted(ctx context.Context) {
 				"orchestrator restarted while the sandbox was unavailable", "")
 			continue
 		}
-		r.log.Info("resuming task", "task", t.ID, "step", t.Step)
+		// A task that was waiting on a person is resumed without one: the
+		// question went with the process that asked it, and nobody can answer
+		// an alert whose waiter no longer exists. Its alerts are closed so
+		// they stop showing as blocking something that is running again.
+		if t.State == protocol.TaskAwaitingHuman {
+			if err := r.db.ResolveTaskAlerts(ctx, t.ID,
+				"The orchestrator restarted while this was waiting; the agent carried on."); err != nil {
+				r.log.Warn("could not close alerts for a resumed task", "task", t.ID, "err", err)
+			}
+			r.log.Info("resuming a task that was waiting for a person", "task", t.ID, "step", t.Step)
+		} else {
+			r.log.Info("resuming task", "task", t.ID, "step", t.Step)
+		}
 		_ = r.Start(ctx, &t)
 	}
 }

@@ -470,7 +470,17 @@ func (s *Store) ListTasks(ctx context.Context, instanceID string, limit int) ([]
 
 // ResumeableTasks are tasks left mid-flight by a crashed or restarted orchestrator.
 func (s *Store) ResumeableTasks(ctx context.Context) ([]protocol.Task, error) {
-	rows, err := s.pool.Query(ctx, taskSelect+` WHERE state IN ('queued','running') ORDER BY created_at`)
+	// awaiting_human is included deliberately.
+	//
+	// A task parked for a person keeps its answer in a goroutine, and that
+	// goroutine dies with the process. Left out of this list, such a task sat
+	// in awaiting_human forever after any restart -- and since a parked task
+	// counts as busy, its agent was never free again. That is how a fleet
+	// ends up with dozens of open alerts and four bots that will not take
+	// work. Resuming it re-enters the loop, which is what "carry on without
+	// an answer" already means everywhere else now.
+	rows, err := s.pool.Query(ctx,
+		taskSelect+` WHERE state IN ('queued','running','awaiting_human') ORDER BY created_at`)
 	if err != nil {
 		return nil, norm(err)
 	}
@@ -899,4 +909,16 @@ func (s *Store) SetUserDisabled(ctx context.Context, id string, disabled bool) e
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ResolveTaskAlerts closes every open alert belonging to a task.
+//
+// Used when a task is resumed after a restart: the alert asked a question
+// whose waiter no longer exists, so leaving it open shows a person a decision
+// that nothing is waiting on any more.
+func (s *Store) ResolveTaskAlerts(ctx context.Context, taskID, reply string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE alerts SET resolved_at = now(), reply = $2
+		  WHERE task_id = $1 AND resolved_at IS NULL`, taskID, reply)
+	return norm(err)
 }

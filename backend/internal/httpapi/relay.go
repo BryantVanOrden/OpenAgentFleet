@@ -369,7 +369,6 @@ func (s *Server) handOff(ctx context.Context, taskID, result string) {
 		"stage", successor.Stage.String(), "round", c.Round)
 }
 
-
 func isSucceeded(v any) bool {
 	switch t := v.(type) {
 	case protocol.TaskState:
@@ -379,7 +378,6 @@ func isSucceeded(v any) bool {
 	}
 	return false
 }
-
 
 // describeWork summarises what was published, for the next agent's brief.
 func describeWork(payload any) string {
@@ -406,9 +404,19 @@ func (s *Server) handOffFrom(ctx context.Context, instanceID, produced string) {
 	if !ok {
 		return
 	}
+	// The task must still be the one the agent is running.
+	//
+	// The relay held on to tasks that had been cancelled, so when an agent
+	// later published something for an entirely different request, it handed
+	// work on for the old one -- "ToolCheck is done with the test, over to you
+	// Auditor" arrived in the middle of a job about writing documentation.
+	task, err := s.db.Task(ctx, taskID)
+	if err != nil || task.State != protocol.TaskRunning {
+		s.relay.forget(taskID)
+		return
+	}
 	s.handOff(ctx, taskID, "They published "+produced)
 }
-
 
 // taskFor returns the live task an agent is running as part of a job.
 func (r *relay) taskFor(instanceID string) (string, bool) {
@@ -421,7 +429,6 @@ func (r *relay) taskFor(instanceID string) (string, bool) {
 	}
 	return "", false
 }
-
 
 // readyForHandoff reports whether an agent can take the next part, and clears
 // a parked task if that is all that is in the way.
@@ -453,4 +460,52 @@ func (s *Server) readyForHandoff(ctx context.Context, instanceID string) bool {
 		s.log.Info("cleared a parked task to accept a handoff", "task", id)
 	}
 	return true
+}
+
+// forget drops a task the relay should no longer act on.
+func (r *relay) forget(taskID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.byTask, taskID)
+}
+
+// forgetRequest drops a whole job, used when its work is finished or
+// abandoned so a later publish cannot revive it.
+func (r *relay) forgetRequest(request string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, owner := range r.byTask {
+		if owner.job.Request == request {
+			delete(r.byTask, id)
+		}
+	}
+	kept := r.pending[:0]
+	for _, p := range r.pending {
+		if p.Request != request {
+			kept = append(kept, p)
+		}
+	}
+	r.pending = kept
+}
+
+// forgetOthers drops every job except the one for this request.
+//
+// A fleet works on one thing at a time here: when the operator asks for
+// something new, whatever was half-finished before is no longer what anyone
+// should be handed.
+func (r *relay) forgetOthers(request string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, owner := range r.byTask {
+		if owner.job.Request != request {
+			delete(r.byTask, id)
+		}
+	}
+	kept := r.pending[:0]
+	for _, p := range r.pending {
+		if p.Request == request {
+			kept = append(kept, p)
+		}
+	}
+	r.pending = kept
 }

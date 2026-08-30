@@ -468,6 +468,11 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 		s.log.Warn("could not start work from a fleet plan", "instance", inst.Name, "err", err)
 		return
 	}
+	// A new request supersedes the last one. Without this an agent publishing
+	// for today's job hands work on for yesterday's, because the relay still
+	// remembers who was doing what then.
+	s.relay.forgetOthers(msg.Content)
+
 	// Record who is doing what, so finishing this part can wake whoever the
 	// next one belongs to. Without it an agent finishes, publishes, and stops,
 	// and the colleague who would review it never hears.

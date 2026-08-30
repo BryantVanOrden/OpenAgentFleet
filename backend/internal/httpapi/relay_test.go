@@ -154,3 +154,31 @@ func TestWaitingMembersJoinTheSameJob(t *testing.T) {
 		t.Errorf("the job has %d members, want all three", len(job.Members))
 	}
 }
+
+// A cancelled job cannot be revived by a later publish.
+//
+// The relay kept tasks that had been cancelled, so an agent publishing for a
+// new request handed work on for the old one: "ToolCheck is done with the
+// test, over to you Auditor" turned up in the middle of a job about writing
+// documentation.
+func TestForgettingAJobStopsLaterHandoffs(t *testing.T) {
+	r := newRelay()
+	const request = "the old job"
+
+	r.waitFor(request, "broadcast", member("r", "Reviewer", stageReview))
+	r.join("task-old", request, "broadcast", member("b", "Builder", stageBuild))
+
+	r.forgetRequest(request)
+
+	if _, ok := r.taskFor("b"); ok {
+		t.Error("a forgotten job still has a live task")
+	}
+	if _, _, _, ok := r.next("task-old"); ok {
+		t.Error("a forgotten job still handed work on")
+	}
+	// And its waiting members are gone too, so a new job does not inherit them.
+	r.join("task-new", "a different job", "broadcast", member("b", "Builder", stageBuild))
+	if _, _, next, ok := r.next("task-new"); ok {
+		t.Errorf("the new job inherited %s from the forgotten one", next.Name)
+	}
+}
