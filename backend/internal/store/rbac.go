@@ -29,7 +29,7 @@ func (s *Store) ListOrgs(ctx context.Context) ([]protocol.Org, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT o.id, o.name, o.description, o.created_at,
                 (SELECT count(*) FROM org_members m WHERE m.org_id = o.id),
-                (SELECT count(*) FROM instances i WHERE i.org_id = o.id)
+                (SELECT count(*) FROM instance_orgs io WHERE io.org_id = o.id)
          FROM orgs o ORDER BY o.name`)
 	if err != nil {
 		return nil, norm(err)
@@ -58,8 +58,11 @@ func (s *Store) DeleteOrg(ctx context.Context, id string) error {
 	// Bots, secrets and sessions are unassigned rather than deleted. Removing
 	// a department must not destroy running machines or the credentials other
 	// work depends on; they become admin-only until reassigned.
+	//
+	// A bot's membership lives in instance_orgs and is removed by that table's
+	// cascade, which also does the right thing for a bot shared with several
+	// departments: it leaves this one and keeps the others.
 	for _, q := range []string{
-		`UPDATE instances       SET org_id=NULL WHERE org_id=$1`,
 		`UPDATE shared_secrets  SET org_id=NULL WHERE org_id=$1`,
 		`UPDATE shared_sessions SET org_id=NULL WHERE org_id=$1`,
 	} {

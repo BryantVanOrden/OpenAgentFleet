@@ -1,6 +1,11 @@
 package store
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // An "app" is rendered in a web view, so anything that is not a web page
 // produces a Play button showing a wall of source code.
@@ -52,5 +57,43 @@ func TestAppMustBeSelfContained(t *testing.T) {
 	ok := `<!DOCTYPE html><html><body><p>See https://example.com for rules</p></body></html>`
 	if err := checkAppDocument(ok); err != nil {
 		t.Errorf("a mentioned URL was treated as a resource load: %v", err)
+	}
+}
+
+// No SQL may still reference instances.org_id.
+//
+// That column was replaced by the instance_orgs join table and dropped. Two
+// raw SQL statements kept using it and nothing caught them, because a search
+// for the Go field name does not look inside query strings -- /api/orgs
+// returned 500 for every caller until a live smoke test hit it. A compiler
+// cannot check SQL, so this does.
+func TestNoSQLReferencesTheDroppedOrgColumn(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Matches "instances ... org_id" and "org_id ... instances" within one
+	// statement, while allowing the join table's own name.
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(src)
+		for _, stmt := range strings.Split(text, "`") {
+			lower := strings.ToLower(stmt)
+			if !strings.Contains(lower, "org_id") {
+				continue
+			}
+			// The join table and other tables legitimately have org_id.
+			cleaned := strings.ReplaceAll(lower, "instance_orgs", "")
+			if strings.Contains(cleaned, "instances") && strings.Contains(cleaned, "org_id") {
+				t.Errorf("%s: SQL still joins instances to org_id, which no longer exists:\n%s",
+					f, strings.TrimSpace(stmt))
+			}
+		}
 	}
 }
