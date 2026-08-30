@@ -11,10 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"encoding/base64"
 	"errors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"path/filepath"
 )
 
 // Manager owns the lifecycle of every sandbox on this host.
@@ -734,6 +736,27 @@ func (m *Manager) ExecInContainer(ctx context.Context, id string, cmd []string) 
 		return "", err
 	}
 	return m.docker.Exec(ctx, inst.Runtime, cmd)
+}
+
+// PlaceFile writes a file inside an instance's sandbox.
+//
+// This is the orchestrator's own channel into the container, not the agent's:
+// it works whether or not the bot is allowed to run shell commands, because it
+// is not the bot running it. Used to put a copy of shared-catalog work on the
+// desktop so an agent asked to test something can actually open it. The content
+// travels as base64 so neither the document nor its path reaches a shell as
+// syntax.
+func (m *Manager) PlaceFile(ctx context.Context, instanceID, path string, content []byte) error {
+	if !strings.HasPrefix(path, "/home/agent/") {
+		return fmt.Errorf("refusing to write outside the agent home: %s", path)
+	}
+	script := fmt.Sprintf("mkdir -p %q && printf %%s %q | base64 -d > %q",
+		filepath.Dir(path), base64.StdEncoding.EncodeToString(content), path)
+	out, err := m.ExecInContainer(ctx, instanceID, []string{"sh", "-c", script})
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
 }
 
 // ------------------------------------------------------------- port leases ---

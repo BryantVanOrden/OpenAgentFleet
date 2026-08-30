@@ -37,6 +37,10 @@ type Runner struct {
 	refiner *Refiner
 	log     *slog.Logger
 
+	// placer puts a file inside a sandbox, through the orchestrator's channel
+	// rather than the agent's, so it works with shell access turned off.
+	placer FilePlacer
+
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
 	// published counts publishes per task per item name, to notice a run that
@@ -50,6 +54,11 @@ type Runner struct {
 	// by provider id. Detection costs one model round trip, so it happens once
 	// per provider per process rather than once per step.
 	coordSpace sync.Map
+}
+
+// FilePlacer writes a file inside an instance's sandbox.
+type FilePlacer interface {
+	PlaceFile(ctx context.Context, instanceID, path string, content []byte) error
 }
 
 func NewRunner(
@@ -575,8 +584,21 @@ func (r *Runner) execute(
 				suffix = "\n\n[truncated: the item is " +
 					fmt.Sprint(len(w.Content)) + " bytes]"
 			}
-			return fmt.Sprintf("%s %q by %s (version %d):\n%s%s",
-				w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix), terminalNone
+			// Put a runnable copy on the desktop, not just its source.
+			//
+			// A tester sent to try an app could read it and nothing more. One
+			// spent forty steps guessing at URLs for a page that was never
+			// served -- typing http://localhost:8080/rollr.html, searching the
+			// web, and landing on a real company's site that happened to share
+			// the name -- and never once saw the thing it was testing.
+			opened := ""
+			if path, ok := r.materialize(ctx, inst.ID, w); ok {
+				opened = fmt.Sprintf("\n\nA copy is on this desktop at %s — "+
+					"open that in the browser to try it. Do not look for it on "+
+					"the web; it is not published anywhere.", "file://"+path)
+			}
+			return fmt.Sprintf("%s %q by %s (version %d):\n%s%s%s",
+				w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix, opened), terminalNone
 		}
 
 		// Say what IS there. "Not found" sends a model guessing at names.
@@ -1328,3 +1350,65 @@ func movesScreen(k protocol.ActionKind) bool {
 		return false
 	}
 }
+
+// materialize writes a catalog item into the sandbox so it can actually be
+// opened, and reports the path it landed at.
+//
+// Only for things a browser can render. The content is already readable by
+// this agent -- department scoping happened before we got here -- so writing it
+// to a file the agent then opens grants nothing new. It goes in base64 so that
+// neither the document nor its name can reach the shell as syntax.
+func (r *Runner) materialize(ctx context.Context, instanceID string, w protocol.WorkItem) (string, bool) {
+	if !renderable(w) {
+		return "", false
+	}
+	safe := safeFileName(w.Name)
+	if safe == "" {
+		return "", false
+	}
+	if r.placer == nil {
+		return "", false
+	}
+	path := "/home/agent/work/" + safe + ".html"
+	wctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := r.placer.PlaceFile(wctx, instanceID, path, []byte(w.Content)); err != nil {
+		r.log.Warn("could not put a copy of the work on the desktop",
+			"work", w.Name, "err", err)
+		return "", false
+	}
+	return path, true
+}
+
+// renderable reports whether a browser could show this item.
+func renderable(w protocol.WorkItem) bool {
+	if w.Kind == protocol.WorkApp {
+		return true
+	}
+	lower := strings.ToLower(w.Content)
+	return strings.Contains(lower, "<html") || strings.Contains(lower, "<!doctype html")
+}
+
+// safeFileName reduces a catalog name to something that cannot escape the
+// directory it is written into.
+func safeFileName(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 48 {
+		out = out[:48]
+	}
+	return out
+}
+
+// SetFilePlacer supplies the channel used to put files inside a sandbox.
+func (r *Runner) SetFilePlacer(p FilePlacer) { r.placer = p }

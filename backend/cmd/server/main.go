@@ -88,6 +88,7 @@ func run(log *slog.Logger) error {
 	eventBus := bus.New()
 	pusher := notify.NewDispatcher(cfg, db, log)
 	runner := agent.NewRunner(cfg, db, models, eventBus, pusher, art, log)
+	runner.SetFilePlacer(fm)
 
 	if created, err := httpapi.EnsureBootstrapUser(ctx, db,
 		os.Getenv("BOOTSTRAP_ADMIN_EMAIL"), os.Getenv("BOOTSTRAP_ADMIN_PASSWORD")); err != nil {
