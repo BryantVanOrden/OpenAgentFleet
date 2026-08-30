@@ -680,15 +680,81 @@ func (s *Server) watchForStalledJobs(ctx context.Context) {
 				for _, m := range job.Members {
 					who = append(who, m.Name+" ("+m.Stage.String()+")")
 				}
-				msg := "Nothing is going to reach " + strings.Join(who, " or ") +
+				waiting := strings.Join(who, " or ")
+
+				// Why it cannot start decides what to say. "Nobody was asked"
+				// is wrong and unhelpful when somebody was asked and happened
+				// to be mid-task: the operator reads it as having forgotten to
+				// name a builder, names the same one again, and gets the same
+				// notice. A busy agent does not come back to a broadcast it
+				// was busy for, so this has to say so.
+				msg := "Nothing is going to reach " + waiting +
 					": they are waiting to be handed work, and nobody was asked " +
 					"to make anything. Name an agent to build or design it and " +
 					"they will pick it up."
+				if busy := s.namedButBusy(ctx, job); len(busy) > 0 {
+					msg = "Nothing is going to reach " + waiting + ": " +
+						strings.Join(busy, " and ") +
+						" was asked to make it but was already mid-task when this " +
+						"arrived, and an agent does not come back to a request it " +
+						"was busy for. Send it again now that they are free, or " +
+						"name someone else."
+				}
 				vault.GlobalBus.SendMessageIn(ctx, job.Thread, "", "Fleet",
 					"broadcast", peerReplyKind, msg, nil)
-				s.log.Info("job cannot start; nobody was asked to produce anything",
+				s.log.Info("job cannot start",
 					"request", clipLine(job.Request, 60))
 			}
 		}
 	}
+}
+
+// namedButBusy lists agents the request asked to produce something who never
+// registered on the job because they were already working.
+//
+// Membership is the test for "did they take this up". An agent named to build
+// that is neither a member nor idle was asked and could not answer.
+func (s *Server) namedButBusy(ctx context.Context, job *collaboration) []string {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return nil
+	}
+	member := map[string]bool{}
+	for _, m := range job.Members {
+		member[m.InstanceID] = true
+	}
+	var busy []string
+	for _, inst := range instances {
+		if member[inst.ID] {
+			continue
+		}
+		part := assignmentFor(job.Request, inst.Name, instances)
+		if part == "" {
+			continue
+		}
+		switch stageOf(part) {
+		case stageDesign, stageBuild:
+		default:
+			continue // only a producer's absence strands the others
+		}
+		if s.instanceBusy(ctx, inst.ID) {
+			busy = append(busy, inst.Name)
+		}
+	}
+	return busy
+}
+
+// instanceBusy reports whether an agent currently holds work of any kind.
+func (s *Server) instanceBusy(ctx context.Context, instanceID string) bool {
+	tasks, err := s.db.ListTasks(ctx, instanceID, 20)
+	if err != nil {
+		return false
+	}
+	for _, t := range tasks {
+		switch t.State {
+		case protocol.TaskRunning, protocol.TaskAwaitingHuman, protocol.TaskQueued:
+			return true
+		}
+	}
+	return false
 }
