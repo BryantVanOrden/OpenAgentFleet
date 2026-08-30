@@ -788,6 +788,12 @@ pkill -x firefox >/dev/null 2>&1
 sleep 3
 pkill -9 -x firefox-bin >/dev/null 2>&1
 sleep 1
+# Do not restore what was there before. A browser is replaced because it had
+# stopped working, and bringing its windows back puts a blank tab on top of the
+# page the agent was meant to look at.
+rm -rf /home/agent/.mozilla/firefox/*/sessionstore-backups >/dev/null 2>&1
+rm -f /home/agent/.mozilla/firefox/*/sessionstore.jsonlz4 >/dev/null 2>&1
+rm -f /home/agent/.mozilla/firefox/*/sessionstore.js >/dev/null 2>&1
 setsid runuser -u agent -- env DISPLAY=:1 x-www-browser --new-window "$url" >/dev/null 2>&1 &
 echo relaunched
 `, url)
