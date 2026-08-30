@@ -105,6 +105,21 @@ twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
 
+Clicks no longer fail with "mousemove failed: timed out after 15s". `xdotool
+mousemove --sync` waits for a motion event, and moving the pointer somewhere it
+already is produces none, so it blocked for the full timeout — clicking the
+same button twice was enough to trigger it. An agent told a button cannot be
+reached concludes the button is broken; the button was fine. A run that had
+been losing roughly half its clicks now loses none.
+
+A sandbox browser that has stopped answering is replaced. One had been wedged
+for over an hour — "Firefox is already running, but is not responding" — and
+every agent sent to test something was driving a dead browser: clicks landing
+on nothing, typing accumulating in an address bar that never navigated. No bot
+can recover that for itself; they have no shell, and the browser is the thing
+they were sent to use. `read_work` also opens what it places, so the page is on
+screen rather than something the agent has to navigate to.
+
 Agents can now run the work they are asked to test. `read_work` writes anything
 a browser can show into the sandbox and leads its answer with the `file://`
 path. A tester sent to try an app could previously read its source and nothing
