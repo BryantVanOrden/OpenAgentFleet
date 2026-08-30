@@ -1,22 +1,26 @@
 package httpapi
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+)
 
 // An agent's stated part decides where it sits in the flow.
 func TestStageOfReadsRealPlans(t *testing.T) {
 	cases := map[string]relayStage{
-		"I will write the main code for the arcade game":            stageBuild,
-		"I will produce a complete self-contained HTML/JS file":     stageBuild,
-		"I will take the design phase, defining the core mechanics": stageDesign,
-		"I will define the core mechanics and theme":                stageDesign,
-		"I will test it on a phone screen":                          stageTest,
-		"I will verify the game's responsiveness":                   stageTest,
+		"I will write the main code for the arcade game":             stageBuild,
+		"I will produce a complete self-contained HTML/JS file":      stageBuild,
+		"I will take the design phase, defining the core mechanics":  stageDesign,
+		"I will define the core mechanics and theme":                 stageDesign,
+		"I will test it on a phone screen":                           stageTest,
+		"I will verify the game's responsiveness":                    stageTest,
 		"I will write the review and final quality assurance report": stageReview,
 		"I will audit the code once Builder finishes":                stageReview,
 		// Most specific wins: this is a review, not a design.
-		"I will review the design document":  stageReview,
-		"I will write the test plan":         stageTest,
-		"I will think about it":              stageUnknown,
+		"I will review the design document": stageReview,
+		"I will write the test plan":        stageTest,
+		"I will think about it":             stageUnknown,
 	}
 	for plan, want := range cases {
 		if got := stageOf(plan); got != want {
@@ -180,5 +184,33 @@ func TestForgettingAJobStopsLaterHandoffs(t *testing.T) {
 	r.join("task-new", "a different job", "broadcast", member("b", "Builder", stageBuild))
 	if _, _, next, ok := r.next("task-new"); ok {
 		t.Errorf("the new job inherited %s from the forgotten one", next.Name)
+	}
+}
+
+// A finished task hands on however it finished — except when someone stopped
+// it deliberately.
+//
+// Waiting for success meant the chain died at the second hop in all three
+// measured runs: the agent handed the work ran out of steps or simply did not
+// publish, and the colleague after it was never told.
+func TestTerminalStateDecidesWhenToHandOn(t *testing.T) {
+	for _, tc := range []struct {
+		state any
+		want  bool
+	}{
+		{protocol.TaskSucceeded, true},
+		{protocol.TaskFailed, true},
+		{string(protocol.TaskSucceeded), true},
+		{string(protocol.TaskFailed), true},
+		// Someone stopped this on purpose; carrying on would undo that.
+		{protocol.TaskCancelled, false},
+		{protocol.TaskRunning, false},
+		{protocol.TaskAwaitingHuman, false},
+		{nil, false},
+		{42, false},
+	} {
+		if _, got := terminalState(tc.state); got != tc.want {
+			t.Errorf("terminalState(%v) = %v, want %v", tc.state, got, tc.want)
+		}
 	}
 }

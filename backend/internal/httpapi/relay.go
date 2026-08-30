@@ -300,13 +300,25 @@ func (s *Server) watchForHandoffs(ctx context.Context) {
 			if !ok {
 				continue
 			}
-			// The runner emits the state as a TaskState; a JSON round trip
-			// would make it a string. Accept both rather than depend on which
-			// path the event took.
-			if !isSucceeded(payload["state"]) {
+			// A finished task hands on whether or not it finished well.
+			//
+			// Waiting for success meant the chain died at the second hop every
+			// time: an agent handed the work would run out of steps, or fail,
+			// or simply not publish, and the colleague after it was never
+			// told. Measured across three runs, the relay moved exactly once
+			// each time. A failure is still information the next agent can act
+			// on -- "the tester ran out of steps" is worth knowing before you
+			// review something.
+			state, done := terminalState(payload["state"])
+			if !done {
 				continue
 			}
-			s.handOff(ctx, ev.TaskID, fmt.Sprint(payload["result"]))
+			result := fmt.Sprint(payload["result"])
+			if state == protocol.TaskFailed {
+				result = "They did not finish: " + fmt.Sprint(payload["error"]) +
+					". Whatever they left in the catalog is what there is."
+			}
+			s.handOff(ctx, ev.TaskID, result)
 		}
 	}
 }
@@ -369,14 +381,27 @@ func (s *Server) handOff(ctx context.Context, taskID, result string) {
 		"stage", successor.Stage.String(), "round", c.Round)
 }
 
-func isSucceeded(v any) bool {
+// terminalState reports whether a task has stopped for good, and how.
+//
+// The runner emits the state as a TaskState; a JSON round trip would make it a
+// string. Accept both rather than depend on which path the event took.
+func terminalState(v any) (protocol.TaskState, bool) {
+	var st protocol.TaskState
 	switch t := v.(type) {
 	case protocol.TaskState:
-		return t == protocol.TaskSucceeded
+		st = t
 	case string:
-		return t == string(protocol.TaskSucceeded)
+		st = protocol.TaskState(t)
+	default:
+		return "", false
 	}
-	return false
+	switch st {
+	case protocol.TaskSucceeded, protocol.TaskFailed:
+		return st, true
+	}
+	// Cancelled is deliberately not terminal here: someone stopped that work
+	// on purpose, and carrying on down the chain would undo the decision.
+	return st, false
 }
 
 // describeWork summarises what was published, for the next agent's brief.
