@@ -148,6 +148,21 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 		var priorContent, priorKind string
 		if err := s.pool.QueryRow(ctx,
 			`SELECT content, kind FROM work_items WHERE id=$1`, existingID).Scan(&priorContent, &priorKind); err == nil {
+			// A running app is not replaced by something that is not one.
+			//
+			// A tester published its report under the app's own name. Filing
+			// mislabelled prose as a file -- which is right on its own -- then
+			// meant the report took the app's place in the catalog, and the
+			// app was gone. Publishing over a name is how a fix reaches the
+			// thing it fixes, so the name is not the problem; changing what
+			// the thing *is* is.
+			if priorKind == protocol.WorkApp && w.Kind != protocol.WorkApp {
+				return fmt.Errorf(
+					"%q is an app; publishing this would replace it with "+
+						"something that cannot run. Publish a report or notes "+
+						"under their own name, such as %q",
+					w.Name, w.Name+"_report")
+			}
 			// Identical content AND the same kind is genuinely nothing new.
 			// The kind has to be part of it: an item mis-filed as a file, then
 			// republished unchanged, would otherwise keep its wrong kind
