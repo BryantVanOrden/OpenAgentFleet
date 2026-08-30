@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
@@ -70,10 +71,28 @@ func (s relayStage) String() string {
 // costs a round trip per agent per handoff, and gets it wrong in less
 // predictable ways than a word list does.
 func stageOf(plan string) relayStage {
-	p := strings.ToLower(plan)
-	has := func(words ...string) bool {
-		for _, w := range words {
-			if strings.Contains(p, w) {
+	// Whole words only.
+	//
+	// Substring matching read "markdown preview box" as a review, so the agent
+	// asked to build it registered as a reviewer, waited for work nobody was
+	// making, and the job was correctly reported as one that could not start.
+	// The bug was upstream of all of that, in one word inside another.
+	words := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(plan), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		words[w] = true
+	}
+	has := func(want ...string) bool {
+		for _, w := range want {
+			// A phrase is checked as a phrase; a single word as a word.
+			if strings.ContainsRune(w, ' ') {
+				if strings.Contains(strings.ToLower(plan), w) {
+					return true
+				}
+				continue
+			}
+			if words[w] {
 				return true
 			}
 		}
@@ -82,13 +101,18 @@ func stageOf(plan string) relayStage {
 	// Checked most-specific first: "write the test plan" is testing, not
 	// building, and "review the design" is review, not design.
 	switch {
-	case has("review", "audit", "critique", "quality assurance", "qa report"):
+	case has("review", "reviews", "reviewing", "audit", "audits", "auditing",
+		"critique", "quality assurance", "qa report"):
 		return stageReview
-	case has("test", "verify", "validate", "check it", "try it"):
+	case has("test", "tests", "testing", "verify", "verifies", "verifying",
+		"validate", "validates", "check it", "try it"):
 		return stageTest
-	case has("design", "concept", "mechanic", "spec", "plan the", "architecture"):
+	case has("design", "designs", "designing", "concept", "mechanic", "mechanics",
+		"spec", "specs", "plan the", "architecture"):
 		return stageDesign
-	case has("write", "build", "implement", "code", "produce", "create"):
+	case has("write", "writes", "writing", "build", "builds", "building",
+		"implement", "implements", "code", "produce", "produces", "create",
+		"creates", "creating", "generate", "generates"):
 		return stageBuild
 	}
 	return stageUnknown
@@ -108,6 +132,17 @@ type collaboration struct {
 	Thread  string
 	Members []collaborator
 	Round   int
+	// Started is when the job was opened, so a job where everybody is waiting
+	// for work nobody is making can be noticed rather than sitting silently.
+	Started time.Time
+	// Stalled records that the operator has already been told, so they are
+	// told once rather than every minute.
+	Stalled bool
+	// HasProducer is set once any member takes a part that makes something.
+	// Remembered on the job rather than recomputed from the members, because
+	// the producer's task is removed when it hands on -- and a job that had
+	// plainly been working then looked like one nobody had started.
+	HasProducer bool
 	// Done marks stages already handed on, so finishing twice does not start
 	// the next agent twice.
 	Handed map[string]bool
@@ -124,9 +159,16 @@ type relay struct {
 	// the member running it. Both are needed: the collaboration says who else
 	// is on the job, and the member says which of them just finished.
 	byTask map[string]taskOwner
-	// pending holds jobs whose members are all still waiting to be handed
-	// work, before anyone has started a task to key them by.
-	pending []*collaboration
+	// jobs holds every live collaboration, keyed by the request that started
+	// it.
+	//
+	// Keyed by request rather than by task because a job outlives any one
+	// task: when a builder finishes and hands on, its task entry goes, and a
+	// colleague registering to wait afterwards used to find nothing and open a
+	// second job containing only waiters -- which then looked exactly like a
+	// job nobody was working on, and got reported as stalled while the work
+	// was in fact proceeding.
+	jobs map[string]*collaboration
 }
 
 type taskOwner struct {
@@ -135,7 +177,10 @@ type taskOwner struct {
 }
 
 func newRelay() *relay {
-	return &relay{byTask: map[string]taskOwner{}}
+	return &relay{
+		byTask: map[string]taskOwner{},
+		jobs:   map[string]*collaboration{},
+	}
 }
 
 // waitsForWork reports whether a stage needs something to exist first.
@@ -154,33 +199,13 @@ func (r *relay) waitFor(request, thread string, c collaborator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, existing := range r.byTask {
-		if existing.job.Request == request {
-			existing.job.Members = append(existing.job.Members, c)
-			return
-		}
-	}
-	// A colleague may already be waiting on the same request. Checking only
-	// the started jobs made the second waiter open a job of its own, so the
-	// tester and the reviewer ended up on separate ones and neither could be
-	// handed to.
-	for _, p := range r.pending {
-		if p.Request == request {
-			p.Members = append(p.Members, c)
-			return
-		}
-	}
-	r.pending = append(r.pending, &collaboration{
-		Request: request,
-		Thread:  thread,
-		Members: []collaborator{c},
-		Handed:  map[string]bool{},
-	})
-	// A backstop on top of the pruning above. Jobs are superseded by the next
-	// request, but a bug or an unusual sequence should not be able to grow
-	// this without limit in a process that runs for weeks.
-	if len(r.pending) > maxPendingJobs {
-		r.pending = r.pending[len(r.pending)-maxPendingJobs:]
+	job := r.jobFor(request, thread)
+	job.Members = append(job.Members, c)
+	// Marked on whichever path registers a producer, not just the one that
+	// starts a task: a job with somebody making something is never a job
+	// whose members are all waiting for nothing.
+	if !c.Stage.waitsForWork() {
+		job.HasProducer = true
 	}
 }
 
@@ -189,31 +214,43 @@ func (r *relay) join(taskID, request, thread string, c collaborator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Everyone answering the same operator message is on the same job.
-	for _, existing := range r.byTask {
-		if existing.job.Request == request {
-			existing.job.Members = append(existing.job.Members, c)
-			r.byTask[taskID] = taskOwner{job: existing.job, member: c}
-			return
+	job := r.jobFor(request, thread)
+	job.Members = append(job.Members, c)
+	if !c.Stage.waitsForWork() {
+		// Somebody is making something, so nobody on this job is waiting for
+		// work that will never come.
+		job.HasProducer = true
+	}
+	r.byTask[taskID] = taskOwner{job: job, member: c}
+}
+
+// jobFor returns the collaboration for a request, opening one if this is the
+// first agent to answer it. Caller holds the lock.
+func (r *relay) jobFor(request, thread string) *collaboration {
+	if job, ok := r.jobs[request]; ok {
+		return job
+	}
+	job := &collaboration{
+		Request: request,
+		Thread:  thread,
+		Handed:  map[string]bool{},
+		Started: time.Now(),
+	}
+	r.jobs[request] = job
+	// A backstop: jobs are superseded by the next request, but a mistake
+	// elsewhere should not grow this without limit in a process that runs for
+	// weeks. Oldest first, since the newest is the one in play.
+	if len(r.jobs) > maxPendingJobs {
+		var oldest string
+		var at time.Time
+		for req, j := range r.jobs {
+			if oldest == "" || j.Started.Before(at) {
+				oldest, at = req, j.Started
+			}
 		}
+		delete(r.jobs, oldest)
 	}
-	// Agents that registered to wait got here first.
-	for _, p := range r.pending {
-		if p.Request == request {
-			p.Members = append(p.Members, c)
-			r.byTask[taskID] = taskOwner{job: p, member: c}
-			return
-		}
-	}
-	r.byTask[taskID] = taskOwner{
-		job: &collaboration{
-			Request: request,
-			Thread:  thread,
-			Members: []collaborator{c},
-			Handed:  map[string]bool{},
-		},
-		member: c,
-	}
+	return job
 }
 
 // register adds a member for a task started by the relay itself, so a handoff
@@ -530,13 +567,7 @@ func (r *relay) forgetRequest(request string) {
 			delete(r.byTask, id)
 		}
 	}
-	kept := r.pending[:0]
-	for _, p := range r.pending {
-		if p.Request != request {
-			kept = append(kept, p)
-		}
-	}
-	r.pending = kept
+	delete(r.jobs, request)
 }
 
 // forgetOthers drops every job except the one for this request.
@@ -552,15 +583,12 @@ func (r *relay) forgetOthers(request string) {
 			delete(r.byTask, id)
 		}
 	}
-	kept := r.pending[:0]
-	for _, p := range r.pending {
-		if p.Request == request {
-			kept = append(kept, p)
+	for req := range r.jobs {
+		if req != request {
+			delete(r.jobs, req)
 		}
 	}
-	r.pending = kept
 }
-
 
 // briefFor is what to actually do, in the terms of the hop being made.
 //
@@ -598,4 +626,69 @@ func briefFor(from, to relayStage) string {
 	}
 	return readFirst + " Publish what you produce with publish_work, then finish " +
 		"with done."
+}
+
+// stalledJobs returns jobs where everybody is waiting and nothing is coming.
+//
+// An agent named only for testing or reviewing registers to wait, which is
+// right -- but if nobody was asked to build the thing, nothing will ever
+// arrive and it waits for good. Worse, it says so in the thread first: "I will
+// test probe-three" reads exactly like work starting. This finds those, so
+// they can be reported once instead of sitting silently.
+func (r *relay) stalledJobs(olderThan time.Duration) []*collaboration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// A job with any live task is progressing, whatever its members' stages.
+	live := map[*collaboration]bool{}
+	for _, owner := range r.byTask {
+		live[owner.job] = true
+	}
+
+	cutoff := time.Now().Add(-olderThan)
+	var out []*collaboration
+	for _, p := range r.jobs {
+		if p.Stalled || live[p] || p.HasProducer || p.Started.After(cutoff) {
+			continue
+		}
+		// Work that has already flowed is not a job nobody started.
+		if len(p.Handed) > 0 {
+			continue
+		}
+		p.Stalled = true
+		out = append(out, p)
+	}
+	return out
+}
+
+// watchForStalledJobs tells the operator when a job cannot start.
+func (s *Server) watchForStalledJobs(ctx context.Context) {
+	const (
+		every   = time.Minute
+		patient = 3 * time.Minute
+	)
+	t := time.NewTicker(every)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			for _, job := range s.relay.stalledJobs(patient) {
+				var who []string
+				for _, m := range job.Members {
+					who = append(who, m.Name+" ("+m.Stage.String()+")")
+				}
+				msg := "Nothing is going to reach " + strings.Join(who, " or ") +
+					": they are waiting to be handed work, and nobody was asked " +
+					"to make anything. Name an agent to build or design it and " +
+					"they will pick it up."
+				vault.GlobalBus.SendMessageIn(ctx, job.Thread, "", "Fleet",
+					"broadcast", peerReplyKind, msg, nil)
+				s.log.Info("job cannot start; nobody was asked to produce anything",
+					"request", clipLine(job.Request, 60))
+			}
+		}
+	}
 }

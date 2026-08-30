@@ -46,6 +46,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// to. Without this an agent publishes and stops, and the colleague who
 	// would review it never hears.
 	go s.watchForHandoffs(ctx)
+	// And says so when a job cannot start at all, rather than leaving agents
+	// waiting on work nobody was asked to make.
+	go s.watchForStalledJobs(ctx)
 }
 
 // RunCronScheduler fires due triggers once a minute until ctx is cancelled.

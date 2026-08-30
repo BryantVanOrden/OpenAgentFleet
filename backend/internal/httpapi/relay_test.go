@@ -3,6 +3,7 @@ package httpapi
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
@@ -322,12 +323,12 @@ func TestPendingJobsDoNotAccumulate(t *testing.T) {
 		r.forgetOthers(req)
 		r.waitFor(req, "broadcast", member("t", "Tester", stageTest))
 	}
-	if len(r.pending) > maxPendingJobs {
-		t.Errorf("pending grew to %d, past the cap of %d", len(r.pending), maxPendingJobs)
+	if len(r.jobs) > maxPendingJobs {
+		t.Errorf("jobs grew to %d, past the cap of %d", len(r.jobs), maxPendingJobs)
 	}
 	// Superseding leaves only the newest.
-	if len(r.pending) != 1 {
-		t.Errorf("superseding left %d jobs, want just the current one", len(r.pending))
+	if len(r.jobs) != 1 {
+		t.Errorf("superseding left %d jobs, want just the current one", len(r.jobs))
 	}
 
 	// Even without superseding, the cap holds.
@@ -336,7 +337,119 @@ func TestPendingJobsDoNotAccumulate(t *testing.T) {
 		r2.waitFor("request "+string(rune('a'+i%26))+string(rune('0'+i/26)),
 			"broadcast", member("t", "Tester", stageTest))
 	}
-	if len(r2.pending) > maxPendingJobs {
-		t.Errorf("without superseding, pending grew to %d", len(r2.pending))
+	if len(r2.jobs) > maxPendingJobs {
+		t.Errorf("without superseding, jobs grew to %d", len(r2.jobs))
+	}
+}
+
+// A job where everybody is waiting and nobody is building is reported once.
+//
+// An agent named only for testing registers to wait, which is right — but if
+// nobody was asked to build the thing, it waits for good, having first said "I
+// will test probe-three" in the thread, which reads exactly like work starting.
+func TestStalledJobsAreFoundOnceEach(t *testing.T) {
+	r := newRelay()
+
+	r.waitFor("test the thing", "broadcast", member("t", "Tester", stageTest))
+	r.waitFor("test the thing", "broadcast", member("r", "Reviewer", stageReview))
+
+	// Not yet: a job gets a moment before anyone worries about it.
+	if got := r.stalledJobs(time.Hour); len(got) != 0 {
+		t.Errorf("a job was called stalled immediately: %d", len(got))
+	}
+
+	stalled := r.stalledJobs(0)
+	if len(stalled) != 1 {
+		t.Fatalf("found %d stalled jobs, want 1", len(stalled))
+	}
+	// Reported once, not every time the sweeper runs.
+	if got := r.stalledJobs(0); len(got) != 0 {
+		t.Errorf("the same job was reported twice: %d", len(got))
+	}
+}
+
+// A job with somebody building is not stalled, however many are waiting.
+func TestAJobWithAProducerIsNotStalled(t *testing.T) {
+	r := newRelay()
+	r.waitFor("build and test", "broadcast", member("t", "Tester", stageTest))
+	r.waitFor("build and test", "broadcast", member("b", "Builder", stageBuild))
+
+	if got := r.stalledJobs(0); len(got) != 0 {
+		t.Errorf("a job with a builder in it was called stalled: %d", len(got))
+	}
+}
+
+// A job with a live task is progressing even if every member waits.
+func TestAJobWithLiveWorkIsNotStalled(t *testing.T) {
+	r := newRelay()
+	r.waitFor("do it", "broadcast", member("t", "Tester", stageTest))
+	r.join("task-1", "do it", "broadcast", member("b", "Builder", stageBuild))
+
+	if got := r.stalledJobs(0); len(got) != 0 {
+		t.Errorf("a job with work in flight was called stalled: %d", len(got))
+	}
+}
+
+// A job whose builder finished and handed on is not stalled.
+//
+// The producer's task is removed when it hands on, so a colleague registering
+// to wait afterwards used to open a second job containing only waiters -- which
+// looked exactly like a job nobody had started, and was reported as stalled
+// while the work was in fact proceeding.
+func TestAFinishedProducerDoesNotLookLikeAStall(t *testing.T) {
+	r := newRelay()
+	const req = "build it then test it"
+
+	r.join("task-build", req, "broadcast", member("b", "Builder", stageBuild))
+	r.waitFor(req, "broadcast", member("t", "Tester", stageTest))
+
+	// The builder finishes and hands on, which removes its task.
+	if _, _, next, ok := r.next("task-build"); !ok || next.Name != "Tester" {
+		t.Fatalf("the handoff did not reach the tester: %+v", next)
+	}
+
+	if got := r.stalledJobs(0); len(got) != 0 {
+		t.Errorf("a job whose builder had already handed on was called stalled: %d", len(got))
+	}
+}
+
+// A colleague registering after the builder started joins the same job.
+func TestWaitingAfterAStartJoinsTheSameJob(t *testing.T) {
+	r := newRelay()
+	const req = "build it then review it"
+
+	r.join("task-build", req, "broadcast", member("b", "Builder", stageBuild))
+	r.waitFor(req, "broadcast", member("v", "Reviewer", stageReview))
+
+	if len(r.jobs) != 1 {
+		t.Fatalf("%d jobs for one request, want 1", len(r.jobs))
+	}
+	if got := len(r.jobs[req].Members); got != 2 {
+		t.Errorf("the job has %d members, want both", got)
+	}
+}
+
+// One word inside another must not decide an agent's job.
+//
+// "markdown preview box" was read as a review, so the agent asked to build it
+// registered as a reviewer, waited for work nobody was making, and the job was
+// reported as one that could not start. The bug was upstream of all of that.
+func TestStageOfMatchesWholeWords(t *testing.T) {
+	cases := map[string]relayStage{
+		"write a one-file HTML markdown preview box":     stageBuild,
+		"build a preview pane":                           stageBuild,
+		"write the previewer":                            stageBuild,
+		// The real words still work, in their usual forms.
+		"review the finished code":                       stageReview,
+		"reviews mdbox and publishes defects":            stageReview,
+		"tests mdbox and publishes findings":             stageTest,
+		"testing it on a phone":                          stageTest,
+		"designs the game first":                         stageDesign,
+		"generates the complete HTML file":               stageBuild,
+	}
+	for plan, want := range cases {
+		if got := stageOf(plan); got != want {
+			t.Errorf("stageOf(%q) = %s, want %s", plan, got, want)
+		}
 	}
 }
