@@ -90,6 +90,17 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 			return err
 		}
 	}
+	// A complete web page is an app, whatever the agent called it.
+	//
+	// Asked for work_kind "app", agents repeatedly published a finished HTML
+	// document as a "file" -- so it appeared in the catalog as a wall of
+	// source with no way to run it, which is the one thing the operator wanted
+	// from it. The content is the better evidence than the label: if it passes
+	// the same check a declared app has to pass, it is one.
+	if w.Kind == protocol.WorkFile && checkAppDocument(w.Content) == nil {
+		w.Kind = protocol.WorkApp
+		w.MIME = "text/html"
+	}
 
 	now := time.Now().UTC()
 
@@ -109,10 +120,15 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 		// in one run, each publish bumping the version and each one triggering
 		// the machinery that watches for new work. Nothing had changed. A
 		// version number should mean somebody changed something.
-		var priorContent string
+		var priorContent, priorKind string
 		if err := s.pool.QueryRow(ctx,
-			`SELECT content FROM work_items WHERE id=$1`, existingID).Scan(&priorContent); err == nil {
-			if priorContent == w.Content {
+			`SELECT content, kind FROM work_items WHERE id=$1`, existingID).Scan(&priorContent, &priorKind); err == nil {
+			// Identical content AND the same kind is genuinely nothing new.
+			// The kind has to be part of it: an item mis-filed as a file, then
+			// republished unchanged, would otherwise keep its wrong kind
+			// forever -- the early return skipped the write that would have
+			// corrected it.
+			if priorContent == w.Content && priorKind == w.Kind {
 				w.Version = version
 				w.UpdatedAt = now
 				return nil

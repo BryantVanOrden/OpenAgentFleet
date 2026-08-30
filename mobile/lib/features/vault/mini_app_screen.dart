@@ -29,6 +29,14 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
   WebViewController? _controller;
   bool _loading = true;
 
+  /// The first script error the page reported, if any.
+  ///
+  /// An agent published an app whose JavaScript would not parse, and the Play
+  /// button showed a blank screen — indistinguishable from a game that draws
+  /// nothing yet. The page cannot be validated at publish time without
+  /// rejecting valid code, so the failure is surfaced instead of hidden.
+  String? _scriptError;
+
   bool get _supported => Platform.isAndroid || Platform.isIOS;
 
   @override
@@ -40,6 +48,14 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
       // The page paints its own background; without this an opaque white
       // frame flashes over a dark game every time it loads.
       ..setBackgroundColor(Colors.black)
+      // A one-way channel carrying error text out of the page and nothing in.
+      // The page is agent-authored, so whatever arrives here is untrusted: it
+      // is displayed as plain text and never executed or parsed.
+      ..addJavaScriptChannel('AgentFleetError',
+          onMessageReceived: (msg) {
+        if (!mounted || _scriptError != null) return;
+        setState(() => _scriptError = msg.message);
+      })
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) {
           if (mounted) setState(() => _loading = false);
@@ -79,13 +95,20 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
         "font-src data:; "
         'connect-src \'none\'; form-action \'none\'; base-uri \'none\'">';
 
+    // Reports a script error out to the app. Registered before anything else
+    // in the document runs, so a parse error in the page's own script is still
+    // caught.
+    const reporter = '<script>window.addEventListener("error",function(e){'
+        'try{AgentFleetError.postMessage(String(e.message||"script error"));}'
+        'catch(_){}});</script>';
+
     final head = RegExp(r'<head[^>]*>', caseSensitive: false).firstMatch(html);
     if (head != null) {
-      return html.replaceRange(head.end, head.end, csp);
+      return html.replaceRange(head.end, head.end, csp + reporter);
     }
     // No head element: the browser will make one, so put the policy at the top
     // where it still lands inside it.
-    return csp + html;
+    return csp + reporter + html;
   }
 
   @override
@@ -123,6 +146,22 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
                 WebViewWidget(controller: _controller!),
                 if (_loading)
                   const Center(child: CircularProgressIndicator()),
+                if (_scriptError != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      color: Fleet.bad.withValues(alpha: 0.92),
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        'This app has a script error, so it will not run '
+                        'properly:\n$_scriptError',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 12, height: 1.35),
+                      ),
+                    ),
+                  ),
               ],
             ),
     );

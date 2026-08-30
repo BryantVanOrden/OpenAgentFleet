@@ -97,3 +97,36 @@ func TestNoSQLReferencesTheDroppedOrgColumn(t *testing.T) {
 		}
 	}
 }
+
+// A finished web page is an app even when the agent files it as a file.
+//
+// Asked for work_kind "app", agents repeatedly published a complete HTML
+// document as a "file", so it appeared in the catalog as a wall of source with
+// no way to run it — the one thing the operator wanted from it.
+func TestAWebPageFiledAsAFileBecomesAnApp(t *testing.T) {
+	page := `<!DOCTYPE html><html><body><canvas id="c"></canvas>
+	<script>document.getElementById('c')</script></body></html>`
+
+	// It passes the app check, so filing it as a file is a mislabel.
+	if err := checkAppDocument(page); err != nil {
+		t.Fatalf("a real page failed the app check: %v", err)
+	}
+
+	// Ordinary text is left alone: a design note is not an app.
+	for _, notAnApp := range []string{
+		"# Design notes\n\nTap to score.",
+		"class Game:\n    pass\n",
+		"",
+	} {
+		if checkAppDocument(notAnApp) == nil {
+			t.Errorf("ordinary text would be promoted to an app: %q", notAnApp)
+		}
+	}
+
+	// A page that reaches the network is not promoted either — it would fail
+	// to run, and a broken Play button is worse than plain text.
+	networked := `<!DOCTYPE html><html><body><script src="https://x.example/a.js"></script></body></html>`
+	if checkAppDocument(networked) == nil {
+		t.Error("a page that loads over the network would be promoted")
+	}
+}
