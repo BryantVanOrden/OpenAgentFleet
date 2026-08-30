@@ -323,7 +323,9 @@ func TestCreateWebhookRequiresATargetAndAGoal(t *testing.T) {
 		{"no name", `{"target_archetype":"a","goal_template":"g"}`, http.StatusBadRequest},
 		{"no target", `{"name":"n","goal_template":"g"}`, http.StatusBadRequest},
 		{"no goal", `{"name":"n","target_archetype":"a"}`, http.StatusBadRequest},
-		{"ok", `{"name":"n","token":"wh-test-create","target_archetype":"a","goal_template":"g"}`, http.StatusCreated},
+		{"no secret", `{"name":"n","token":"wh-test-create-token-long-enough","target_archetype":"a","goal_template":"g"}`, http.StatusBadRequest},
+		{"short token", `{"name":"n","token":"short","target_archetype":"a","goal_template":"g","secret":"s"}`, http.StatusBadRequest},
+		{"ok", `{"name":"n","token":"wh-test-create-token-long-enough","target_archetype":"a","goal_template":"g","secret":"signing-secret"}`, http.StatusCreated},
 	}
 	t.Cleanup(func() {
 		webhookMu.Lock()
@@ -345,12 +347,12 @@ func TestCreateWebhookRequiresATargetAndAGoal(t *testing.T) {
 // A signing key is a credential: it is accepted on create and never echoed.
 func TestWebhookSecretIsNeverReturned(t *testing.T) {
 	const canary = "whsec_CANARY_112233"
-	body := `{"name":"n","token":"wh-test-secret","target_archetype":"a","goal_template":"g","secret":"` + canary + `"}`
+	body := `{"name":"n","token":"wh-test-secret-token-long-enough","target_archetype":"a","goal_template":"g","secret":"` + canary + `"}`
 	rec := httptest.NewRecorder()
 	(&Server{}).handleCreateWebhook(rec, httptest.NewRequest(http.MethodPost, "/api/webhooks", strings.NewReader(body)))
 	t.Cleanup(func() {
 		webhookMu.Lock()
-		delete(webhooks, "wh-test-secret")
+		delete(webhooks, "wh-test-secret-token-long-enough")
 		webhookMu.Unlock()
 	})
 
@@ -372,7 +374,7 @@ func TestWebhookSecretIsNeverReturned(t *testing.T) {
 
 	// It was stored intact: redaction is a wire concern, not a storage one.
 	webhookMu.RLock()
-	stored := webhooks["wh-test-secret"]
+	stored := webhooks["wh-test-secret-token-long-enough"]
 	webhookMu.RUnlock()
 	if stored.Secret != canary {
 		t.Errorf("secret was not stored: %q", stored.Secret)
@@ -462,5 +464,42 @@ func TestRenderGoalClipsAHugePayload(t *testing.T) {
 	}
 	if !strings.Contains(got, "truncated") {
 		t.Errorf("a clipped payload should say so:\n%s", got[:200])
+	}
+}
+
+// A generated webhook token must be unguessable.
+//
+// It used to default to "wh-<UnixNano>". A nanosecond timestamp looks random
+// and is not: anyone who knows roughly when a webhook was created has about a
+// billion candidates to try against an endpoint that takes no authentication
+// and now starts autonomous agents.
+func TestGeneratedWebhookTokensAreRandom(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		tok, err := randomToken()
+		if err != nil {
+			t.Fatalf("generating a token failed: %v", err)
+		}
+		if seen[tok] {
+			t.Fatalf("token %q was generated twice", tok)
+		}
+		seen[tok] = true
+
+		if len(tok) < 24 {
+			t.Errorf("token %q is shorter than the minimum the API enforces", tok)
+		}
+		// The old scheme was the clock in decimal. Anything that is only
+		// digits after the prefix is a timestamp wearing a disguise.
+		body := strings.TrimPrefix(tok, "wh-")
+		digits := true
+		for _, r := range body {
+			if r < '0' || r > '9' {
+				digits = false
+				break
+			}
+		}
+		if digits {
+			t.Errorf("token %q is all digits, which is what a timestamp looks like", tok)
+		}
 	}
 }

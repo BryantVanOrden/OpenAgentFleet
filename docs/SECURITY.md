@@ -396,15 +396,25 @@ and at which version, which is there so that question has an answer.
 Open, known, and listed here rather than discovered later. Each is a real
 finding from the security review that has not been fixed yet.
 
-- **The webhook endpoint is unauthenticated and seeded with literal tokens.**
-  `POST /api/webhooks/{token}` is public by design, and two webhooks are created
-  at process start with guessable tokens (`github-pr-sync`, `crm-lead-enrich`).
-  Today the handler only echoes the target archetype, and the body is read with
-  no `http.MaxBytesReader` — an easy memory-exhaustion DoS. The moment this stub
-  actually dispatches a task, an anonymous caller starts autonomous agents. Do
-  not expose the API to the internet before this is fixed. Webhooks and cron
-  triggers also live in package-level maps, not the database: they vanish on
-  restart and have no owner scoping.
+- **The webhook endpoint is unauthenticated by design, and now starts real
+  work.** `POST /api/webhooks/{token}` takes no session: the token is the
+  credential and the signature is the proof. This entry used to warn that "the
+  moment this stub actually dispatches a task, an anonymous caller starts
+  autonomous agents" — it dispatches now, so the guards it was waiting for are
+  in place:
+  - the token is generated with `crypto/rand`, not from the clock. It defaulted
+    to `wh-<UnixNano>`, which looks random and is not — roughly a billion
+    candidates for anyone who knows what minute a webhook was made — and a
+    caller-supplied token was accepted verbatim, so `github-pr-sync` was a
+    legal choice. A supplied token must now be at least 24 characters.
+  - a signing secret is required at creation, and dispatch refuses without one
+    rather than waving it through. Rows predating the requirement stop working,
+    which is the direction that mistake has to fall.
+  - the body is bounded by `http.MaxBytesReader`.
+
+  What remains: anyone holding the URL and the secret can start a task, which
+  is what a webhook is for. Treat both as credentials. Webhooks and cron
+  triggers still have no owner scoping, so any admin sees all of them.
 - **`deep_search` is an unfiltered fetch.** Any `http(s)` URL, no private-range
   check, no response size cap, and the body lands in the model's prompt with no
   untrusted-content fence. With no egress policy on the instance, that reaches

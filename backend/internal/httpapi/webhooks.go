@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,8 +88,37 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "goal_template is required")
 		return
 	}
+	// The token is the only thing standing between an anonymous caller and a
+	// task on your fleet, so it is generated, not timed.
+	//
+	// It used to default to "wh-<UnixNano>". A nanosecond timestamp looks
+	// random and is not: anyone who knows roughly when a webhook was made has
+	// about a billion candidates to try against an endpoint that takes no
+	// authentication. A caller-supplied token was accepted verbatim too, so
+	// "github-pr-sync" was a legal choice.
 	if req.Token == "" {
-		req.Token = fmt.Sprintf("wh-%d", time.Now().UnixNano())
+		tok, err := randomToken()
+		if err != nil {
+			failErr(w, err)
+			return
+		}
+		req.Token = tok
+	}
+	if len(req.Token) < 24 {
+		fail(w, http.StatusBadRequest,
+			"a webhook token must be at least 24 characters, or left empty to have one generated: "+
+				"this endpoint takes no authentication, so the token is the credential")
+		return
+	}
+
+	// A signing secret is required, and dispatch refuses without one below.
+	// This endpoint starts autonomous agents now -- it used to only echo its
+	// target -- so an unsigned webhook is a way to make the fleet work for
+	// whoever finds the URL.
+	if strings.TrimSpace(req.Secret) == "" {
+		fail(w, http.StatusBadRequest,
+			"a webhook needs a signing secret: it starts real work and takes no other authentication")
+		return
 	}
 	req.ID = req.Token
 	req.CreatedAt = time.Now().UTC()
@@ -144,7 +176,18 @@ func (s *Server) handleIncomingWebhook(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusRequestEntityTooLarge, "payload too large")
 		return
 	}
-	if wh.Secret != "" && !verifyWebhookSignature(wh.Secret, body, r) {
+	// Fail closed. A webhook with no secret was previously waved through
+	// entirely, which was survivable while this endpoint only echoed its
+	// target and is not now that it starts tasks. Rows predating the
+	// requirement stop working rather than staying open.
+	if strings.TrimSpace(wh.Secret) == "" {
+		s.logger().Warn("webhook has no signing secret; refusing to dispatch",
+			"token", token, "name", wh.Name)
+		fail(w, http.StatusUnauthorized,
+			"this webhook has no signing secret and cannot start work; recreate it")
+		return
+	}
+	if !verifyWebhookSignature(wh.Secret, body, r) {
 		s.logger().Warn("webhook signature rejected", "token", token, "name", wh.Name)
 		fail(w, http.StatusUnauthorized, "signature missing or invalid")
 		return
@@ -293,4 +336,16 @@ func (s *Server) loadTriggers(ctx context.Context) error {
 
 	s.logger().Info("triggers loaded", "webhooks", len(whs), "cron", len(trigs))
 	return nil
+}
+
+// randomToken returns an unguessable webhook token.
+//
+// crypto/rand, not the clock: a webhook URL takes no authentication, so the
+// token IS the credential and has to be treated as one.
+func randomToken() (string, error) {
+	raw := make([]byte, 24)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("could not generate a webhook token: %w", err)
+	}
+	return "wh-" + base64.RawURLEncoding.EncodeToString(raw), nil
 }

@@ -248,11 +248,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
   }
 
-  Future<void> _delete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete this conversation?'),
+  /// Confirm removing one thread. Shared by the open thread's own menu and by
+  /// the picker, so both say the same thing about what survives.
+  Future<bool> _confirmDelete(BuildContext ctx, Conversation t) async {
+    final name = t.title.isEmpty ? 'this conversation' : '"${t.title}"';
+    final ok = await showDialog<bool>(
+      context: ctx,
+      builder: (d) => AlertDialog(
+        title: Text('Delete $name?'),
         content: const Text(
           'The thread is removed from your comms list. What was said in it is '
           'kept on the server — closing a thread should not destroy the record '
@@ -260,17 +263,49 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(d, false),
               child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(d, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    return ok == true;
+  }
+
+  /// Remove one of the sibling threads without leaving the screen.
+  ///
+  /// Deleting the thread you are reading moves you to a sibling rather than
+  /// closing the screen — you came here to prune a list, not to leave it.
+  Future<void> _deleteSibling(Conversation t) async {
+    try {
+      await ref.read(apiProvider).deleteConversation(t.id);
+    } catch (err) {
+      if (mounted) setState(() => _error = '$err');
+      return;
+    }
+    if (!mounted) return;
+    final remaining = _siblings.where((s) => s.id != t.id).toList();
+    setState(() {
+      _siblings = remaining;
+      if (t.id == _current.id && remaining.isNotEmpty) {
+        _current = remaining.first;
+        _title = _current.title;
+        _pinned = _current.pinned;
+        _messages = const [];
+        _loading = true;
+        _lastSpokenId = '';
+      }
+    });
+    if (t.id == _current.id || _messages.isEmpty) await _refresh();
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await _confirmDelete(context, _current);
+    if (!confirmed || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
@@ -442,30 +477,56 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   Future<void> _switchThread() async {
     if (_siblings.length < 2) return;
+    // Deleting is offered here, per row, so several can be pruned in one go.
+    // It used to live only in the open thread's own menu, which meant getting
+    // from four chats down to one was four round trips through the list.
     final picked = await showModalBottomSheet<Conversation>(
       context: context,
-      builder: (_) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            for (final t in _siblings)
-              ListTile(
-                dense: true,
-                selected: t.id == _current.id,
-                leading: Icon(
-                    t.id == _current.id
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 18,
-                    color: t.id == _current.id ? Fleet.live : Fleet.ink500),
-                title: Text(t.title.isEmpty ? 'Untitled chat' : t.title,
-                    style: const TextStyle(fontSize: 13)),
-                subtitle: Text(
-                    '${t.messageCount} message${t.messageCount == 1 ? '' : 's'}',
-                    style: TextStyle(color: Fleet.ink400, fontSize: 11)),
-                onTap: () => Navigator.pop(context, t),
-              ),
-          ],
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final t in _siblings)
+                ListTile(
+                  dense: true,
+                  selected: t.id == _current.id,
+                  leading: Icon(
+                      t.id == _current.id
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: t.id == _current.id ? Fleet.live : Fleet.ink500),
+                  title: Text(t.title.isEmpty ? 'Untitled chat' : t.title,
+                      style: const TextStyle(fontSize: 13)),
+                  subtitle: Text(
+                      '${t.messageCount} message${t.messageCount == 1 ? '' : 's'}',
+                      style: TextStyle(color: Fleet.ink400, fontSize: 11)),
+                  // The built-in channel stays: an unaddressed message has to
+                  // land somewhere. Everything else can go, including the one
+                  // you are reading -- that just moves you to a sibling.
+                  trailing: t.isBroadcast || _siblings.length < 2
+                      ? null
+                      : IconButton(
+                          tooltip: 'Delete this chat',
+                          icon: Icon(Icons.delete_outline,
+                              size: 18, color: Fleet.bad),
+                          onPressed: () async {
+                            final ok = await _confirmDelete(sheetCtx, t);
+                            if (!ok) return;
+                            await _deleteSibling(t);
+                            if (!sheetCtx.mounted) return;
+                            if (_siblings.length < 2) {
+                              Navigator.pop(sheetCtx, _current);
+                            } else {
+                              setSheet(() {});
+                            }
+                          },
+                        ),
+                  onTap: () => Navigator.pop(sheetCtx, t),
+                ),
+            ],
+          ),
         ),
       ),
     );
