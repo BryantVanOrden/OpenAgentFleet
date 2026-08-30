@@ -117,6 +117,13 @@ it as somebody who will maintain it. "Do your part" was not something a model
 could act on — handed a review to apply, the builder stopped to ask what was
 wanted instead of applying it.
 
+A finished web page is filed as an app whatever the agent called it. Asked for
+`work_kind: "app"`, agents repeatedly published complete HTML documents as
+files, so they sat in the catalog as a wall of source with no way to run them.
+A broken app no longer fails silently either: JavaScript that does not parse
+used to give a Play button that showed a blank screen, which looks the same as
+a game that has not drawn yet, so the error is now shown in the viewer.
+
 Republishing identical content is a no-op rather than a new version, and an
 agent that publishes the same name three times in one run is told it is going
 in circles. One had published the same file ten times, which looked like
