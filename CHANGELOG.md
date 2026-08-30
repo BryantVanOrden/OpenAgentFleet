@@ -92,6 +92,12 @@ reviewing wait to be handed something rather than starting immediately — you
 cannot test what does not exist, and an agent that starts anyway is busy when
 the builder finally publishes. The relay is bounded at six rounds.
 
+An agent doing its part of a broadcast is told plainly that the request was
+made to the fleet rather than in a conversation, so nobody is waiting to answer
+questions about it — it should decide the small things and say what it decided.
+The eight-minute wait itself is unchanged for a task an operator started
+directly, where somebody may well be watching.
+
 Work one agent hands another does not wait for a person. It arrives with
 instructions from a colleague, nobody is standing by to answer, and each wait
 holds up everyone downstream — one run spent three eight-minute waits inside
@@ -160,6 +166,9 @@ real push would not.
 - **Half of every API key issued was dead on arrival.** The key parser split on
   every underscore and the secret half is base64url, whose alphabet contains
   one.
+- **A cancelled run reported a broken provider.** Stopping a task mid-inference
+  surfaced as "every model provider failed: context canceled", which sends
+  whoever reads it to check engines that are working perfectly.
 - **`/api/orgs` returned 500 to every caller.** Two raw SQL statements still
   queried the dropped `instances.org_id`; searching for the Go field name does
   not look inside query strings. A test now reads the SQL and fails if it
