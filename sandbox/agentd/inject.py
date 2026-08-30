@@ -40,10 +40,42 @@ def resolve_target(label: str, role: str | None = None) -> tuple[int, int] | Non
     return node.center
 
 
-def click(x: int, y: int, button: int = 1, clicks: int = 1) -> tuple[bool, str]:
-    code, out = _run(["xdotool", "mousemove", "--sync", str(x), str(y)])
+def _pointer_at(x: int, y: int) -> bool:
+    """Is the pointer already where we are about to move it?"""
+    code, out = _run(["xdotool", "getmouselocation", "--shell"])
     if code != 0:
-        return False, f"mousemove failed: {out}"
+        return False
+    pos = {}
+    for line in out.strip().splitlines():
+        key, _, val = line.partition("=")
+        pos[key.strip()] = val.strip()
+    try:
+        return int(pos.get("X", -1)) == x and int(pos.get("Y", -1)) == y
+    except ValueError:
+        return False
+
+
+def click(x: int, y: int, button: int = 1, clicks: int = 1) -> tuple[bool, str]:
+    # Moving to where the pointer already is stalls.
+    #
+    # `mousemove --sync` waits for a motion event, and moving somewhere the
+    # pointer already is produces none, so it sits there for seconds and under
+    # load overruns the timeout. The caller sees "mousemove failed" and the
+    # agent concludes the element is unclickable -- which is what clicking the
+    # same button twice in a row looks like from the inside. Nothing to do:
+    # we are already there.
+    if not _pointer_at(x, y):
+        # No --sync. It waits for a motion event, and there are ordinary
+        # situations that never produce one -- the pointer already being at the
+        # target, a grab held by a menu -- in which it blocks until the timeout
+        # and reports "mousemove failed: timed out after 15s". Whole runs were
+        # lost to that: an agent clicking the same button twice was told the
+        # second click was impossible. A plain move plus a short settle is what
+        # --sync was standing in for.
+        code, out = _run(["xdotool", "mousemove", str(x), str(y)], timeout=5)
+        if code != 0:
+            return False, f"mousemove failed: {out}"
+        time.sleep(0.05)
     args = ["xdotool", "click", "--repeat", str(clicks), "--delay", "80", str(button)]
     code, out = _run(args)
     if code != 0:
@@ -73,7 +105,7 @@ def key(combo: str) -> tuple[bool, str]:
 
 def scroll(x: int, y: int, amount: int) -> tuple[bool, str]:
     button = 4 if amount > 0 else 5  # 4 = up, 5 = down
-    _run(["xdotool", "mousemove", "--sync", str(x), str(y)])
+    _run(["xdotool", "mousemove", str(x), str(y)], timeout=5)  # see click()
     code, out = _run(["xdotool", "click", "--repeat", str(abs(amount)), "--delay", "60", str(button)])
     if code != 0:
         return False, f"scroll failed: {out}"
@@ -83,12 +115,12 @@ def scroll(x: int, y: int, amount: int) -> tuple[bool, str]:
 
 def drag(x1: int, y1: int, x2: int, y2: int) -> tuple[bool, str]:
     steps = [
-        ["xdotool", "mousemove", "--sync", str(x1), str(y1)],
+        ["xdotool", "mousemove", str(x1), str(y1)],
         ["xdotool", "mousedown", "1"],
         # An intermediate move makes drag-and-drop work in toolkits that ignore a
         # single jump because they never see a motion event.
-        ["xdotool", "mousemove", "--sync", str((x1 + x2) // 2), str((y1 + y2) // 2)],
-        ["xdotool", "mousemove", "--sync", str(x2), str(y2)],
+        ["xdotool", "mousemove", str((x1 + x2) // 2), str((y1 + y2) // 2)],
+        ["xdotool", "mousemove", str(x2), str(y2)],
         ["xdotool", "mouseup", "1"],
     ]
     for args in steps:
