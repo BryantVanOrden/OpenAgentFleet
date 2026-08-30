@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
@@ -171,25 +172,48 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// paraphrase of the question.
 	status := s.recentActivity(ctx, inst)
 
+	// Two different things get said in fleet comms, and answering both as a
+	// status update was wrong.
+	//
+	// This was built to answer "what is everyone up to", so the prompt told
+	// the agent to reply with a status update and never to claim it had
+	// started anything. That is right for a question and useless for a
+	// request: asked to work together and build something, four agents each
+	// replied "I am currently idle and available" and nobody did anything.
+	// The instruction not to claim work made it structurally incapable of
+	// agreeing to any.
+	//
+	// So the agent decides which it was given, and says so in the first word.
+	// A deterministic marker rather than a second classifier call: the reply
+	// has to be generated anyway, and a round trip per agent per broadcast to
+	// label it would cost more than the answer.
 	resp, err := s.models.CompleteRole(ctx, inst.ProviderIDs, protocol.RoleChat,
 		connectors.Request{
 			System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
 				"desktop agents, reporting to your operator. " + scope +
 				" was messaged.\n\n" + status + "\n\n" +
-				"Reply in one or two short sentences, in the first person, as a status " +
-				"update. Say what you have actually been doing and whether you are free. " +
-				"Ground every claim in the history above: if it says you have run nothing, " +
-				"say you are idle and available. Never invent work, never claim to have " +
-				"started something, and do not offer a list of your capabilities unless " +
-				"you were asked what you can do.",
+				"Decide first what you were sent.\n\n" +
+				"If it ASKS YOU TO DO SOMETHING -- build, make, write, fix, find " +
+				"out, work together on something -- reply starting with the single " +
+				"word PLAN: followed by the specific part YOU will take on, in one " +
+				"or two sentences. Pick a part that suits you and does not duplicate " +
+				"what an obvious colleague would take; say what you will actually " +
+				"produce. Do not ask for permission and do not ask which part to " +
+				"take -- decide.\n\n" +
+				"Otherwise it is a QUESTION about you or your machine. Reply in one " +
+				"or two short sentences, in the first person, as a status update. " +
+				"Ground every claim in the history above: if it says you have run " +
+				"nothing, say you are idle and available. Never invent work, never " +
+				"claim to have started something, and do not list your capabilities " +
+				"unless you were asked what you can do.",
 			Messages: []connectors.Message{{
 				Role: connectors.RoleUser,
 				Text: msg.FromInstanceName + " asked: " + msg.Content,
 			}},
-			// A reasoning model would spend the whole budget thinking and return
-			// nothing; this is small talk between agents, not a plan.
+			// A reasoning model would spend the whole budget thinking and
+			// return nothing.
 			DisableThinking: true,
-			MaxTokens:       220,
+			MaxTokens:       260,
 			Temperature:     0.3,
 		})
 	if err != nil {
@@ -235,6 +259,95 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	}
 	vault.GlobalBus.SendMessageIn(ctx, conv, inst.ID, inst.Name, to, peerReplyKind, body, nil)
 	s.log.Info("agent answered a peer message", "instance", inst.Name, "to", to, "conversation", conv)
+
+	// A plan that nobody acts on is the bug this is fixing. If the agent
+	// committed to a part, start it working on that part.
+	if plan, ok := planFrom(body); ok && isOperator(msg) {
+		s.startFromPlan(ctx, inst, msg, plan)
+	}
+}
+
+// planMarker is how an agent says it was asked to do something rather than
+// asked a question.
+const planMarker = "PLAN:"
+
+// planFrom pulls the committed part out of a reply, if there is one.
+//
+// Only when the agent opened with the marker. Matching "plan" anywhere in a
+// sentence would turn "I have no plans today" into a task.
+func planFrom(body string) (string, bool) {
+	trimmed := strings.TrimSpace(body)
+	if !strings.HasPrefix(strings.ToUpper(trimmed), planMarker) {
+		return "", false
+	}
+	plan := strings.TrimSpace(trimmed[len(planMarker):])
+	if plan == "" {
+		return "", false
+	}
+	return plan, true
+}
+
+// startFromPlan turns an agent's stated part into a task it actually runs.
+//
+// Only for an operator's message: agents talking among themselves must not be
+// able to start work on each other, or one bot's question becomes another
+// bot's afternoon. And only when the agent is idle -- a broadcast arriving
+// mid-task should not derail what it was already asked to do.
+func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) {
+	if inst.State != protocol.InstanceRunning {
+		return
+	}
+	// One driver at a time, the same rule the task endpoint enforces: a
+	// broadcast arriving mid-task must not derail what the agent was already
+	// asked to do.
+	existing, err := s.db.ListTasks(ctx, inst.ID, 20)
+	if err != nil {
+		return
+	}
+	for _, t := range existing {
+		if t.State == protocol.TaskRunning || t.State == protocol.TaskAwaitingHuman ||
+			t.State == protocol.TaskQueued {
+			return
+		}
+	}
+
+	task := &protocol.Task{
+		ID:         store.NewID(),
+		InstanceID: inst.ID,
+		OwnerID:    msg.FromUserID,
+		// Both halves: the request gives the goal its context, the plan is
+		// what this particular agent said it would contribute.
+		Goal: "The operator asked the fleet: " + msg.Content +
+			"\n\nYour part, which you chose: " + plan +
+			"\n\nDo that part. Publish what you produce to the shared work " +
+			"catalog with publish_work so the rest of the fleet can build on " +
+			"it, and read_work first to see what colleagues have already put " +
+			"there. Message a peer if you need something from them.",
+		State:     protocol.TaskQueued,
+		MaxSteps:  s.cfg.MaxSteps,
+		CreatedAt: time.Now().UTC(),
+	}
+	// Detached from the request that triggered it: the operator's message has
+	// long been answered, and a task must not die with its HTTP context.
+	bg := context.WithoutCancel(ctx)
+	if err := s.db.CreateTask(bg, task); err != nil {
+		s.log.Warn("could not queue work from a fleet plan", "instance", inst.Name, "err", err)
+		return
+	}
+	if err := s.runner.Start(bg, task); err != nil {
+		s.log.Warn("could not start work from a fleet plan", "instance", inst.Name, "err", err)
+		return
+	}
+	s.log.Info("agent started work from a fleet request",
+		"instance", inst.Name, "task", task.ID, "plan", clipLine(plan, 80))
+}
+
+func clipLine(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // mayAnswer reports whether this agent belongs in the message's thread.

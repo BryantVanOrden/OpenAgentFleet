@@ -200,7 +200,7 @@ func seedProviders(ctx context.Context, db *store.Store, cfg *config.Config, log
 	}
 	model := os.Getenv("OLLAMA_VISION_MODEL")
 	if model == "" {
-		model = "qwen2.5vl:7b"
+		model = "qwen3.5:4b"
 	}
 	p := &protocol.Provider{
 		Name:        "Local Ollama",

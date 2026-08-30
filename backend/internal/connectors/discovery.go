@@ -134,7 +134,8 @@ func listOllamaDynamic(ctx context.Context, hc *http.Client, base string) ([]Mod
 
 func fallbackOllama() []ModelDescriptor {
 	return []ModelDescriptor{
-		{ID: "qwen2.5vl:7b", Name: "Qwen 2.5 VL 7B", Speed: "Fast", Thinking: "Medium", Vision: true, Description: "Default multimodal vision model for desktop agent navigation"},
+		{ID: "qwen3.5:4b", Name: "Qwen 3.5 4B", Speed: "Fast", Thinking: "Medium", Vision: true, Description: "Default vision model — small enough to answer promptly on one consumer GPU"},
+		{ID: "qwen2.5vl:7b", Name: "Qwen 2.5 VL 7B", Speed: "Fast", Thinking: "Medium", Vision: true, Description: "Multimodal vision model for desktop agent navigation"},
 		{ID: "qwen2.5vl:72b", Name: "Qwen 2.5 VL 72B", Speed: "Heavy", Thinking: "High", Vision: true, Description: "Heavyweight local vision model with high grounding accuracy"},
 		{ID: "llama3.2-vision:11b", Name: "Llama 3.2 Vision 11B", Speed: "Fast", Thinking: "Medium", Vision: true, Description: "Meta multimodal vision model"},
 		{ID: "deepseek-r1:14b", Name: "DeepSeek R1 14B", Speed: "Balanced", Thinking: "High Reasoning", Vision: false, Description: "Local reasoning & logic model"},
