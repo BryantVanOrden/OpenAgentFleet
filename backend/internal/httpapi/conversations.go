@@ -119,8 +119,13 @@ func (s *Server) handleUpdateConversation(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == protocol.BroadcastConversationID {
-		fail(w, http.StatusBadRequest, "the broadcast channel cannot be deleted")
+	// Asked before deleting, so a refusal can say which it is. Answering
+	// "no such conversation" about a thread that plainly exists is worse than
+	// refusing: it sends someone looking for a bug in the wrong place.
+	if vault.GlobalBus.IsLastEveryoneChannel(id) {
+		fail(w, http.StatusConflict,
+			"this is the last everyone-channel and unaddressed messages would have "+
+				"nowhere to land; make another one first, then delete this")
 		return
 	}
 	if !vault.GlobalBus.DeleteConversation(r.Context(), id) {

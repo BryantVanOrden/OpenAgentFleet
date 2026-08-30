@@ -66,18 +66,38 @@ func TestCreateConversationRejectsBadBody(t *testing.T) {
 }
 
 // The broadcast channel must not be deletable through the API.
-func TestDeleteBroadcastChannelIsRefused(t *testing.T) {
+// The built-in channel is refused only while it is the last everyone-channel,
+// and the refusal says which of those it is.
+//
+// It used to be an unconditional 400 "cannot be deleted". That was right while
+// it was the only everyone-channel and became merely obstructive once an
+// operator could open others.
+func TestDeleteBroadcastChannelIsRefusedOnlyWhenItIsTheLast(t *testing.T) {
 	vault.GlobalBus = vault.NewBus()
 
-	req := httptest.NewRequest(http.MethodDelete,
-		"/api/comms/conversations/broadcast", nil)
-	req.SetPathValue("id", protocol.BroadcastConversationID)
+	del := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete,
+			"/api/comms/conversations/broadcast", nil)
+		req.SetPathValue("id", protocol.BroadcastConversationID)
+		rec := httptest.NewRecorder()
+		(&Server{}).handleDeleteConversation(rec, req)
+		return rec
+	}
 
-	rec := httptest.NewRecorder()
-	(&Server{}).handleDeleteConversation(rec, req)
+	rec := del()
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status %d, want 409 while it is the only everyone-channel", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "make another one first") {
+		t.Errorf("the refusal does not say how to proceed: %s", rec.Body)
+	}
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("the broadcast channel was deletable: status %d", rec.Code)
+	// Open a second everyone-channel, and the first can go.
+	vault.GlobalBus.CreateConversation(context.Background(), "Standup", nil,
+		protocol.ConversationBroadcast)
+	if rec := del(); rec.Code != http.StatusNoContent {
+		t.Errorf("status %d, want 204 once another everyone-channel exists: %s",
+			rec.Code, rec.Body)
 	}
 }
 

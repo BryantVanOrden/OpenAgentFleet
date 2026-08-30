@@ -19,9 +19,9 @@ func (s *Store) UpsertConversation(ctx context.Context, c protocol.Conversation)
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO conversations(id,kind,title,created_at,pinned) VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (id) DO UPDATE SET kind=$2,title=$3,pinned=$5`,
-		c.ID, c.Kind, c.Title, c.CreatedAt, c.Pinned); err != nil {
+		`INSERT INTO conversations(id,kind,title,created_at,pinned,hidden) VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (id) DO UPDATE SET kind=$2,title=$3,pinned=$5,hidden=$6`,
+		c.ID, c.Kind, c.Title, c.CreatedAt, c.Pinned, c.Hidden); err != nil {
 		return norm(err)
 	}
 
@@ -44,7 +44,7 @@ func (s *Store) UpsertConversation(ctx context.Context, c protocol.Conversation)
 // ListConversations returns every stored conversation with its members.
 func (s *Store) ListConversations(ctx context.Context) ([]protocol.Conversation, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id,kind,title,created_at,pinned FROM conversations ORDER BY created_at`)
+		`SELECT id,kind,title,created_at,pinned,COALESCE(hidden,false) FROM conversations ORDER BY created_at`)
 	if err != nil {
 		return nil, norm(err)
 	}
@@ -54,7 +54,7 @@ func (s *Store) ListConversations(ctx context.Context) ([]protocol.Conversation,
 	byID := map[string]int{}
 	for rows.Next() {
 		var c protocol.Conversation
-		if err := rows.Scan(&c.ID, &c.Kind, &c.Title, &c.CreatedAt, &c.Pinned); err != nil {
+		if err := rows.Scan(&c.ID, &c.Kind, &c.Title, &c.CreatedAt, &c.Pinned, &c.Hidden); err != nil {
 			return nil, err
 		}
 		c.Members = []string{}

@@ -394,7 +394,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   title: Text(_pinned ? 'Unpin' : 'Pin to top'),
                 ),
               ),
-              if (!_current.isBroadcast)
+              // Offered for the built-in channel too: the server allows it
+              // once another everyone-channel exists, and refuses with a
+              // message saying so when it does not.
+              if (!_current.isBroadcast || _siblings.length > 1)
                 PopupMenuItem(
                   value: 'delete',
                   child: ListTile(
@@ -502,10 +505,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   subtitle: Text(
                       '${t.messageCount} message${t.messageCount == 1 ? '' : 's'}',
                       style: TextStyle(color: Fleet.ink400, fontSize: 11)),
-                  // The built-in channel stays: an unaddressed message has to
-                  // land somewhere. Everything else can go, including the one
-                  // you are reading -- that just moves you to a sibling.
-                  trailing: t.isBroadcast || _siblings.length < 2
+                  // Anything can go while something is left to take
+                  // unaddressed traffic -- including the built-in channel,
+                  // which used to be refused outright and no longer needs to
+                  // be once a second everyone-channel exists. Deleting the one
+                  // you are reading just moves you to a sibling.
+                  trailing: _siblings.length < 2
                       ? null
                       : IconButton(
                           tooltip: 'Delete this chat',

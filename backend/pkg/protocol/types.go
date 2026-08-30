@@ -484,6 +484,13 @@ type Conversation struct {
 	Pinned    bool      `json:"pinned"`
 	CreatedAt time.Time `json:"created_at"`
 
+	// Hidden records that the built-in everyone-channel has been deleted.
+	// That channel is implicit and has no row of its own until something is
+	// stored about it, so "deleted" has to be stored as a fact rather than as
+	// the absence of one. Never set on an ordinary thread, which is simply
+	// removed.
+	Hidden bool `json:"-"`
+
 	// Populated on read for the conversation list; not stored.
 	LastMessageAt time.Time `json:"last_message_at,omitzero"`
 	MessageCount  int       `json:"message_count"`

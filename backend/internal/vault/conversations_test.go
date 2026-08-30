@@ -346,3 +346,62 @@ func TestBroadcastKindConversationIncludesTheWholeFleet(t *testing.T) {
 		t.Error("a non-member is in an ordinary thread")
 	}
 }
+
+// The built-in everyone-channel can be deleted once another one exists.
+//
+// It used to be refused outright, on the grounds that unaddressed messages
+// would have nowhere to land. That was true while it was the only
+// everyone-channel and stopped being true when operators could open others --
+// at which point the refusal was just a refusal.
+func TestBuiltInBroadcastGoesOnceAnotherEveryoneChannelExists(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	// While it is the only one, it stays.
+	if b.DeleteConversation(ctx, protocol.BroadcastConversationID) {
+		t.Fatal("the last everyone-channel was deleted")
+	}
+	if b.DefaultChannel() != protocol.BroadcastConversationID {
+		t.Error("unaddressed traffic lost its landing place")
+	}
+
+	// Open another, and now it can go.
+	other := b.CreateConversation(ctx, "Standup", nil, protocol.ConversationBroadcast)
+	if !b.DeleteConversation(ctx, protocol.BroadcastConversationID) {
+		t.Fatal("the built-in channel was refused although another exists")
+	}
+
+	// It is gone from the listing...
+	for _, c := range b.ListConversations(ctx) {
+		if c.ID == protocol.BroadcastConversationID {
+			t.Error("the deleted channel is still listed")
+		}
+	}
+	// ...and unaddressed traffic goes to the survivor rather than to a
+	// conversation id nothing lists.
+	if got := b.DefaultChannel(); got != other.ID {
+		t.Errorf("default channel = %q, want the surviving channel %q", got, other.ID)
+	}
+
+	// The survivor is now the last one, so it is refused in turn.
+	if b.DeleteConversation(ctx, other.ID) {
+		t.Error("the last remaining everyone-channel was deleted")
+	}
+}
+
+// A message with nowhere else to go lands in the surviving channel.
+func TestUnaddressedMessagesFollowTheSurvivingChannel(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	other := b.CreateConversation(ctx, "Standup", nil, protocol.ConversationBroadcast)
+	if !b.DeleteConversation(ctx, protocol.BroadcastConversationID) {
+		t.Fatal("could not delete the built-in channel")
+	}
+
+	msg := b.SendMessage(ctx, "bot-1", "Alpha", "", "message", "anyone about?", nil)
+	if msg.ConversationID != other.ID {
+		t.Errorf("message filed to %q, want the surviving channel %q",
+			msg.ConversationID, other.ID)
+	}
+}

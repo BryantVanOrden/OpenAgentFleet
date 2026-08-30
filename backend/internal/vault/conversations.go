@@ -176,11 +176,58 @@ func (b *Bus) CanonicalThread(ctx context.Context, members []string) protocol.Co
 // DeleteConversation closes a thread. Its messages are kept but unfiled.
 func (b *Bus) DeleteConversation(ctx context.Context, id string) bool {
 	if id == protocol.BroadcastConversationID {
-		// The broadcast channel is the fleet's only always-on channel; deleting
-		// it would leave unaddressed messages with nowhere to land.
-		return false
+		// Refused only while it is the last everyone-channel. That was once
+		// always true, so this was an unconditional no; now that an operator
+		// can open others, the real rule is that unaddressed traffic must
+		// have somewhere to land -- not that this particular channel must
+		// exist. Hidden rather than removed, because the channel is implicit
+		// and would otherwise be synthesised straight back.
+		b.mu.Lock()
+		other := b.otherEveryoneChannelLocked()
+		if other == "" {
+			b.mu.Unlock()
+			return false
+		}
+		hidden := protocol.Conversation{
+			ID:        protocol.BroadcastConversationID,
+			Kind:      protocol.ConversationBroadcast,
+			Title:     "Everyone",
+			Members:   []string{},
+			Hidden:    true,
+			CreatedAt: time.Now().UTC(),
+		}
+		if prev, ok := b.conversations[protocol.BroadcastConversationID]; ok {
+			hidden.Title, hidden.CreatedAt = prev.Title, prev.CreatedAt
+		}
+		b.conversations[protocol.BroadcastConversationID] = hidden
+		// Its messages move to the channel taking over, rather than being
+		// stranded with a conversation id nothing lists.
+		for i := range b.messages {
+			if b.messages[i].ConversationID == protocol.BroadcastConversationID {
+				b.messages[i].ConversationID = other
+			}
+		}
+		st, log := b.convStore, b.log
+		b.mu.Unlock()
+
+		if st != nil {
+			if err := st.UpsertConversation(ctx, hidden); err != nil && log != nil {
+				log.Warn("broadcast channel not hidden", "err", err)
+			}
+		}
+		return true
 	}
 	b.mu.Lock()
+	// The last everyone-channel stays, whichever one it is. Deleting the
+	// built-in and then its replacement would leave unaddressed traffic
+	// pointing at a channel nothing lists -- the same hole the old blanket
+	// refusal was there to prevent, reached the long way round.
+	if c, ok := b.conversations[id]; ok && c.Kind == protocol.ConversationBroadcast {
+		if b.lastEveryoneChannelLocked(id) {
+			b.mu.Unlock()
+			return false
+		}
+	}
 	_, existed := b.conversations[id]
 	delete(b.conversations, id)
 	for i := range b.messages {
@@ -205,26 +252,31 @@ func (b *Bus) ListConversations(ctx context.Context) []protocol.Conversation {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// The broadcast channel is implicit — it is not created, and cannot be
-	// deleted — but it can be renamed, so a stored row overrides the default
-	// name when one exists.
-	broadcast := protocol.Conversation{
-		ID:      protocol.BroadcastConversationID,
-		Kind:    protocol.ConversationBroadcast,
-		Title:   "Everyone",
-		Members: []string{},
-	}
-	if stored, ok := b.conversations[protocol.BroadcastConversationID]; ok {
-		if stored.Title != "" {
-			broadcast.Title = stored.Title
+	// The built-in channel is implicit: it has no row until it is renamed,
+	// pinned, or deleted. A stored row overrides the default name, and a
+	// hidden one means it was deleted once another everyone-channel existed
+	// to take unaddressed traffic.
+	stored, hasRow := b.conversations[protocol.BroadcastConversationID]
+	out := []protocol.Conversation{}
+	if !hasRow || !stored.Hidden {
+		broadcast := protocol.Conversation{
+			ID:      protocol.BroadcastConversationID,
+			Kind:    protocol.ConversationBroadcast,
+			Title:   "Everyone",
+			Members: []string{},
 		}
-		broadcast.Pinned = stored.Pinned
+		if hasRow {
+			if stored.Title != "" {
+				broadcast.Title = stored.Title
+			}
+			broadcast.Pinned = stored.Pinned
+		}
+		out = append(out, broadcast)
 	}
-	out := []protocol.Conversation{broadcast}
 	for _, c := range b.conversations {
-		// The broadcast channel is already at the head. Once it has been
-		// renamed it also has a stored row, and appending that too listed the
-		// one channel every fleet has twice.
+		// The built-in channel is handled above. Once it has been renamed it
+		// also has a stored row, and appending that too listed the one channel
+		// every fleet has twice.
 		if c.ID == protocol.BroadcastConversationID {
 			continue
 		}
@@ -276,7 +328,10 @@ func (b *Bus) conversationOf(m protocol.PeerMessage) string {
 		return m.ConversationID
 	}
 	if m.ToInstanceID == "" || m.ToInstanceID == protocol.BroadcastConversationID {
-		return protocol.BroadcastConversationID
+		// Whichever everyone-channel is currently the landing place, so a
+		// message with nowhere else to go does not end up filed to a channel
+		// that has been deleted and is listed nowhere.
+		return b.defaultChannelLocked()
 	}
 	from := m.FromInstanceID
 	if from == "" {
@@ -482,4 +537,92 @@ func (b *Bus) updateConversation(ctx context.Context, id string, apply func(*pro
 		}
 	}
 	return c, true
+}
+
+
+// otherEveryoneChannelLocked returns an everyone-channel other than the
+// built-in one, or "" if there is none. Caller holds the lock.
+//
+// Oldest first, deliberately: when the built-in is deleted the channel that
+// takes over should be the one people have been using longest, not whichever
+// happened to be made last.
+func (b *Bus) otherEveryoneChannelLocked() string {
+	best := ""
+	var bestAt time.Time
+	for id, c := range b.conversations {
+		if id == protocol.BroadcastConversationID || c.Kind != protocol.ConversationBroadcast {
+			continue
+		}
+		if best == "" || c.CreatedAt.Before(bestAt) {
+			best, bestAt = id, c.CreatedAt
+		}
+	}
+	return best
+}
+
+// DefaultChannel is where an unaddressed message lands.
+//
+// The built-in channel unless it has been deleted, in which case the oldest
+// surviving everyone-channel. This used to be a constant, which is why the
+// built-in could not be removed: everything that had nowhere else to go named
+// it directly.
+func (b *Bus) DefaultChannel() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.defaultChannelLocked()
+}
+
+func (b *Bus) defaultChannelLocked() string {
+	if stored, ok := b.conversations[protocol.BroadcastConversationID]; ok && stored.Hidden {
+		if other := b.otherEveryoneChannelLocked(); other != "" {
+			return other
+		}
+	}
+	return protocol.BroadcastConversationID
+}
+
+
+// lastEveryoneChannelLocked reports whether removing id would leave the fleet
+// with no everyone-channel at all. Caller holds the lock.
+func (b *Bus) lastEveryoneChannelLocked(id string) bool {
+	// The built-in one counts unless it has been deleted.
+	if stored, ok := b.conversations[protocol.BroadcastConversationID]; !ok || !stored.Hidden {
+		if id != protocol.BroadcastConversationID {
+			return false
+		}
+	}
+	for otherID, c := range b.conversations {
+		if otherID == id || otherID == protocol.BroadcastConversationID {
+			continue
+		}
+		if c.Kind == protocol.ConversationBroadcast {
+			return false
+		}
+	}
+	return true
+}
+
+
+// IsLastEveryoneChannel reports whether deleting this thread would leave the
+// fleet with nowhere for unaddressed messages to land.
+//
+// Exported so the API can tell "refused" from "not found". Returning a bare
+// false for both meant deleting the last everyone-channel answered "no such
+// conversation" about a conversation that plainly exists.
+func (b *Bus) IsLastEveryoneChannel(id string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if id == protocol.BroadcastConversationID {
+		stored, ok := b.conversations[id]
+		if ok && stored.Hidden {
+			return false // already gone
+		}
+		return b.otherEveryoneChannelLocked() == ""
+	}
+	c, ok := b.conversations[id]
+	if !ok || c.Kind != protocol.ConversationBroadcast {
+		return false
+	}
+	return b.lastEveryoneChannelLocked(id)
 }

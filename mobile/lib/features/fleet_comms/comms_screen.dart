@@ -335,9 +335,10 @@ class _CommsScreenState extends ConsumerState<CommsScreen> {
                 title: Text(c.pinned ? 'Unpin' : 'Pin to top'),
               ),
             ),
-            // Everything else can go; this one cannot, because an unaddressed
-            // message would have nowhere to land.
-            if (!c.isBroadcast)
+            // The built-in channel can go too, once another everyone-channel
+            // exists to take unaddressed traffic. The server refuses with a
+            // message saying so when it is the last one.
+            if (!c.isBroadcast || group.length > 1)
               PopupMenuItem(
                 value: 'delete',
                 child: ListTile(
