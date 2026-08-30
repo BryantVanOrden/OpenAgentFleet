@@ -100,3 +100,27 @@ func TestMaterializeIsOptional(t *testing.T) {
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// Retyping an address used to concatenate onto the last attempt, producing
+// ".../rollr.htmlfile:///home/agent/work/rollr.htmlhttp://localhost:8080/..."
+func TestLooksLikeURL(t *testing.T) {
+	for _, yes := range []string{
+		"file:///home/agent/work/rollr.html",
+		"http://localhost:8080/rollr.html",
+		"https://example.com",
+		"about:blank",
+		"  FILE:///home/agent/work/x.html  ",
+	} {
+		if !looksLikeURL(yes) {
+			t.Errorf("%q should be treated as an address", yes)
+		}
+	}
+	for _, no := range []string{
+		"", "rollr", "the dice roller", "search for rollr app",
+		"file not found", "hello http://x", "3",
+	} {
+		if looksLikeURL(no) {
+			t.Errorf("%q should not be treated as an address", no)
+		}
+	}
+}

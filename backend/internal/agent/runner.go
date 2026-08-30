@@ -755,6 +755,20 @@ func (r *Runner) execute(
 	actCtx, cancel := context.WithTimeout(ctx, r.cfg.StepTimeout)
 	defer cancel()
 
+	// Typing a URL replaces what is in the bar; it never adds to it.
+	//
+	// type appends, so an agent that retried an address built one out of all
+	// its attempts: the bar read
+	// ".../work/rollr.htmlfile:///home/agent/work/rollr.htmlhttp://localhost..."
+	// and of course never went anywhere, which read as the page being broken
+	// rather than the typing being wrong. A URL is always a replacement, so
+	// select what is there first and let the typing overwrite it.
+	if a.Action == protocol.ActType && looksLikeURL(a.Text) {
+		selectCtx, selectCancel := context.WithTimeout(ctx, 10*time.Second)
+		_, _ = sc.Act(selectCtx, protocol.Action{Action: protocol.ActKey, Text: "ctrl+a"})
+		selectCancel()
+	}
+
 	// The model answered in the pixel space of the image it was shown. agentd
 	// speaks desktop pixels. Doing the conversion here — once, in one place —
 	// is what lets the prompt tell the model to just read positions off the
@@ -1420,3 +1434,17 @@ func safeFileName(name string) string {
 
 // SetFilePlacer supplies the channel used to put files inside a sandbox.
 func (r *Runner) SetFilePlacer(p FilePlacer) { r.placer = p }
+
+// looksLikeURL reports whether typed text is an address rather than prose.
+func looksLikeURL(text string) bool {
+	t := strings.TrimSpace(strings.ToLower(text))
+	if strings.ContainsAny(t, " \t\n") {
+		return false
+	}
+	for _, scheme := range []string{"http://", "https://", "file://", "about:"} {
+		if strings.HasPrefix(t, scheme) {
+			return true
+		}
+	}
+	return false
+}
