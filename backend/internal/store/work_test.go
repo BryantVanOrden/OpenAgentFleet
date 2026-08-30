@@ -161,3 +161,31 @@ func TestBrokenPageLabelledAsAnAppIsStillRefused(t *testing.T) {
 		t.Error("a broken page should be refused, not quietly filed as a file")
 	}
 }
+
+// The catalog was one flat list because publishing only ever sent a name.
+func TestBelongsIn(t *testing.T) {
+	yes := [][2]string{
+		{"dice", "dice"},                   // the app itself
+		{"dice-spec", "dice"},              // hyphen
+		{"convtest_review.md", "convtest"}, // underscore
+		{"mdbox.notes", "mdbox"},           // dot
+		{"mini game design", "mini game"},  // space, and a folder with one
+	}
+	for _, c := range yes {
+		if !belongsIn(c[0], c[1]) {
+			t.Errorf("%q should belong in %q", c[0], c[1])
+		}
+	}
+	no := [][2]string{
+		{"convtest", "convert"}, // not a prefix
+		{"convert", "convtest"}, // nor the other way
+		{"dicey", "dice"},       // prefix but no separator
+		{"dice-spec", ""},       // no folder
+		{"stopwatch", "stop"},   // prefix but no separator
+	}
+	for _, c := range no {
+		if belongsIn(c[0], c[1]) {
+			t.Errorf("%q should not belong in %q", c[0], c[1])
+		}
+	}
+}

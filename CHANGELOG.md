@@ -4,11 +4,19 @@ Notable changes to AgentFleet. Dates are release dates; the format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 
-## [Unreleased]
+## [1.2.0] — 2026-08-30
 
-Twelve commits since the 1.1.0 notes were written. Where v1.1.0 was about
+Sixty-seven commits since the 1.1.0 notes were written. Where v1.1.0 was about
 several of each thing, this is about the agents producing something you can
-keep, and about telling administration apart from use.
+keep, about telling administration apart from use, and — for most of the second
+half — about the difference between a fleet that looks busy and one that is
+getting work done.
+
+A great deal of that second half came from watching runs fail rather than from
+reading code. An agent sent to test an app could read its source but had no way
+to run it; the browser it was meant to use had been wedged for an hour; half
+its clicks were timing out inside `xdotool`. Each of those looked, from the
+outside, like an agent that could not follow instructions.
 
 ### A shared work catalog
 

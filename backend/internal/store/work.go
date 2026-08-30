@@ -129,6 +129,18 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 
 	now := time.Now().UTC()
 
+	// File it with the rest of its project.
+	//
+	// Agents publish a name and nothing else, so everything landed at the top
+	// level: a fleet that had worked on eight small apps showed one flat list
+	// of fifty-odd entries, an app beside nine files about it, sorted
+	// alphabetically with nothing to say they were the same work.
+	if w.ParentID == "" {
+		if folder, ok := s.folderFor(ctx, w.Name, w.OrgID); ok {
+			w.ParentID = folder
+		}
+	}
+
 	// Find an existing item with this name in the same workspace, so a second
 	// publish is an edit rather than a duplicate nobody notices.
 	var existingID string
@@ -137,6 +149,14 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 		`SELECT id,version FROM work_items
 		  WHERE name=$1 AND COALESCE(parent_id,'')=$2`,
 		w.Name, w.ParentID).Scan(&existingID, &version)
+	if err != nil && w.ParentID != "" {
+		// The item may predate its folder. Adopt it rather than publishing a
+		// second copy of the same name one level up.
+		err = s.pool.QueryRow(ctx,
+			`SELECT id,version FROM work_items
+			  WHERE name=$1 AND COALESCE(parent_id,'')=''`,
+			w.Name).Scan(&existingID, &version)
+	}
 	if err == nil {
 		w.ID = existingID
 		// Republishing identical content is not a new version.
@@ -267,6 +287,59 @@ func looksLikeMarkup(content string) bool {
 		if strings.Contains(lower, tag) {
 			return true
 		}
+	}
+	return false
+}
+
+// folderFor finds the workspace a name belongs in, if one exists.
+//
+// The rule is the one a person reading the list would use: a name belongs to a
+// workspace when it starts with the workspace's name followed by a separator,
+// or is exactly it -- dice-spec and dice both go in "dice". The longest
+// matching name wins, so a workspace called "dice-roller" takes
+// dice-roller-findings ahead of one called "dice".
+//
+// Only existing workspaces. Publishing does not invent folders: one holding a
+// single item is a click, not an organisation, and the migration that created
+// these made them only where there was something to group.
+func (s *Store) folderFor(ctx context.Context, name, orgID string) (string, bool) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, name FROM work_items
+		  WHERE kind='workspace' AND COALESCE(parent_id,'')=''
+		    AND ($1='' OR COALESCE(org_id,'')='' OR org_id=$1)`, orgID)
+	if err != nil {
+		return "", false
+	}
+	defer rows.Close()
+
+	best, bestLen := "", 0
+	for rows.Next() {
+		var id, folder string
+		if err := rows.Scan(&id, &folder); err != nil {
+			continue
+		}
+		if !belongsIn(name, folder) || len(folder) <= bestLen {
+			continue
+		}
+		best, bestLen = id, len(folder)
+	}
+	if rows.Err() != nil {
+		return "", false
+	}
+	return best, best != ""
+}
+
+// belongsIn reports whether an item name sits under a folder name.
+func belongsIn(name, folder string) bool {
+	if folder == "" || !strings.HasPrefix(name, folder) {
+		return false
+	}
+	if len(name) == len(folder) {
+		return true // the app itself
+	}
+	switch name[len(folder)] {
+	case '-', '_', '.', ' ':
+		return true
 	}
 	return false
 }
