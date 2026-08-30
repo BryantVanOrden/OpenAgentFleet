@@ -56,9 +56,10 @@ type Runner struct {
 	coordSpace sync.Map
 }
 
-// FilePlacer writes a file inside an instance's sandbox.
+// FilePlacer writes a file inside an instance's sandbox and shows it.
 type FilePlacer interface {
 	PlaceFile(ctx context.Context, instanceID, path string, content []byte) error
+	OpenInBrowser(ctx context.Context, instanceID, url string) error
 }
 
 func NewRunner(
@@ -601,9 +602,10 @@ func (r *Runner) execute(
 			// looking.
 			opened := ""
 			if path, ok := r.materialize(ctx, inst.ID, w); ok {
-				opened = fmt.Sprintf("A copy is on this desktop at %s — open "+
-					"that in the browser to try it. It is not published on the "+
-					"web, so do not search for it.\n\n", "file://"+path)
+				opened = fmt.Sprintf("It is already open in the browser on this "+
+					"desktop, from %s. Look at the screen and use it. It is not "+
+					"published on the web, so do not search for it, and you do "+
+					"not need to type the address.\n\n", "file://"+path)
 			}
 			return fmt.Sprintf("%s%s %q by %s (version %d):\n%s%s",
 				opened, w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix), terminalNone
@@ -1398,6 +1400,16 @@ func (r *Runner) materialize(ctx context.Context, instanceID string, w protocol.
 		r.log.Warn("could not put a copy of the work on the desktop",
 			"work", w.Name, "err", err)
 		return "", false
+	}
+	// Put it on screen too, rather than leaving the agent to type the path.
+	//
+	// Driving a browser by hand is where these runs went to die: the address
+	// bar is fiddly, and if the browser has wedged nothing the agent does can
+	// tell it so. Opening it here also replaces a browser that has stopped
+	// answering, which no bot in this fleet could do for itself.
+	if err := r.placer.OpenInBrowser(wctx, instanceID, "file://"+path); err != nil {
+		r.log.Warn("could not show the work on the desktop",
+			"work", w.Name, "err", err)
 	}
 	return path, true
 }

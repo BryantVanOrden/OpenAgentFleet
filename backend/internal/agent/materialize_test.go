@@ -14,12 +14,18 @@ import (
 type fakePlacer struct {
 	path    string
 	content []byte
+	opened  string
 	err     error
 }
 
 func (f *fakePlacer) PlaceFile(_ context.Context, _, path string, content []byte) error {
 	f.path, f.content = path, content
 	return f.err
+}
+
+func (f *fakePlacer) OpenInBrowser(_ context.Context, _, url string) error {
+	f.opened = url
+	return nil
 }
 
 func TestRenderableWork(t *testing.T) {
@@ -78,6 +84,10 @@ func TestMaterializeWritesTheAppAndReportsItsPath(t *testing.T) {
 	}
 	if string(fp.content) != "<html>dice</html>" {
 		t.Errorf("wrong content written: %q", fp.content)
+	}
+	// Placing it is not enough; the agent should not have to navigate to it.
+	if fp.opened != "file:///home/agent/work/rollr.html" {
+		t.Errorf("work was not opened on the desktop: %q", fp.opened)
 	}
 }
 

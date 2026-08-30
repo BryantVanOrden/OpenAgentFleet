@@ -759,6 +759,47 @@ func (m *Manager) PlaceFile(ctx context.Context, instanceID, path string, conten
 	return nil
 }
 
+// OpenInBrowser shows a URL on the instance's desktop, replacing the browser
+// if it has stopped answering.
+//
+// A sandbox's Firefox is long-lived and can wedge -- "Firefox is already
+// running, but is not responding" -- and when it does, everything an agent
+// tries against it silently does nothing. Clicks land, typing accumulates in
+// an address bar that never navigates, and the run reads as an agent that
+// cannot work a browser rather than a browser that stopped working. Nothing
+// the agent can do recovers this: bots here have no shell.
+//
+// Processes are matched by exact name. Matching the full command line would
+// match the very shell running this, which then kills itself and never reaches
+// the relaunch.
+func (m *Manager) OpenInBrowser(ctx context.Context, instanceID, url string) error {
+	if !strings.HasPrefix(url, "file:///home/agent/") {
+		return fmt.Errorf("refusing to open %q", url)
+	}
+	script := fmt.Sprintf(`
+set -u
+url=%q
+if timeout 10 runuser -u agent -- env DISPLAY=:1 x-www-browser --new-window "$url" >/dev/null 2>&1; then
+  echo opened
+  exit 0
+fi
+pkill -x firefox-bin >/dev/null 2>&1
+pkill -x firefox >/dev/null 2>&1
+sleep 3
+pkill -9 -x firefox-bin >/dev/null 2>&1
+sleep 1
+setsid runuser -u agent -- env DISPLAY=:1 x-www-browser --new-window "$url" >/dev/null 2>&1 &
+echo relaunched
+`, url)
+	out, err := m.ExecInContainer(ctx, instanceID, []string{"sh", "-c", script})
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	m.log.Info("showed work on the desktop",
+		"instance", instanceID, "how", strings.TrimSpace(out))
+	return nil
+}
+
 // ------------------------------------------------------------- port leases ---
 
 func (m *Manager) leasePort() int {
