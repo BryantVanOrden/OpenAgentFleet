@@ -60,7 +60,8 @@
 - **Agents that divide work and hand it on.** Name agents in a fleet message —
   "Builder writes it, ToolCheck tests it, Auditor reviews it" — and they answer
   in that order, each taking the part addressed to it. Names are matched
-  loosely, so a typo or a split word still finds the right bot. Finishing a
+  loosely, so a typo or a split word still finds the right bot, and naming
+  anybody keeps everybody else out of it. Finishing a
   part wakes whoever the next one belongs to and hands them what was produced;
   testing and reviewing wait for something to exist rather than starting on
   nothing. A review hands back to whoever built. Bounded at six rounds, because
