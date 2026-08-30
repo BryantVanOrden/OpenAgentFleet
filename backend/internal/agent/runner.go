@@ -39,6 +39,9 @@ type Runner struct {
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
+	// published counts publishes per task per item name, to notice a run that
+	// is republishing the same thing instead of finishing.
+	published map[string]map[string]int
 	// Sub-agent budget bookkeeping; see spawn_budget.go.
 	depth    map[string]int
 	children map[string]int
@@ -94,6 +97,9 @@ func (r *Runner) Start(parent context.Context, task *protocol.Task) error {
 			}
 			r.mu.Lock()
 			delete(r.running, task.ID)
+			// The publish counter is per run; keeping it would leak a map
+			// entry for every task the orchestrator ever ran.
+			delete(r.published, task.ID)
 			r.mu.Unlock()
 			r.forgetSpawn(task.ID)
 			cancel()
@@ -487,6 +493,22 @@ func (r *Runner) execute(
 			return "failed to publish: " + err.Error(), terminalNone
 		}
 		r.bus.Emit("work", inst.ID, "", item)
+
+		// Say plainly when an agent is going round in circles.
+		//
+		// One published the same file ten times in a single run. Each publish
+		// looked like progress to the model and was none, and the colleague
+		// waiting to test it never got the chance because the run never ended.
+		// The count is per task, so publishing several different things is
+		// unaffected.
+		if n := r.countPublish(task.ID, name); n >= 3 {
+			return fmt.Sprintf(
+				"published %s %q (version %d). You have now published this same "+
+					"item %d times in this run. It is saved -- publishing it again "+
+					"changes nothing and nobody is waiting for another copy. Move on "+
+					"to something else, or finish with the done action.",
+				kind, name, item.Version, n), terminalNone
+		}
 		return fmt.Sprintf("published %s %q to the shared catalog (version %d)",
 			kind, name, item.Version), terminalNone
 
@@ -1199,4 +1221,25 @@ func selfServeReply(priorAsks int) string {
 		"ask again for this same thing -- if you genuinely cannot proceed " +
 		"without a person, finish with the fail action and say precisely " +
 		"what you needed. Avoid anything you cannot undo."
+}
+
+
+// countPublish records and returns how many times a task has published under
+// one name.
+//
+// Per task rather than per agent: an agent working on several jobs over a day
+// is not looping, and a run that publishes the same name three times is.
+func (r *Runner) countPublish(taskID, name string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.published == nil {
+		r.published = map[string]map[string]int{}
+	}
+	byName, ok := r.published[taskID]
+	if !ok {
+		byName = map[string]int{}
+		r.published[taskID] = byName
+	}
+	byName[strings.ToLower(name)]++
+	return byName[strings.ToLower(name)]
 }

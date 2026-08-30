@@ -344,16 +344,11 @@ func (s *Server) handOff(ctx context.Context, taskID, result string) {
 		"%s has finished the %s and handed it to you for the %s.\n\n"+
 			"What they reported:\n%s\n\n"+
 			"Your part, which you chose: %s\n\n"+
-			"Start by using read_work to see what is in the shared catalog — "+
-			"they published there. Do your part on what is actually there, not "+
-			"on what you imagine is there, and publish what you produce with "+
-			"publish_work so the next agent can build on it.\n\n"+
-			"If you are reviewing or testing, be specific: name the file, the "+
-			"line, what is wrong and what would fix it. \"Looks good\" ends the "+
-			"work; a concrete defect keeps it moving.\n\n"+
+			"%s\n\n"+
 			"The original request was: %s",
 		finished.Name, finished.Stage, successor.Stage,
-		clipLine(result, 600), successor.Plan, c.Request)
+		clipLine(result, 600), successor.Plan,
+		briefFor(finished.Stage, successor.Stage), c.Request)
 
 	task := &protocol.Task{
 		ID:         store.NewID(),
@@ -533,4 +528,43 @@ func (r *relay) forgetOthers(request string) {
 		}
 	}
 	r.pending = kept
+}
+
+
+// briefFor is what to actually do, in the terms of the hop being made.
+//
+// "Do your part" was too vague to act on: handed a review to apply, the
+// builder stopped to ask what was wanted rather than applying it. A model
+// given a concrete instruction -- fix these, republish under the same name --
+// does not need to ask.
+func briefFor(from, to relayStage) string {
+	const readFirst = "Start with read_work to see what is actually in the " +
+		"catalog. Work on what is there, not on what you imagine is there."
+
+	switch {
+	case to == stageBuild && from == stageReview,
+		to == stageBuild && from == stageTest:
+		return readFirst + " The defects they listed are the job: fix each one " +
+			"in the file they named, then publish the corrected file with " +
+			"publish_work under THE SAME work_name, so it replaces the broken " +
+			"version rather than sitting beside it. Do not start something new " +
+			"and do not ask which defect to fix first -- fix them all. When the " +
+			"file is published and the defects are addressed, finish with done."
+	case to == stageTest:
+		return readFirst + " Try it as a user would and write down what actually " +
+			"happens. Publish your findings with publish_work as a file. Be " +
+			"specific: name the file, the line, what goes wrong and what would " +
+			"fix it. \"Looks good\" ends the work; a concrete defect keeps it " +
+			"moving. Then finish with done."
+	case to == stageReview:
+		return readFirst + " Read it as somebody who will have to maintain it. " +
+			"Publish your defects with publish_work as a file, each one naming " +
+			"the file, the line, what is wrong and what would fix it. If it is " +
+			"genuinely sound, say so and say why. Then finish with done."
+	case to == stageBuild:
+		return readFirst + " Build what the design calls for and publish it with " +
+			"publish_work. Then finish with done."
+	}
+	return readFirst + " Publish what you produce with publish_work, then finish " +
+		"with done."
 }

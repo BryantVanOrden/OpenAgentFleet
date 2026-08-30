@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
@@ -211,6 +212,41 @@ func TestTerminalStateDecidesWhenToHandOn(t *testing.T) {
 	} {
 		if _, got := terminalState(tc.state); got != tc.want {
 			t.Errorf("terminalState(%v) = %v, want %v", tc.state, got, tc.want)
+		}
+	}
+}
+
+// A hop tells the agent what to do in the terms of that hop.
+//
+// "Do your part" was too vague to act on: handed a review to apply, the builder
+// stopped to ask what was wanted rather than applying it.
+func TestBriefForIsSpecificToTheHop(t *testing.T) {
+	fix := briefFor(stageReview, stageBuild)
+	if !strings.Contains(fix, "SAME work_name") {
+		t.Error("a fix hop does not say to republish under the same name")
+	}
+	if !strings.Contains(strings.ToLower(fix), "do not ask") {
+		t.Error("a fix hop does not tell the agent to stop asking and fix them")
+	}
+
+	test := briefFor(stageBuild, stageTest)
+	if !strings.Contains(test, "Looks good") {
+		t.Error("a test hop does not warn against a content-free pass")
+	}
+
+	// Every brief must say to read first and to finish, or the chain stalls.
+	for name, b := range map[string]string{
+		"fix":    fix,
+		"test":   test,
+		"review": briefFor(stageTest, stageReview),
+		"build":  briefFor(stageDesign, stageBuild),
+		"other":  briefFor(stageUnknown, stageUnknown),
+	} {
+		if !strings.Contains(b, "read_work") {
+			t.Errorf("the %s brief does not say to read the catalog first", name)
+		}
+		if !strings.Contains(b, "done") {
+			t.Errorf("the %s brief does not say to finish", name)
 		}
 	}
 }

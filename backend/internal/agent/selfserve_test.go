@@ -32,3 +32,30 @@ func TestSelfServeReplyHardensOnRepeat(t *testing.T) {
 		}
 	}
 }
+
+// Publishing the same thing repeatedly is counted per run, not per agent.
+//
+// One agent published the same file ten times in a single run. Each publish
+// looked like progress to the model and was none, and the colleague waiting to
+// test it never got the chance because the run never ended.
+func TestCountPublishIsPerTaskAndName(t *testing.T) {
+	r := &Runner{}
+
+	for i := 1; i <= 3; i++ {
+		if got := r.countPublish("task-1", "stopwatch"); got != i {
+			t.Errorf("publish %d counted as %d", i, got)
+		}
+	}
+	// Case does not make it a different item.
+	if got := r.countPublish("task-1", "STOPWATCH"); got != 4 {
+		t.Errorf("a differently-cased name started a new count: %d", got)
+	}
+	// A different item in the same run is its own count.
+	if got := r.countPublish("task-1", "design-notes"); got != 1 {
+		t.Errorf("publishing something else was counted against the first: %d", got)
+	}
+	// A different run starts fresh: an agent working all day is not looping.
+	if got := r.countPublish("task-2", "stopwatch"); got != 1 {
+		t.Errorf("a new run inherited the old run's count: %d", got)
+	}
+}

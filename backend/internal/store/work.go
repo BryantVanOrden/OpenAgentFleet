@@ -103,6 +103,21 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 		w.Name, w.ParentID).Scan(&existingID, &version)
 	if err == nil {
 		w.ID = existingID
+		// Republishing identical content is not a new version.
+		//
+		// An agent asked to build something published the same file ten times
+		// in one run, each publish bumping the version and each one triggering
+		// the machinery that watches for new work. Nothing had changed. A
+		// version number should mean somebody changed something.
+		var priorContent string
+		if err := s.pool.QueryRow(ctx,
+			`SELECT content FROM work_items WHERE id=$1`, existingID).Scan(&priorContent); err == nil {
+			if priorContent == w.Content {
+				w.Version = version
+				w.UpdatedAt = now
+				return nil
+			}
+		}
 		w.Version = version + 1
 		w.UpdatedAt = now
 		_, err = s.pool.Exec(ctx,
