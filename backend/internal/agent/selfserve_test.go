@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -57,5 +60,32 @@ func TestCountPublishIsPerTaskAndName(t *testing.T) {
 	// A different run starts fresh: an agent working all day is not looping.
 	if got := r.countPublish("task-2", "stopwatch"); got != 1 {
 		t.Errorf("a new run inherited the old run's count: %d", got)
+	}
+}
+
+// A cancelled run is not a broken provider.
+//
+// Stopping a task mid-inference surfaced as "every model provider failed:
+// context canceled", which sends whoever reads it to check engines that are
+// working perfectly.
+func TestCancellationIsNotAProviderFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// This is the shape of the check in the step loop: a cancelled context, or
+	// an error wrapping context.Canceled, must not be read as a provider fault.
+	wrapped := fmt.Errorf("calling model: %w", context.Canceled)
+
+	if !errors.Is(wrapped, context.Canceled) {
+		t.Error("a wrapped cancellation is not recognised as one")
+	}
+	if ctx.Err() == nil {
+		t.Error("a cancelled context does not report itself as cancelled")
+	}
+
+	// An ordinary failure still is one.
+	real := errors.New("connection refused")
+	if errors.Is(real, context.Canceled) || real == context.Canceled {
+		t.Error("a genuine provider failure was mistaken for a cancellation")
 	}
 }

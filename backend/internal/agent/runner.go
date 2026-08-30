@@ -283,6 +283,18 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 				r.fail(ctx, task, err.Error())
 				return
 			}
+			// A cancelled run is not a broken provider.
+			//
+			// Stopping a task mid-inference surfaced as "every model provider
+			// failed: context canceled", which sends whoever reads it to check
+			// engines that are working perfectly. The providers did not fail;
+			// somebody pressed stop.
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				r.log.Info("task stopped mid-step", "task", task.ID)
+				_ = r.db.UpdateTaskState(context.WithoutCancel(ctx), task.ID,
+					protocol.TaskCancelled, task.Step, "stopped while it was thinking", "")
+				return
+			}
 			r.fail(ctx, task, "every model provider failed: "+err.Error())
 			return
 		}

@@ -474,7 +474,15 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 			"\n\nDo that part. Publish what you produce to the shared work " +
 			"catalog with publish_work so the rest of the fleet can build on " +
 			"it, and read_work first to see what colleagues have already put " +
-			"there. Message a peer if you need something from them.",
+			"there. Message a peer if you need something from them.\n\n" +
+			// The operator broadcast this and walked away. An agent that stops
+			// to ask them something waits eight minutes for a reply that is
+			// not coming, and everyone waiting on its part waits with it.
+			"This was asked of the fleet, not of you in a conversation: nobody " +
+			"is sitting there waiting to answer questions about it. Do not use " +
+			"ask_human -- decide the small things yourself and say what you " +
+			"decided when you publish. Ask a colleague with message_peer if you " +
+			"need something only they have.",
 		State:     protocol.TaskQueued,
 		MaxSteps:  s.cfg.MaxSteps,
 		CreatedAt: time.Now().UTC(),
