@@ -922,3 +922,15 @@ func (s *Store) ResolveTaskAlerts(ctx context.Context, taskID, reply string) err
 		  WHERE task_id = $1 AND resolved_at IS NULL`, taskID, reply)
 	return norm(err)
 }
+
+// CountTaskAlerts returns how many times a task has stopped to ask a person.
+//
+// Used to stop an agent asking the same thing over and over: told to proceed
+// on its own, a model frequently asks again straight away, and each ask costs
+// another wait. The second time, it is not asked to wait.
+func (s *Store) CountTaskAlerts(ctx context.Context, taskID string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM alerts WHERE task_id = $1`, taskID).Scan(&n)
+	return n, norm(err)
+}

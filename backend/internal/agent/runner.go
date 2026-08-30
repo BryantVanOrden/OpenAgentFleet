@@ -788,7 +788,16 @@ func (r *Runner) escalate(
 	}
 	_ = r.db.UpdateTaskState(ctx, task.ID, protocol.TaskAwaitingHuman, task.Step, "", "")
 
-	reply, err := r.waitForReply(ctx, alert.ID)
+	// How many times this task has already stopped. An agent told to decide
+	// for itself often asks again immediately -- the instruction not to is
+	// advice, and a 4B model takes it as such -- and each ask costs another
+	// eight minutes. After the first, it is answered at once instead.
+	asks, err := r.db.CountTaskAlerts(ctx, task.ID)
+	if err != nil {
+		asks = 1 // unknown: assume it has asked, and do not stall on it
+	}
+
+	reply, err := r.waitForReply(ctx, alert.ID, asks)
 	if err != nil {
 		return "", err
 	}
@@ -800,7 +809,7 @@ func (r *Runner) escalate(
 // waitForReply polls rather than holding a listener: a reply may arrive from the
 // mobile app, the admin panel, or a second orchestrator process, and polling a
 // row is the one mechanism that sees all three.
-func (r *Runner) waitForReply(ctx context.Context, alertID string) (string, error) {
+func (r *Runner) waitForReply(ctx context.Context, alertID string, priorAsks int) (string, error) {
 	const (
 		poll = 3 * time.Second
 		// How long an agent waits before going ahead on its own.
@@ -815,6 +824,11 @@ func (r *Runner) waitForReply(ctx context.Context, alertID string) (string, erro
 		selfServeAfter = 8 * time.Minute
 	)
 	deadline := time.Now().Add(selfServeAfter)
+	// Asked before and told to get on with it: do not make the run wait
+	// another eight minutes for the same silence.
+	if priorAsks > 1 {
+		deadline = time.Now()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -840,12 +854,9 @@ func (r *Runner) waitForReply(ctx context.Context, alertID string) (string, erro
 				"No answer within 8 minutes; the agent continued on its own."); err != nil {
 				r.log.Warn("could not resolve an unanswered alert", "alert", alertID, "err", err)
 			}
-			r.log.Info("no operator reply; continuing without one", "alert", alertID)
-			return "Nobody answered within eight minutes, so proceed on your own " +
-				"judgement. Choose the most reasonable option and carry on. Do not " +
-				"ask again for this same thing -- if you genuinely cannot proceed " +
-				"without a person, finish with the fail action and say precisely " +
-				"what you needed. Avoid anything you cannot undo.", nil
+			r.log.Info("no operator reply; continuing without one",
+				"alert", alertID, "prior_asks", priorAsks)
+			return selfServeReply(priorAsks), nil
 		}
 	}
 }
@@ -1167,4 +1178,25 @@ func (r *Runner) authorOrgs(ctx context.Context) map[string][]string {
 		out[in.ID] = in.OrgIDs
 	}
 	return out
+}
+
+
+// selfServeReply is what an agent is told when nobody answers.
+//
+// The second time is blunter on purpose. The first message asks it not to ask
+// again, and a small model reads that as a suggestion: every task in a
+// measured run stopped twice, and each stop cost another wait.
+func selfServeReply(priorAsks int) string {
+	if priorAsks > 1 {
+		return "You have already asked this and been told to decide for yourself. " +
+			"Nobody is going to answer. Do not use ask_human again in this task -- " +
+			"it will not be answered either. Pick the most reasonable option now " +
+			"and carry on, avoiding anything you cannot undo. If you truly cannot " +
+			"proceed, finish with the fail action and say exactly what you needed."
+	}
+	return "Nobody answered within eight minutes, so proceed on your own " +
+		"judgement. Choose the most reasonable option and carry on. Do not " +
+		"ask again for this same thing -- if you genuinely cannot proceed " +
+		"without a person, finish with the fail action and say precisely " +
+		"what you needed. Avoid anything you cannot undo."
 }
