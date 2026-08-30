@@ -498,10 +498,10 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 		// what this particular agent said it would contribute.
 		Goal: "The operator asked the fleet: " + msg.Content +
 			"\n\nYour part, which you chose: " + plan +
-			"\n\nDo that part. Publish what you produce to the shared work " +
-			"catalog with publish_work so the rest of the fleet can build on " +
-			"it, and read_work first to see what colleagues have already put " +
-			"there. Message a peer if you need something from them.\n\n" +
+			"\n\nDo that part. " + catalogGuidance +
+			" Publish what you produce to the shared work catalog with " +
+			"publish_work so the rest of the fleet can build on it. Message a " +
+			"peer if you need something from them.\n\n" +
 			// The operator broadcast this and walked away. An agent that stops
 			// to ask them something waits eight minutes for a reply that is
 			// not coming, and everyone waiting on its part waits with it.

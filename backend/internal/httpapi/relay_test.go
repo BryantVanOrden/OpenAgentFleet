@@ -516,3 +516,18 @@ func TestUsableWorkName(t *testing.T) {
 		}
 	}
 }
+
+// A directly started task and a handoff must give the same account of how to
+// reach shared work. They did not, and the agent that had not been handed
+// anything went looking for the app in a desktop launcher.
+func TestCatalogGuidanceIsSaidOnBothPaths(t *testing.T) {
+	brief := briefFor(stageBuild, stageTest, "rollr")
+	if !strings.Contains(brief, "already be on screen") {
+		t.Errorf("handoff brief lost the catalog guidance:\n%s", brief)
+	}
+	for _, want := range []string{"read_work", "application launcher", "already be on screen"} {
+		if !strings.Contains(catalogGuidance, want) {
+			t.Errorf("catalogGuidance no longer mentions %q", want)
+		}
+	}
+}

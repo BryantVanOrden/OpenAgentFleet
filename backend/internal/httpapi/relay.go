@@ -600,6 +600,21 @@ func (r *relay) forgetOthers(request string) {
 	}
 }
 
+// catalogGuidance is how to get at shared work, said the same way everywhere.
+//
+// A handoff brief said it and a directly started task did not, so an agent
+// asked to test something it had not been handed went looking for it in the
+// desktop's application launcher -- reasonably, having been told only that the
+// thing existed in a catalog. Both paths say it now, from here, so they cannot
+// drift apart again.
+const catalogGuidance = "Start with read_work to see what is actually in the " +
+	"catalog. Work on what is there, not on what you imagine is there. " +
+	"read_work also opens anything a browser can show on this desktop and " +
+	"tells you the file:// path: it will already be on screen when read_work " +
+	"returns. Do not look for it in an application launcher -- it is not " +
+	"installed -- and do not search the web, where you will find somebody " +
+	"else's."
+
 // briefFor is what to actually do, in the terms of the hop being made.
 //
 // "Do your part" was too vague to act on: handed a review to apply, the
@@ -607,11 +622,7 @@ func (r *relay) forgetOthers(request string) {
 // given a concrete instruction -- fix these, republish under the same name --
 // does not need to ask.
 func briefFor(from, to relayStage, produced string) string {
-	const readFirst = "Start with read_work to see what is actually in the " +
-		"catalog. Work on what is there, not on what you imagine is there. " +
-		"read_work also puts a runnable copy of anything a browser can show " +
-		"on your desktop and tells you the file:// path -- open that. None of " +
-		"this is on the web, so searching for it finds somebody else's."
+	const readFirst = catalogGuidance
 
 	// Name the report, or the catalog fills up with near-duplicates.
 	//
