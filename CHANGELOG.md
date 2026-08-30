@@ -105,10 +105,29 @@ twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
 
+Model capabilities come from Ollama rather than from the model's name. Vision
+support was decided by looking for "vl", "vision" or "llava" in the name, and
+the default model in `.env.example` reports vision but was offered as
+text-only. The same request exposed that discovery with a blank `base_url` —
+what both clients send when the provider's field is empty — defaulted to
+localhost, which inside the API container is nothing, so it quietly served the
+curated catalogue and listed models the machine has never had.
+
+The stuck-agent check no longer counts actions that were never going to move
+the screen. An agent working the shared catalogue publishes and reads over the
+API; judging those steps by whether the desktop changed marked correct work as
+stuck, and one run filed twenty-six "appears stuck" alerts in half an hour
+while doing its job properly. Because a task that has stopped to ask counts as
+busy, that agent was also silently out of the fleet the whole time. Stalls are
+capped as well: three rounds of stalling and carrying on ends the task.
+
 A job where every agent is waiting and nobody was asked to make anything now
 says so in the thread, naming who is stuck and what would unstick them. It used
 to sit silently, while the agents' own replies — "I will test the thing" — read
-exactly like work starting.
+exactly like work starting. When the agent who was asked to produce something
+is merely busy, the notice says that instead: an agent does not come back to a
+broadcast it was busy for, and telling the operator to "name a builder" when
+they just named one sends them round the same loop.
 
 Naming agents also says who is not needed: if the message names anybody, only
 the named start work, and the rest are told plainly that it is not their job.
