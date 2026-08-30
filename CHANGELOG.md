@@ -105,6 +105,11 @@ twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
 
+A job where every agent is waiting and nobody was asked to make anything now
+says so in the thread, naming who is stuck and what would unstick them. It used
+to sit silently, while the agents' own replies — "I will test the thing" — read
+exactly like work starting.
+
 Naming agents also says who is not needed: if the message names anybody, only
 the named start work, and the rest are told plainly that it is not their job.
 Asked for one small thing from one agent, two others had started writing their
