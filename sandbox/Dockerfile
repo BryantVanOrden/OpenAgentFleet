@@ -63,6 +63,16 @@ RUN install -d -m 0755 /etc/apt/keyrings \
     && apt-get update \
     && apt-get install -y --no-install-recommends firefox \
     && rm -rf /var/lib/apt/lists/*
+# Turn off Firefox's first-run onboarding.
+#
+# A fresh profile opens on the "Welcome to Firefox" modal, and an agent asked to
+# test a web page finds a dialog over it. It clicks Continue, the overlay
+# advances to another onboarding panel that looks almost identical, and the
+# screen-change check reads that as clicking into the void: two ToolCheck runs
+# died on `click [1] "Continue"` without ever reaching the page they were sent
+# to test. Enterprise policy is the profile-independent way to say no -- a
+# profile-level pref would come back with every new profile.
+COPY firefox-policies.json /etc/firefox/policies/policies.json
 
 # --- 3. agentd dependencies ---------------------------------------------------
 # A venv with --system-site-packages, not `pip --break-system-packages`.

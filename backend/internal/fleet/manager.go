@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"errors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
@@ -498,7 +499,28 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 		return fmt.Errorf("instance has no container; delete and recreate it")
 	}
 	if err := m.docker.StartContainer(ctx, inst.Runtime); err != nil {
-		return err
+		// The container is gone, not merely stopped.
+		//
+		// A sandbox can disappear without the instance knowing: docker prune,
+		// a host that cleans up on reboot, or an operator replacing the image
+		// under a stopped agent. The instance kept pointing at a container id
+		// that no longer exists, so every start returned a 404 with a docker
+		// hash in it and there was no way back from the UI -- the agent was
+		// bricked, permanently, by something that is supposed to be routine.
+		// Everything needed to build it again is on the instance record.
+		var de *DockerError
+		if !errors.As(err, &de) || !de.NotFound() {
+			return err
+		}
+		m.log.Info("sandbox container is gone; rebuilding it from the instance",
+			"instance", inst.Name, "was", inst.Runtime)
+		m.releasePortsFor(inst)
+		if err := m.boot(ctx, inst, inst.Profile); err != nil {
+			inst.State = protocol.InstanceError
+			inst.LastError = err.Error()
+			_ = m.db.UpdateInstance(ctx, inst)
+			return err
+		}
 	}
 	ci, err := m.docker.InspectContainer(ctx, inst.Runtime)
 	if err != nil {
@@ -857,7 +879,6 @@ func customToolNames(tools []protocol.CustomTool) []string {
 	}
 	return out
 }
-
 
 // orgIDsFor turns the single department a bot is created into into the list it
 // is stored as. Creating into none is legitimate: an unassigned bot is visible

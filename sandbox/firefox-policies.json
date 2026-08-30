@@ -1,0 +1,27 @@
+{
+  "policies": {
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "DisableProfileImport": true,
+    "DisableTelemetry": true,
+    "DisableFirefoxAccounts": true,
+    "DisableAppUpdate": true,
+    "DontCheckDefaultBrowser": true,
+    "NoDefaultBookmarks": true,
+    "UserMessaging": {
+      "WhatsNew": false,
+      "ExtensionRecommendations": false,
+      "FeatureRecommendations": false,
+      "UrlbarInterventions": false,
+      "SkipOnboarding": true,
+      "MoreFromMozilla": false
+    },
+    "FirefoxHome": {
+      "Highlights": false,
+      "Pocket": false,
+      "Snippets": false,
+      "SponsoredTopSites": false
+    },
+    "Homepage": { "URL": "about:blank", "StartPage": "homepage" }
+  }
+}
