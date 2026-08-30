@@ -92,6 +92,21 @@ reviewing wait to be handed something rather than starting immediately — you
 cannot test what does not exist, and an agent that starts anyway is busy when
 the builder finally publishes. The relay is bounded at six rounds.
 
+Each hop carries an instruction in its own terms: fix these defects and
+republish under the same name; try it as a user would and name the line; read
+it as somebody who will maintain it. "Do your part" was not something a model
+could act on — handed a review to apply, the builder stopped to ask what was
+wanted instead of applying it.
+
+Republishing identical content is a no-op rather than a new version, and an
+agent that publishes the same name three times in one run is told it is going
+in circles. One had published the same file ten times, which looked like
+progress and was none, and meant the run never ended and the colleague waiting
+to test it never got the chance. Fixing that is what let the full circle run:
+Builder → ToolCheck → Auditor → Builder, with both testers independently
+finding the same real bug in a dice roller — `String.fromCharCode(55+value)`
+renders a roll of 1 as "8".
+
 ### Agents that do not stall
 
 An agent that stopped to ask a person waited six hours and then failed the
