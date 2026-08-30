@@ -140,6 +140,12 @@ task. It now waits eight minutes, records that nobody answered, and carries on
 with its own judgement — and if it asks a second time it is answered at once
 rather than waiting again.
 
+A question an agent stopped to ask is closed when its task ends. Sixty open
+alerts had accumulated over six hours, every one of them belonging to a task
+that had already finished — a queue of agents needing you in which nothing was
+actually waiting. Completion and failure notices are untouched: those are meant
+to be read rather than answered.
+
 A task parked for a person kept its answer in a goroutine that died with the
 process, so any restart abandoned it forever; and because a parked task counts
 as busy, its agent never became free again. That is how this deployment reached
