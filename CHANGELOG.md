@@ -70,6 +70,48 @@ archetype ships with — which nothing had ever read, so every bot was created
 with an empty one — and editable at any time. Voice speed joins voice as a
 per-bot setting.
 
+### Agents that hand work to each other
+
+Asked to build something together, four agents each replied that they would
+build the whole thing — three of them saying they would "take the lead". Each
+was being asked in isolation, so "do not duplicate a colleague" was advice
+about people it could not see.
+
+Naming an agent now puts it first, and since replies are generated one at a
+time, the order you name people is the order parts get claimed. Matching is
+fuzzy: `reasercher`, `tool check`, `TOOL-CHECK` and `@Builder's` all find the
+right agent, with tolerance scaled to name length so a bot called `Bob` still
+has to be spelled right. Each agent is handed the clause between its own name
+and the next one and told that is its part, and is shown what colleagues have
+already claimed.
+
+Finishing a part now wakes whoever the next part belongs to, with what was
+produced. Work flows design → build → test → review, and a review goes back to
+whoever built, because a review nobody acts on is decoration. Testing and
+reviewing wait to be handed something rather than starting immediately — you
+cannot test what does not exist, and an agent that starts anyway is busy when
+the builder finally publishes. The relay is bounded at six rounds.
+
+### Agents that do not stall
+
+An agent that stopped to ask a person waited six hours and then failed the
+task. It now waits eight minutes, records that nobody answered, and carries on
+with its own judgement — and if it asks a second time it is answered at once
+rather than waiting again.
+
+A task parked for a person kept its answer in a goroutine that died with the
+process, so any restart abandoned it forever; and because a parked task counts
+as busy, its agent never became free again. That is how this deployment reached
+fifty-nine open alerts and four bots that would not take work. Such tasks are
+resumed on startup and their alerts closed.
+
+Alerts also raise a notification now. Push needs a Firebase project this
+deployment does not have — no `google-services.json`, no `FCM_PROJECT_ID`, zero
+registered devices — so the only code path that reached the notification plugin
+was the Firebase handler, and nothing ever fired. The event socket already
+carries the alert, so that now shows one. It needs the app to be running, which
+real push would not.
+
 ### Fixed
 
 - **Fleet comms answered every message as a status update.** Asked to work

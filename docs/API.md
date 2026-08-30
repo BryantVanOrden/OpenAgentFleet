@@ -416,6 +416,10 @@ is not a second copy nobody notices.
 | `POST` | `/api/work` | operator | Publish or replace an item. |
 | `DELETE` | `/api/work/{id}` | operator | Remove one. A workspace takes its contents. |
 
+Publishing is also what moves a shared job along: when an agent working on a
+fleet request publishes, whoever has the next part is woken and handed it. See
+the fleet-comms section for how parts are assigned.
+
 Agents reach the same catalog through two actions rather than HTTP:
 `publish_work` (with `work_name`, `work_kind`, `work_workspace` and the content
 in `text`) and `read_work` (with `work_name`). Both are keyed by name, because

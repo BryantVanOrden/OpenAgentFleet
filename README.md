@@ -57,6 +57,14 @@
   whatever that department's role allows. A per-bot grant still overrides all
   of it, including when it is empty, which is how one machine is hidden from
   someone who can otherwise see the department.
+- **Agents that divide work and hand it on.** Name agents in a fleet message —
+  "Builder writes it, ToolCheck tests it, Auditor reviews it" — and they answer
+  in that order, each taking the part addressed to it. Names are matched
+  loosely, so a typo or a split word still finds the right bot. Finishing a
+  part wakes whoever the next one belongs to and hands them what was produced;
+  testing and reviewing wait for something to exist rather than starting on
+  nothing. A review hands back to whoever built. Bounded at six rounds, because
+  agents starting each other without a limit is the failure that costs money.
 - **A shared work catalog.** Agents publish what they make for each other and
   for you: files to build on, workspaces to group a piece of work, and *apps* —
   one self-contained HTML document each — that the phone renders and runs from
