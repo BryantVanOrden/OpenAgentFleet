@@ -203,7 +203,9 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 	var (
 		history     []turnSummary
 		lastHash    string
+		lastAction  protocol.ActionKind
 		sameCount   int
+		stalls      int
 		parseErrors int
 		humanReply  string
 	)
@@ -230,14 +232,33 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 
 		// Stall detection: an unchanged screen after an action means the agent is
 		// clicking into the void. Escalate rather than burn the step budget.
-		if obs.Hash != "" && obs.Hash == lastHash {
+		//
+		// Only actions that are supposed to move the screen count. An agent
+		// working the shared catalogue publishes and reads over the API and
+		// never touches its desktop, so every one of those steps looked like a
+		// stall: one run filed twenty-six "appears stuck" alerts in half an
+		// hour, each of them a push notification, while the agent was doing
+		// exactly what it had been asked to do and doing it correctly.
+		if obs.Hash != "" && obs.Hash == lastHash && movesScreen(lastAction) {
 			sameCount++
-		} else {
+		} else if movesScreen(lastAction) {
 			sameCount = 0
 		}
 		lastHash = obs.Hash
 
 		if sameCount >= r.cfg.StallThreshold {
+			// An agent that has stalled this many times and decided for itself
+			// every time is not going to finish. Left alone it spends its whole
+			// step budget alternating between stalling and being told to carry
+			// on, and every round of that is another alert on the operator's
+			// phone. Stop, and say so once.
+			stalls++
+			if stalls > maxStallEscalations {
+				r.fail(ctx, task, fmt.Sprintf(
+					"stalled %d times without making progress; last action: %s",
+					stalls-1, lastHistory(history)))
+				return
+			}
 			reply, err := r.escalate(ctx, task, inst, protocol.AlertStalled, "critical",
 				"Agent appears stuck",
 				fmt.Sprintf("The screen has not changed across %d actions on %q.\nLast action: %s",
@@ -321,6 +342,7 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			"step": task.Step, "action": action, "provider": resp.Provider, "model": resp.Model,
 		})
 
+		lastAction = action.Action
 		outcome, terminal := r.execute(ctx, task, inst, sc, action, obs, mountedTools)
 
 		_ = r.db.AppendStep(ctx, &protocol.StepRecord{
@@ -1133,7 +1155,6 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-
 // workspaceNamed finds a workspace by name, creating it if no one has yet.
 //
 // Agents refer to a workspace by what it is called, because that is what they
@@ -1163,7 +1184,6 @@ func (r *Runner) workspaceNamed(ctx context.Context, name string, inst *protocol
 	}
 	return ws.ID, nil
 }
-
 
 // readableWork filters the catalog to what one bot may see.
 //
@@ -1226,7 +1246,6 @@ func (r *Runner) authorOrgs(ctx context.Context) map[string][]string {
 	return out
 }
 
-
 // selfServeReply is what an agent is told when nobody answers.
 //
 // The second time is blunter on purpose. The first message asks it not to ask
@@ -1246,7 +1265,6 @@ func selfServeReply(priorAsks int) string {
 		"without a person, finish with the fail action and say precisely " +
 		"what you needed. Avoid anything you cannot undo."
 }
-
 
 // countPublish records and returns how many times a task has published under
 // one name.
@@ -1268,7 +1286,6 @@ func (r *Runner) countPublish(taskID, name string) int {
 	return byName[strings.ToLower(name)]
 }
 
-
 // closeTaskAlerts resolves anything a finished task was still asking.
 //
 // An alert is a question an agent stopped to ask. When the task ends, nobody
@@ -1282,5 +1299,32 @@ func (r *Runner) closeTaskAlerts(ctx context.Context, taskID, why string) {
 	defer cancel()
 	if err := r.db.ResolveTaskAlerts(wctx, taskID, why); err != nil {
 		r.log.Warn("could not close a finished task's alerts", "task", taskID, "err", err)
+	}
+}
+
+// movesScreen reports whether an action is meant to change what is on the
+// desktop, and so whether an unchanged screen after it means anything.
+//
+// The stall check compares screenshots. Most of the action vocabulary never
+// touches a screen at all -- publishing to the work catalogue, reading a
+// colleague's file, remembering something, messaging a peer -- and judging
+// those by whether the desktop changed marks correct work as stuck. Anything
+// not listed here is treated as off-screen: failing to notice a stall costs a
+// step budget, while crying stall on healthy work costs the operator's
+// attention and pins the agent.
+// How many times one task may stall, decide for itself, and carry on before
+// it is treated as going nowhere.
+const maxStallEscalations = 3
+
+func movesScreen(k protocol.ActionKind) bool {
+	switch k {
+	case protocol.ActClick, protocol.ActDoubleClick, protocol.ActRightClick,
+		protocol.ActType, protocol.ActKey, protocol.ActScroll, protocol.ActDrag,
+		protocol.ActFocus:
+		return true
+	default:
+		// Includes the empty kind, which is the first turn of a task: there was
+		// no previous action, so an unchanged screen says nothing yet.
+		return false
 	}
 }
