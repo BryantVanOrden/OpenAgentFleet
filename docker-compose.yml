@@ -3,6 +3,10 @@ name: agentfleet
 services:
   db:
     image: postgres:16-alpine
+    # Everything else already restarts; without this the database is the one
+    # thing that does not come back after a reboot, and the API spends the
+    # morning restarting against a server that is not there.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-agentfleet}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentfleet}
@@ -116,6 +120,7 @@ services:
   minio:
     image: minio/minio:latest
     profiles: ["s3"]
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
