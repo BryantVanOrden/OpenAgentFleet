@@ -117,3 +117,40 @@ func TestUnknownTaskIsNotHandedOn(t *testing.T) {
 		t.Error("the relay handed on work it knew nothing about")
 	}
 }
+
+// Testing and reviewing wait; designing and building start.
+//
+// Every agent starting at once is why the relay never moved: four agents, four
+// running tasks, and nobody free when the builder finally published.
+func TestDownstreamStagesWaitForWork(t *testing.T) {
+	if stageDesign.waitsForWork() || stageBuild.waitsForWork() {
+		t.Error("a stage that produces the artefact should start immediately")
+	}
+	if !stageTest.waitsForWork() || !stageReview.waitsForWork() {
+		t.Error("a stage that needs an artefact should wait for one")
+	}
+}
+
+// An agent that registered to wait is on the job when someone starts one.
+func TestWaitingMembersJoinTheSameJob(t *testing.T) {
+	r := newRelay()
+	const request = "build the thing"
+
+	r.waitFor(request, "broadcast", member("t", "Tester", stageTest))
+	r.waitFor(request, "broadcast", member("r", "Reviewer", stageReview))
+	r.join("task-build", request, "broadcast", member("b", "Builder", stageBuild))
+
+	job, finished, next, ok := r.next("task-build")
+	if !ok {
+		t.Fatal("the builder finishing handed to nobody")
+	}
+	if finished.Name != "Builder" {
+		t.Errorf("finished = %s, want Builder", finished.Name)
+	}
+	if next.Name != "Tester" {
+		t.Errorf("handed to %s, want the Tester who was waiting", next.Name)
+	}
+	if len(job.Members) != 3 {
+		t.Errorf("the job has %d members, want all three", len(job.Members))
+	}
+}

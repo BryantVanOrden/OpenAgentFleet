@@ -106,3 +106,34 @@ func TestUnnamedOrderIsNotAlwaysTheSame(t *testing.T) {
 		t.Errorf("the same agent answered first every time: %v", first)
 	}
 }
+
+// Each named agent gets its own instruction, not the whole message.
+//
+// Given only the whole message, two agents produced identical plans and both
+// did the design, leaving the parts they were named for undone.
+func TestAssignmentForSplitsTheMessagePerAgent(t *testing.T) {
+	in := agents("Researcher", "Builder", "ToolCheck", "Auditor")
+	msg := "reasercher design a one-screen tap game. Builder then writes it as a " +
+		"single HTML file. tool check tests it. Auditor reviews it."
+
+	want := map[string]string{
+		"Researcher": "design a one-screen tap game",
+		"Builder":    "then writes it as a single HTML file",
+		"ToolCheck":  "tests it",
+		"Auditor":    "reviews it",
+	}
+	for name, expect := range want {
+		got := assignmentFor(msg, name, in)
+		if got != expect {
+			t.Errorf("%s was assigned %q, want %q", name, got, expect)
+		}
+	}
+}
+
+// An agent nobody named gets nothing, rather than the whole message.
+func TestUnnamedAgentHasNoAssignment(t *testing.T) {
+	in := agents("Builder", "Auditor")
+	if got := assignmentFor("Builder writes it", "Auditor", in); got != "" {
+		t.Errorf("an unnamed agent was assigned %q", got)
+	}
+}

@@ -191,6 +191,7 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// front of it.
 	claimed := s.claimsSoFar(ctx, inst, msg)
 	roster := s.fleetRoster(ctx, inst)
+	assigned := s.assignedPart(ctx, inst, msg)
 
 	// Two different things get said in fleet comms, and answering both as a
 	// status update was wrong.
@@ -212,7 +213,7 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 			System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
 				"desktop agents, reporting to your operator. " + scope +
 				" was messaged.\n\n" + status + "\n\n" +
-				roster + claimed +
+				roster + claimed + assigned +
 				"Decide first what you were sent.\n\n" +
 				"If it ASKS YOU TO DO SOMETHING -- build, make, write, fix, find " +
 				"out, work together on something -- reply starting with the single " +
@@ -294,6 +295,13 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// committed to a part, start it working on that part.
 	if plan, ok := planFrom(body); ok && isOperator(msg) {
 		s.startFromPlan(ctx, inst, msg, plan)
+		return
+	}
+	// An agent that said it would wait — "ready to review once Builder is
+	// done" — is still part of the job. Register it so the relay can hand it
+	// the work when there is work.
+	if isOperator(msg) {
+		s.waitForHandoff(ctx, inst, msg)
 	}
 }
 
@@ -368,6 +376,40 @@ func commitsToWork(body string) bool {
 	return false
 }
 
+// waitForHandoff registers an agent that has a part but nothing to do yet.
+//
+// Two cases land here. One is an agent that said in so many words that it is
+// waiting — "ready to review once Builder is done" — which is the correct
+// answer and used to mean it was simply forgotten. The other is an agent whose
+// part is testing or reviewing: starting that immediately tests nothing and,
+// worse, leaves it busy when the builder finally publishes.
+func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return
+	}
+	part := assignmentFor(msg.Content, inst.Name, instances)
+	if part == "" {
+		return // nobody named it; it is not on this job
+	}
+	stage := stageOf(part)
+	if stage == stageUnknown {
+		return
+	}
+	conv := msg.ConversationID
+	if conv == "" {
+		conv = vault.GlobalBus.DefaultChannel()
+	}
+	s.relay.waitFor(msg.Content, conv, collaborator{
+		InstanceID: inst.ID,
+		Name:       inst.Name,
+		Plan:       part,
+		Stage:      stage,
+	})
+	s.log.Info("agent is waiting to be handed work",
+		"instance", inst.Name, "stage", stage.String())
+}
+
 // startFromPlan turns an agent's stated part into a task it actually runs.
 //
 // Only for an operator's message: agents talking among themselves must not be
@@ -376,6 +418,13 @@ func commitsToWork(body string) bool {
 // mid-task should not derail what it was already asked to do.
 func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) {
 	if inst.State != protocol.InstanceRunning {
+		return
+	}
+	// Testing and reviewing wait for something to exist. Starting them now
+	// produces a test of nothing and, worse, an agent that is busy when the
+	// builder finally publishes -- which is why every handoff was skipped.
+	if s.stageForAgent(ctx, inst, msg, plan).waitsForWork() {
+		s.waitForHandoff(ctx, inst, msg)
 		return
 	}
 	// One driver at a time, the same rule the task endpoint enforces: a
@@ -426,11 +475,17 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 	if conv == "" {
 		conv = vault.GlobalBus.DefaultChannel()
 	}
+	// The stage comes from what the operator assigned where there is an
+	// assignment, and from the agent's own words otherwise. An agent told to
+	// test that describes its part as "define the game logic" is still the
+	// tester, and classifying it as a designer left the relay with four
+	// designers and nowhere to send the work.
+	stage := s.stageForAgent(ctx, inst, msg, plan)
 	s.relay.join(task.ID, msg.Content, conv, collaborator{
 		InstanceID: inst.ID,
 		Name:       inst.Name,
 		Plan:       plan,
-		Stage:      stageOf(plan),
+		Stage:      stage,
 	})
 	s.log.Info("agent started work from a fleet request",
 		"instance", inst.Name, "task", task.ID, "plan", clipLine(plan, 80))
@@ -588,4 +643,40 @@ func (s *Server) anyPending(ctx context.Context, instances []protocol.Instance) 
 		}
 	}
 	return protocol.PeerMessage{}, false
+}
+
+// assignedPart is what the message asked this agent, specifically, to do.
+//
+// Given the whole message and nothing else, two agents named for testing and
+// reviewing both wrote the design instead -- word-for-word the same design --
+// and the parts they had been named for went undone. The instruction was in
+// the message; it just was not addressed to anybody.
+func (s *Server) assignedPart(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) string {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return ""
+	}
+	part := assignmentFor(msg.Content, inst.Name, instances)
+	if part == "" {
+		return ""
+	}
+	return "\nThe operator named you specifically and asked you to: " + part +
+		"\nThat is your part. Do that, not somebody else's.\n\n"
+}
+
+// stageForAgent decides what part of the work an agent is doing.
+//
+// What the operator assigned wins over the agent's own paraphrase of it: an
+// agent told to test that describes its part as "define the game logic" is
+// still the tester, and taking it at its word left the relay with four
+// designers and nowhere to send anything.
+func (s *Server) stageForAgent(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) relayStage {
+	if instances, err := s.db.ListInstances(ctx); err == nil {
+		if part := assignmentFor(msg.Content, inst.Name, instances); part != "" {
+			if assigned := stageOf(part); assigned != stageUnknown {
+				return assigned
+			}
+		}
+	}
+	return stageOf(plan)
 }

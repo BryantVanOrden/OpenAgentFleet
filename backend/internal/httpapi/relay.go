@@ -118,6 +118,9 @@ type relay struct {
 	// the member running it. Both are needed: the collaboration says who else
 	// is on the job, and the member says which of them just finished.
 	byTask map[string]taskOwner
+	// pending holds jobs whose members are all still waiting to be handed
+	// work, before anyone has started a task to key them by.
+	pending []*collaboration
 }
 
 type taskOwner struct {
@@ -127,6 +130,46 @@ type taskOwner struct {
 
 func newRelay() *relay {
 	return &relay{byTask: map[string]taskOwner{}}
+}
+
+// waitsForWork reports whether a stage needs something to exist first.
+//
+// Test and review do. An agent that starts testing the moment it is asked is
+// testing nothing, and — more damagingly — it is busy, so when the builder
+// actually publishes there is nobody free to hand it to. Every agent starting
+// at once is why the relay never moved: four agents, four running tasks, no
+// recipients.
+func (st relayStage) waitsForWork() bool {
+	return st == stageTest || st == stageReview
+}
+
+// waitFor registers an agent that will be handed work rather than starting now.
+func (r *relay) waitFor(request, thread string, c collaborator) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, existing := range r.byTask {
+		if existing.job.Request == request {
+			existing.job.Members = append(existing.job.Members, c)
+			return
+		}
+	}
+	// A colleague may already be waiting on the same request. Checking only
+	// the started jobs made the second waiter open a job of its own, so the
+	// tester and the reviewer ended up on separate ones and neither could be
+	// handed to.
+	for _, p := range r.pending {
+		if p.Request == request {
+			p.Members = append(p.Members, c)
+			return
+		}
+	}
+	r.pending = append(r.pending, &collaboration{
+		Request: request,
+		Thread:  thread,
+		Members: []collaborator{c},
+		Handed:  map[string]bool{},
+	})
 }
 
 // join records that an agent has started its part of a request.
@@ -139,6 +182,14 @@ func (r *relay) join(taskID, request, thread string, c collaborator) {
 		if existing.job.Request == request {
 			existing.job.Members = append(existing.job.Members, c)
 			r.byTask[taskID] = taskOwner{job: existing.job, member: c}
+			return
+		}
+	}
+	// Agents that registered to wait got here first.
+	for _, p := range r.pending {
+		if p.Request == request {
+			p.Members = append(p.Members, c)
+			r.byTask[taskID] = taskOwner{job: p, member: c}
 			return
 		}
 	}

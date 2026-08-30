@@ -136,19 +136,86 @@ func mentionIndex(text, name string) int {
 		return tolerance > 0 && editDistance(candidate, target) <= tolerance
 	}
 
-	best := -1
+	best, bestEnd := -1, -1
 	for i, w := range words {
+		start, end := w.at, w.at+len(w.text)
 		hit := matches(w.text)
 		// A name written as two words -- "tool check" for ToolCheck -- is one
-		// mention, so adjacent pairs are tried as well.
+		// mention, so adjacent pairs are tried as well, and the span covers
+		// both words. Without that the clause assigned to ToolCheck began in
+		// the middle of its own name.
 		if !hit && i+1 < len(words) {
-			hit = matches(w.text + words[i+1].text)
+			joined := w.text + words[i+1].text
+			// Equality or a near miss, never containment -- see mentionSpan.
+			if joined == target || (tolerance > 0 && editDistance(joined, target) <= tolerance) {
+				hit = true
+				end = words[i+1].at + len(words[i+1].text)
+			}
 		}
-		if hit && (best < 0 || w.at < best) {
-			best = w.at
+		if hit && (best < 0 || start < best) {
+			best, bestEnd = start, end
 		}
 	}
+	_ = bestEnd
 	return best
+}
+
+// mentionSpan is mentionIndex plus where the matched name ends, so a clause
+// can start after the whole name rather than inside it.
+func mentionSpan(text, name string) (start, end int, ok bool) {
+	target := normalizeName(name)
+	if target == "" {
+		return 0, 0, false
+	}
+	tolerance := fuzzyTolerance(target)
+
+	type word struct {
+		text string
+		at   int
+		raw  int
+	}
+	var words []word
+	offset := 0
+	for _, field := range strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		at := strings.Index(text[offset:], field)
+		if at < 0 {
+			continue
+		}
+		pos := offset + at
+		offset = pos + len(field)
+		if n := normalizeName(field); n != "" {
+			words = append(words, word{n, pos, len(field)})
+		}
+	}
+
+	matches := func(candidate string) bool {
+		if candidate == target {
+			return true
+		}
+		if len(target) >= 4 && strings.Contains(candidate, target) {
+			return true
+		}
+		return tolerance > 0 && editDistance(candidate, target) <= tolerance
+	}
+	// A joined pair must BE the name, not merely contain it. Containment here
+	// matched "it" + "Auditor" as one mention of Auditor starting at "it",
+	// which cut the previous agent's instruction short.
+	joins := func(candidate string) bool {
+		return candidate == target ||
+			(tolerance > 0 && editDistance(candidate, target) <= tolerance)
+	}
+
+	for i, w := range words {
+		if matches(w.text) {
+			return w.at, w.at + w.raw, true
+		}
+		if i+1 < len(words) && joins(w.text+words[i+1].text) {
+			return w.at, words[i+1].at + words[i+1].raw, true
+		}
+	}
+	return 0, 0, false
 }
 
 // orderByMention puts the agents the message names first, in the order they
@@ -181,4 +248,36 @@ func orderByMention(content string, instances []protocol.Instance) []protocol.In
 		out = append(out, r.inst)
 	}
 	return append(out, rest...)
+}
+
+// assignmentFor returns what the message asked this particular agent to do.
+//
+// "Builder writes the game. ToolCheck tests it." is two instructions, and
+// handing both to both agents is how two of them end up doing the same thing.
+// Told only the whole message and a list of what colleagues had claimed,
+// ToolCheck and Auditor produced word-for-word identical plans and both did
+// the design — the parts they had each been named for went undone, and with
+// every agent in the same stage there was nothing for the relay to route.
+//
+// The clause is everything from an agent's name up to the next agent's, which
+// is how these sentences are actually written.
+func assignmentFor(content string, name string, all []protocol.Instance) string {
+	start, after, ok := mentionSpan(content, name)
+	if !ok {
+		return ""
+	}
+	// Bounded by the next agent named after this one.
+	end := len(content)
+	for _, other := range all {
+		if strings.EqualFold(other.Name, name) {
+			continue
+		}
+		if o, _, found := mentionSpan(content, other.Name); found && o > start && o < end {
+			end = o
+		}
+	}
+	if after > end {
+		return ""
+	}
+	return strings.Trim(content[after:end], " ,.;:-\n\t")
 }
