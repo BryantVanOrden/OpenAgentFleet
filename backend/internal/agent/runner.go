@@ -293,6 +293,7 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 				r.log.Info("task stopped mid-step", "task", task.ID)
 				_ = r.db.UpdateTaskState(context.WithoutCancel(ctx), task.ID,
 					protocol.TaskCancelled, task.Step, "stopped while it was thinking", "")
+				r.closeTaskAlerts(ctx, task.ID, "the task was stopped")
 				return
 			}
 			r.fail(ctx, task, "every model provider failed: "+err.Error())
@@ -919,6 +920,7 @@ func (r *Runner) storeObservation(ctx context.Context, task *protocol.Task, obs 
 
 func (r *Runner) succeed(ctx context.Context, task *protocol.Task, inst *protocol.Instance, summary string) {
 	_ = r.db.UpdateTaskState(ctx, task.ID, protocol.TaskSucceeded, task.Step, "", summary)
+	r.closeTaskAlerts(ctx, task.ID, "the task finished")
 	r.bus.Emit("task.state", task.InstanceID, task.ID,
 		map[string]any{"state": protocol.TaskSucceeded, "result": summary})
 	r.fileAlert(ctx, task, protocol.AlertCompleted, "info", "Task complete — "+inst.Name, summary)
@@ -953,6 +955,9 @@ func (r *Runner) fail(ctx context.Context, task *protocol.Task, msg string) {
 	_ = r.db.UpdateTaskState(wctx, task.ID, protocol.TaskFailed, task.Step, msg, "")
 	r.bus.Emit("task.state", task.InstanceID, task.ID,
 		map[string]any{"state": protocol.TaskFailed, "error": msg})
+	// Close whatever it was asking before filing the failure, so the failure
+	// is the one thing left open rather than the last of several.
+	r.closeTaskAlerts(wctx, task.ID, "the task ended before this was answered")
 	r.fileAlert(wctx, task, protocol.AlertFailed, "warn", "Task failed", msg)
 }
 
@@ -962,6 +967,7 @@ func (r *Runner) cancelled(ctx context.Context, task *protocol.Task) {
 	defer cancel()
 	_ = r.db.UpdateTaskState(wctx, task.ID, protocol.TaskCancelled, task.Step, "cancelled by operator", "")
 	r.bus.Emit("task.state", task.InstanceID, task.ID, map[string]any{"state": protocol.TaskCancelled})
+	r.closeTaskAlerts(wctx, task.ID, "the task was cancelled")
 }
 
 func (r *Runner) fileAlert(ctx context.Context, task *protocol.Task, kind protocol.AlertKind, sev, title, body string) {
@@ -1260,4 +1266,21 @@ func (r *Runner) countPublish(taskID, name string) int {
 	}
 	byName[strings.ToLower(name)]++
 	return byName[strings.ToLower(name)]
+}
+
+
+// closeTaskAlerts resolves anything a finished task was still asking.
+//
+// An alert is a question an agent stopped to ask. When the task ends, nobody
+// is waiting on the answer any more -- but the alert stayed open, so the
+// operator was shown a queue of agents needing them where every single one was
+// dead. Measured after six hours: sixty open alerts, all of them belonging to
+// tasks that had already succeeded, failed or been cancelled. With
+// notifications working, each of those would also have reached the phone.
+func (r *Runner) closeTaskAlerts(ctx context.Context, taskID, why string) {
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := r.db.ResolveTaskAlerts(wctx, taskID, why); err != nil {
+		r.log.Warn("could not close a finished task's alerts", "task", taskID, "err", err)
+	}
 }
