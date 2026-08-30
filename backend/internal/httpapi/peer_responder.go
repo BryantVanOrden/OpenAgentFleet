@@ -192,6 +192,16 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	claimed := s.claimsSoFar(ctx, inst, msg)
 	roster := s.fleetRoster(ctx, inst)
 	assigned := s.assignedPart(ctx, inst, msg)
+	// An agent the operator did not name will not be started, so it should not
+	// announce a part it is never going to do. Told only that colleagues had
+	// claimed things, one still replied "I will build the single-file HTML
+	// page" for a job addressed to somebody else.
+	bystander := ""
+	if s.namedSomeoneElse(ctx, inst, msg) {
+		bystander = "\nThe operator named other agents for this and did not name " +
+			"you. It is not your job. Say in one sentence that you are standing " +
+			"by, and do not claim a part or describe what you would build.\n\n"
+	}
 
 	// Two different things get said in fleet comms, and answering both as a
 	// status update was wrong.
@@ -213,7 +223,7 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 			System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
 				"desktop agents, reporting to your operator. " + scope +
 				" was messaged.\n\n" + status + "\n\n" +
-				roster + claimed + assigned +
+				roster + claimed + assigned + bystander +
 				"Decide first what you were sent.\n\n" +
 				"If it ASKS YOU TO DO SOMETHING -- build, make, write, fix, find " +
 				"out, work together on something -- reply starting with the single " +
@@ -418,6 +428,18 @@ func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg
 // mid-task should not derail what it was already asked to do.
 func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) {
 	if inst.State != protocol.InstanceRunning {
+		return
+	}
+	// Naming people is also saying who is not needed.
+	//
+	// "Auditor write a two-sentence note" asked one agent for one small thing,
+	// and two others started writing their own version of the same note. An
+	// agent shown a colleague's claim sometimes declines and sometimes does
+	// not; whether it does should not decide whether the fleet does the work
+	// three times. If anybody was named, only the named work.
+	if s.namedSomeoneElse(ctx, inst, msg) {
+		s.log.Info("not starting work; the operator named someone else",
+			"instance", inst.Name)
 		return
 	}
 	// Testing and reviewing wait for something to exist. Starting them now
@@ -684,4 +706,27 @@ func (s *Server) stageForAgent(ctx context.Context, inst protocol.Instance, msg 
 		}
 	}
 	return stageOf(plan)
+}
+
+
+// namedSomeoneElse reports whether the message named agents and this is not
+// one of them.
+//
+// A message that names nobody is addressed to whoever can help, and everybody
+// may take a part.
+func (s *Server) namedSomeoneElse(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) bool {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return false // unknown: do not silence the fleet on a database blip
+	}
+	anyNamed := false
+	for _, other := range instances {
+		if _, _, ok := mentionSpan(msg.Content, other.Name); ok {
+			if other.ID == inst.ID {
+				return false // named: this is its job
+			}
+			anyNamed = true
+		}
+	}
+	return anyNamed
 }

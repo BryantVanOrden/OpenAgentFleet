@@ -137,3 +137,40 @@ func TestUnnamedAgentHasNoAssignment(t *testing.T) {
 		t.Errorf("an unnamed agent was assigned %q", got)
 	}
 }
+
+// Naming people is also saying who is not needed.
+//
+// "Auditor write a two-sentence note" asked one agent for one small thing, and
+// two others started writing their own version of the same note.
+func TestNamingSomeoneExcludesTheRest(t *testing.T) {
+	in := agents("Researcher", "Builder", "Auditor")
+
+	named := func(content, who string) bool {
+		anyNamed := false
+		for _, other := range in {
+			if _, _, ok := mentionSpan(content, other.Name); ok {
+				if other.Name == who {
+					return false
+				}
+				anyNamed = true
+			}
+		}
+		return anyNamed
+	}
+
+	const one = "Auditor write a two-sentence note"
+	if named(one, "Auditor") {
+		t.Error("the named agent was excluded from its own job")
+	}
+	if !named(one, "Researcher") || !named(one, "Builder") {
+		t.Error("an agent nobody named was allowed to start work anyway")
+	}
+
+	// Naming nobody addresses everyone.
+	const open = "someone write a note about the fleet"
+	for _, a := range in {
+		if named(open, a.Name) {
+			t.Errorf("%s was excluded although the message named nobody", a.Name)
+		}
+	}
+}
