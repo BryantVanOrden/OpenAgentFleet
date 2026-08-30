@@ -32,6 +32,12 @@ import (
 // design that costs real money.
 const maxRelayRounds = 6
 
+// maxPendingJobs caps jobs whose members are all still waiting.
+//
+// Generously more than a fleet works on at once; it exists so that a mistake
+// somewhere else cannot turn into unbounded memory in a long-running process.
+const maxPendingJobs = 8
+
 // relayStage is what an agent's part is for, decided from what it said it
 // would do. The order here is the order work flows in.
 type relayStage int
@@ -170,6 +176,12 @@ func (r *relay) waitFor(request, thread string, c collaborator) {
 		Members: []collaborator{c},
 		Handed:  map[string]bool{},
 	})
+	// A backstop on top of the pruning above. Jobs are superseded by the next
+	// request, but a bug or an unusual sequence should not be able to grow
+	// this without limit in a process that runs for weeks.
+	if len(r.pending) > maxPendingJobs {
+		r.pending = r.pending[len(r.pending)-maxPendingJobs:]
+	}
 }
 
 // join records that an agent has started its part of a request.

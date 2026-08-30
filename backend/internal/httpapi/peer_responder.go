@@ -410,6 +410,14 @@ func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg
 	if conv == "" {
 		conv = vault.GlobalBus.DefaultChannel()
 	}
+	// A new request supersedes the last one here too.
+	//
+	// This was only done when an agent started work, so a broadcast that
+	// produced nothing but waiting agents -- everyone named for testing and
+	// reviewing, say -- left its job behind for good. Over a long-running
+	// deployment those accumulate, one per such request, and nothing ever
+	// removes them.
+	s.relay.forgetOthers(msg.Content)
 	s.relay.waitFor(msg.Content, conv, collaborator{
 		InstanceID: inst.ID,
 		Name:       inst.Name,

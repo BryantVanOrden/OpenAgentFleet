@@ -307,3 +307,36 @@ func TestParkedPublisherStillHandsOn(t *testing.T) {
 		}
 	}
 }
+
+// Jobs whose members are all waiting do not accumulate.
+//
+// Pending jobs were only pruned when an agent started work, so a broadcast that
+// produced nothing but waiting agents left its job behind for good — one per
+// such request, in a process that runs for weeks.
+func TestPendingJobsDoNotAccumulate(t *testing.T) {
+	r := newRelay()
+
+	// Many requests where everybody waits.
+	for i := 0; i < 40; i++ {
+		req := "request number " + string(rune('a'+i%26)) + string(rune('0'+i/26))
+		r.forgetOthers(req)
+		r.waitFor(req, "broadcast", member("t", "Tester", stageTest))
+	}
+	if len(r.pending) > maxPendingJobs {
+		t.Errorf("pending grew to %d, past the cap of %d", len(r.pending), maxPendingJobs)
+	}
+	// Superseding leaves only the newest.
+	if len(r.pending) != 1 {
+		t.Errorf("superseding left %d jobs, want just the current one", len(r.pending))
+	}
+
+	// Even without superseding, the cap holds.
+	r2 := newRelay()
+	for i := 0; i < 40; i++ {
+		r2.waitFor("request "+string(rune('a'+i%26))+string(rune('0'+i/26)),
+			"broadcast", member("t", "Tester", stageTest))
+	}
+	if len(r2.pending) > maxPendingJobs {
+		t.Errorf("without superseding, pending grew to %d", len(r2.pending))
+	}
+}
