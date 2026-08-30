@@ -339,7 +339,7 @@ func (s *Server) watchForHandoffs(ctx context.Context) {
 			// the catalog is the thing the next agent actually needs, and it
 			// exists whether or not the model remembered to say "done".
 			if ev.Type == "work" && ev.InstanceID != "" {
-				s.handOffFrom(ctx, ev.InstanceID, describeWork(ev.Payload))
+				s.handOffFrom(ctx, ev.InstanceID, describeWork(ev.Payload), workNameOf(ev.Payload))
 				continue
 			}
 			if ev.Type != "task.state" || ev.TaskID == "" {
@@ -465,6 +465,16 @@ func describeWork(payload any) string {
 		optionalDescription(item.Description))
 }
 
+// workNameOf is the catalog name on its own, for when something has to be
+// addressed rather than described.
+func workNameOf(payload any) string {
+	item, ok := payload.(protocol.WorkItem)
+	if !ok {
+		return ""
+	}
+	return item.Name
+}
+
 func optionalDescription(d string) string {
 	if strings.TrimSpace(d) == "" {
 		return ""
@@ -474,7 +484,7 @@ func optionalDescription(d string) string {
 
 // handOffFrom hands work on when an agent publishes, rather than when its task
 // finishes.
-func (s *Server) handOffFrom(ctx context.Context, instanceID, produced string) {
+func (s *Server) handOffFrom(ctx context.Context, instanceID, produced, name string) {
 	taskID, ok := s.relay.taskFor(instanceID)
 	if !ok {
 		return
@@ -503,7 +513,7 @@ func (s *Server) handOffFrom(ctx context.Context, instanceID, produced string) {
 		s.relay.forget(taskID)
 		return
 	}
-	s.handOff(ctx, taskID, "They published "+produced, produced)
+	s.handOff(ctx, taskID, "They published "+produced, name)
 }
 
 // taskFor returns the live task an agent is running as part of a job.
@@ -609,7 +619,7 @@ func briefFor(from, to relayStage, produced string) string {
 	// hop already pins its name and stays a single item across versions; the
 	// test and review hops need the same instruction.
 	reportName := func(suffix string) string {
-		if produced == "" {
+		if !usableWorkName(produced) {
 			return "Publish it under one name and reuse that same name on every " +
 				"later round, so it becomes a new version rather than a second file."
 		}
@@ -646,6 +656,30 @@ func briefFor(from, to relayStage, produced string) string {
 	}
 	return readFirst + " Publish what you produce with publish_work, then finish " +
 		"with done."
+}
+
+// usableWorkName reports whether a string can be handed to an agent as a name
+// to publish under.
+//
+// It can not. The first version of this was given describeWork's output --
+// `app "cdown" (version 1, 4321 bytes)` -- and duly instructed the tester to
+// publish under that, which it did, so the catalog gained an item called
+// `app \"cdown\" (version 1,`. The plumbing is fixed; this is here so that
+// getting it wrong again degrades to the generic instruction instead of
+// putting punctuation into the catalog.
+func usableWorkName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) ||
+			r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // stalledJobs returns jobs where everybody is waiting and nothing is coming.

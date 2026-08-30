@@ -486,3 +486,33 @@ func TestReportHopsStillSayReuseOneNameWithoutAProducedItem(t *testing.T) {
 		t.Errorf("brief lost its one-name instruction:\n%s", got)
 	}
 }
+
+// The brief was once handed describeWork's output as if it were a name, and
+// the tester published under `app "cdown" (version 1,` because that is what it
+// was told to do.
+func TestBriefRefusesADescriptionAsAName(t *testing.T) {
+	bad := `app "cdown" (version 1, 4321 bytes)`
+	got := briefFor(stageBuild, stageTest, bad)
+	if strings.Contains(got, bad) || strings.Contains(got, "(version") {
+		t.Errorf("a description reached the agent as a work_name:\n%s", got)
+	}
+	if !strings.Contains(got, "reuse that same name") {
+		t.Errorf("brief should fall back to the generic instruction:\n%s", got)
+	}
+}
+
+func TestUsableWorkName(t *testing.T) {
+	for _, ok := range []string{"cdown", "convtest_review", "mdbox-v2", "a.b_c-1"} {
+		if !usableWorkName(ok) {
+			t.Errorf("%q should be usable", ok)
+		}
+	}
+	for _, bad := range []string{
+		"", "   ", `app "cdown" (version 1`, "has space", "quote\"d",
+		strings.Repeat("x", 65),
+	} {
+		if usableWorkName(bad) {
+			t.Errorf("%q should not be usable", bad)
+		}
+	}
+}
