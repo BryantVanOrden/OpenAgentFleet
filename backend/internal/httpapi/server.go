@@ -27,6 +27,9 @@ type Server struct {
 	db     *store.Store
 	fleet  *fleet.Manager
 	models *connectors.Registry
+	// relay tracks which agents are collaborating on which request, so
+	// finishing a part can wake whoever the next part belongs to.
+	relay *relay
 	runner *agent.Runner
 	bus    *bus.Bus
 	vault  *vault.Vault
@@ -46,7 +49,7 @@ func NewServer(
 	art artifacts.Store,
 	log *slog.Logger,
 ) *Server {
-	return &Server{cfg: cfg, db: db, fleet: fm, models: models, runner: runner,
+	return &Server{cfg: cfg, db: db, fleet: fm, models: models, runner: runner, relay: newRelay(),
 		bus: b, vault: v, art: art, log: log,
 		host: telemetry.NewHostCollector()}
 }

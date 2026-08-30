@@ -419,6 +419,19 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 		s.log.Warn("could not start work from a fleet plan", "instance", inst.Name, "err", err)
 		return
 	}
+	// Record who is doing what, so finishing this part can wake whoever the
+	// next one belongs to. Without it an agent finishes, publishes, and stops,
+	// and the colleague who would review it never hears.
+	conv := msg.ConversationID
+	if conv == "" {
+		conv = vault.GlobalBus.DefaultChannel()
+	}
+	s.relay.join(task.ID, msg.Content, conv, collaborator{
+		InstanceID: inst.ID,
+		Name:       inst.Name,
+		Plan:       plan,
+		Stage:      stageOf(plan),
+	})
 	s.log.Info("agent started work from a fleet request",
 		"instance", inst.Name, "task", task.ID, "plan", clipLine(plan, 80))
 }

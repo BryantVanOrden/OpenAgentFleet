@@ -95,6 +95,45 @@ class PushService {
     }
   }
 
+  /// Raise a notification for an alert that arrived over the event socket.
+  ///
+  /// Firebase is the only thing that used to reach the notification code, and
+  /// this deployment has no Firebase project — no google-services.json, no
+  /// FCM_PROJECT_ID, no registered devices — so an agent that stopped to ask a
+  /// question notified nobody. The websocket already carries the alert; this
+  /// turns it into something the phone actually shows.
+  ///
+  /// It is not a replacement for push: it needs the app to be running. It is
+  /// the difference between "no notification ever" and "a notification
+  /// whenever the app is alive", which is most of the value on a tailnet where
+  /// the app is open anyway.
+  Future<void> showAlert({
+    required String id,
+    required String title,
+    required String body,
+    String severity = 'info',
+  }) async {
+    await _local.show(
+      id.hashCode,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance:
+              severity == 'info' ? Importance.defaultImportance : Importance.max,
+          priority:
+              severity == 'info' ? Priority.defaultPriority : Priority.high,
+          category:
+              severity == 'critical' ? AndroidNotificationCategory.call : null,
+        ),
+        iOS: const DarwinNotificationDetails(),
+      ),
+    );
+  }
+
   Future<void> _showForeground(RemoteMessage message) async {
     final notification = message.notification;
     if (notification == null) return;

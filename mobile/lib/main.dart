@@ -114,6 +114,35 @@ class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
     if (widget.api.isAuthenticated) {
       _push.init();
     }
+    _watchAlertsForNotifications();
+  }
+
+  /// Notify when an agent stops to ask something.
+  ///
+  /// Push needs a Firebase project this deployment does not have, so nothing
+  /// ever reached the notification code and an agent waiting on a person waited
+  /// silently. The event socket already carries the alert; this shows it. Only
+  /// while the app is running -- real push is still the answer for a phone in a
+  /// pocket -- but the common case here is an app that is open.
+  void _watchAlertsForNotifications() {
+    final seen = <String>{};
+    ref.listenManual(alertsProvider, (previous, next) {
+      final alerts = next.valueOrNull;
+      if (alerts == null) return;
+      final firstLoad = previous?.valueOrNull == null;
+      for (final a in alerts) {
+        if (a.resolvedAt != null || !seen.add(a.id)) continue;
+        // The first load is the backlog, not news. Notifying for every alert
+        // already sitting there would fire a dozen at once on launch.
+        if (firstLoad) continue;
+        _push.showAlert(
+          id: a.id,
+          title: a.title.isEmpty ? 'An agent needs you' : a.title,
+          body: a.body,
+          severity: a.severity,
+        );
+      }
+    });
   }
 
   @override

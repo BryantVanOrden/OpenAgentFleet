@@ -1,0 +1,119 @@
+package httpapi
+
+import "testing"
+
+// An agent's stated part decides where it sits in the flow.
+func TestStageOfReadsRealPlans(t *testing.T) {
+	cases := map[string]relayStage{
+		"I will write the main code for the arcade game":            stageBuild,
+		"I will produce a complete self-contained HTML/JS file":     stageBuild,
+		"I will take the design phase, defining the core mechanics": stageDesign,
+		"I will define the core mechanics and theme":                stageDesign,
+		"I will test it on a phone screen":                          stageTest,
+		"I will verify the game's responsiveness":                   stageTest,
+		"I will write the review and final quality assurance report": stageReview,
+		"I will audit the code once Builder finishes":                stageReview,
+		// Most specific wins: this is a review, not a design.
+		"I will review the design document":  stageReview,
+		"I will write the test plan":         stageTest,
+		"I will think about it":              stageUnknown,
+	}
+	for plan, want := range cases {
+		if got := stageOf(plan); got != want {
+			t.Errorf("stageOf(%q) = %s, want %s", plan, got, want)
+		}
+	}
+}
+
+func member(id, name string, st relayStage) collaborator {
+	return collaborator{InstanceID: id, Name: name, Plan: name + "'s part", Stage: st}
+}
+
+// Work flows design to build to test to review, and a review goes back to
+// whoever builds — a review nobody acts on is decoration.
+func TestWorkFlowsThroughTheStages(t *testing.T) {
+	c := &collaboration{Members: []collaborator{
+		member("d", "Designer", stageDesign),
+		member("b", "Builder", stageBuild),
+		member("t", "Tester", stageTest),
+		member("r", "Reviewer", stageReview),
+	}}
+
+	for _, tc := range []struct {
+		from relayStage
+		want string
+	}{
+		{stageDesign, "Builder"},
+		{stageBuild, "Tester"},
+		{stageTest, "Reviewer"},
+		{stageReview, "Builder"},
+	} {
+		got, ok := c.successorFor(member("x", "Finished", tc.from))
+		if !ok {
+			t.Errorf("nothing follows %s", tc.from)
+			continue
+		}
+		if got.Name != tc.want {
+			t.Errorf("after %s the work went to %s, want %s", tc.from, got.Name, tc.want)
+		}
+	}
+}
+
+// With no tester, a build goes straight to review rather than stopping.
+func TestFlowSkipsAMissingStage(t *testing.T) {
+	c := &collaboration{Members: []collaborator{
+		member("b", "Builder", stageBuild),
+		member("r", "Reviewer", stageReview),
+	}}
+	got, ok := c.successorFor(member("b", "Builder", stageBuild))
+	if !ok || got.Name != "Reviewer" {
+		t.Errorf("build went to %+v, want Reviewer", got)
+	}
+}
+
+// An agent never hands work to itself, which would be a bot reviewing its own
+// output in an unbroken loop.
+func TestAnAgentNeverHandsToItself(t *testing.T) {
+	c := &collaboration{Members: []collaborator{member("b", "Builder", stageBuild)}}
+	if got, ok := c.successorFor(member("b", "Builder", stageBuild)); ok {
+		t.Errorf("an agent handed work to itself: %+v", got)
+	}
+}
+
+// The loop terminates. An unbounded relay of agents starting each other is the
+// one failure of this design that costs real money.
+func TestRelayStopsAfterItsRoundLimit(t *testing.T) {
+	r := newRelay()
+	builder := member("b", "Builder", stageBuild)
+	reviewer := member("r", "Reviewer", stageReview)
+
+	r.join("task-0", "make the thing", "broadcast", builder)
+	r.join("task-0b", "make the thing", "broadcast", reviewer)
+
+	handoffs := 0
+	task := "task-0"
+	for i := 0; i < 50; i++ {
+		job, _, next, ok := r.next(task)
+		if !ok {
+			break
+		}
+		handoffs++
+		task = "task-" + next.InstanceID + string(rune('a'+i))
+		r.register(task, job, next)
+	}
+
+	if handoffs == 0 {
+		t.Fatal("the relay never handed anything on")
+	}
+	if handoffs > maxRelayRounds {
+		t.Errorf("the relay ran %d times, past its limit of %d", handoffs, maxRelayRounds)
+	}
+}
+
+// A task the relay does not know about is ignored rather than guessed at.
+func TestUnknownTaskIsNotHandedOn(t *testing.T) {
+	r := newRelay()
+	if _, _, _, ok := r.next("a-task-nobody-registered"); ok {
+		t.Error("the relay handed on work it knew nothing about")
+	}
+}

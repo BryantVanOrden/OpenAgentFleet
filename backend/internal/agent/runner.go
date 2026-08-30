@@ -790,10 +790,19 @@ func (r *Runner) escalate(
 // row is the one mechanism that sees all three.
 func (r *Runner) waitForReply(ctx context.Context, alertID string) (string, error) {
 	const (
-		poll   = 3 * time.Second
-		giveUp = 6 * time.Hour
+		poll = 3 * time.Second
+		// How long an agent waits before going ahead on its own.
+		//
+		// It used to wait six hours and then fail the task outright, which is
+		// the worst of both: the work is abandoned, and it is abandoned long
+		// after anyone was still watching. Most of what agents stop to ask is
+		// something they could reasonably decide -- which of two files to
+		// edit, whether a dialog is the one they wanted -- and eight minutes
+		// is long enough for someone at their desk to answer and short enough
+		// that a run does not die because nobody was.
+		selfServeAfter = 8 * time.Minute
 	)
-	deadline := time.Now().Add(giveUp)
+	deadline := time.Now().Add(selfServeAfter)
 	for {
 		select {
 		case <-ctx.Done():
@@ -811,7 +820,20 @@ func (r *Runner) waitForReply(ctx context.Context, alertID string) (string, erro
 			return reply, nil
 		}
 		if time.Now().After(deadline) {
-			return "", errors.New("no operator reply within 6 hours")
+			// Resolve it, so the alert does not sit unanswered forever looking
+			// like it is still blocking something, and record that nobody
+			// answered -- an operator reading back needs to know the decision
+			// was the agent's.
+			if err := r.db.ResolveAlert(ctx, alertID,
+				"No answer within 8 minutes; the agent continued on its own."); err != nil {
+				r.log.Warn("could not resolve an unanswered alert", "alert", alertID, "err", err)
+			}
+			r.log.Info("no operator reply; continuing without one", "alert", alertID)
+			return "Nobody answered within eight minutes, so proceed on your own " +
+				"judgement. Choose the most reasonable option and carry on. Do not " +
+				"ask again for this same thing -- if you genuinely cannot proceed " +
+				"without a person, finish with the fail action and say precisely " +
+				"what you needed. Avoid anything you cannot undo.", nil
 		}
 	}
 }
