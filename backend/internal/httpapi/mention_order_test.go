@@ -174,3 +174,27 @@ func TestNamingSomeoneExcludesTheRest(t *testing.T) {
 		}
 	}
 }
+
+// Whoever is named first has nobody ahead of them to be handed work by, so a
+// tester named first must start rather than wait for a build nobody asked for.
+func TestFirstNamedIsTheEarliestMentioned(t *testing.T) {
+	msg := "ToolCheck please open the rollr app from the shared catalog and " +
+		"test it. Builder fix anything ToolCheck reports."
+	first := mentionIndex(msg, "ToolCheck")
+	second := mentionIndex(msg, "Builder")
+	if first < 0 || second < 0 {
+		t.Fatalf("both should be mentioned: ToolCheck=%d Builder=%d", first, second)
+	}
+	if first >= second {
+		t.Errorf("ToolCheck is named first but indexed later: %d vs %d", first, second)
+	}
+}
+
+// The ordinary build-first phrasing must keep its order.
+func TestBuilderFirstKeepsItsOrder(t *testing.T) {
+	msg := "Builder please build convtest. ToolCheck test it after. Auditor review it last."
+	b, tc, a := mentionIndex(msg, "Builder"), mentionIndex(msg, "ToolCheck"), mentionIndex(msg, "Auditor")
+	if !(b < tc && tc < a) {
+		t.Errorf("order wrong: Builder=%d ToolCheck=%d Auditor=%d", b, tc, a)
+	}
+}

@@ -454,17 +454,26 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 	// produces a test of nothing and, worse, an agent that is busy when the
 	// builder finally publishes -- which is why every handoff was skipped.
 	//
-	// Unless nobody is going to make anything. "ToolCheck open the rollr app
-	// from the catalog and test it" names a tester first and points at work
-	// that already exists, and waiting for a build that was never asked for
-	// meant the request simply never happened. If no one was asked to produce,
-	// the thing to work on is already there.
+	// Unless this agent is the one named first.
+	//
+	// "ToolCheck open the rollr app from the catalog and test it, Builder fix
+	// what ToolCheck finds" names a tester first and points at work that
+	// already exists. Waiting for a build nobody asked for meant the request
+	// never happened at all. Asking instead whether anyone was named to
+	// produce was worse: "fix what ToolCheck reports" does not read as a build,
+	// so both started at once and the builder set about fixing a report that
+	// did not exist yet.
+	//
+	// Mention order already decides who goes first, and it answers this too.
+	// Whoever was named first starts -- what they need is either in the
+	// catalog or was never coming -- and everyone named after them waits to be
+	// handed it, which is the order the operator wrote down.
 	if s.stageForAgent(ctx, inst, msg, plan).waitsForWork() {
-		if s.someoneWillProduce(ctx, msg) {
+		if !s.namedFirst(ctx, inst, msg) {
 			s.waitForHandoff(ctx, inst, msg)
 			return
 		}
-		s.log.Info("starting downstream work; nobody was asked to produce anything",
+		s.log.Info("starting downstream work; named first, so nothing is coming to it",
 			"instance", inst.Name)
 	}
 	// One driver at a time, the same rule the task endpoint enforces: a
@@ -756,22 +765,26 @@ func (s *Server) namedSomeoneElse(ctx context.Context, inst protocol.Instance, m
 	return anyNamed
 }
 
-// someoneWillProduce reports whether the message asks anybody to make
-// something, as opposed to only testing or reviewing what already exists.
-func (s *Server) someoneWillProduce(ctx context.Context, msg protocol.PeerMessage) bool {
+// namedFirst reports whether this agent is the earliest one the message names.
+//
+// The first one named has nobody ahead of it to be handed work by, so if it is
+// waiting it is waiting for something that will never arrive.
+func (s *Server) namedFirst(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) bool {
 	instances, err := s.db.ListInstances(ctx)
 	if err != nil {
-		return true // unknown: keep the old, cautious behaviour
+		return false // unknown: keep the cautious behaviour and wait
 	}
-	for _, inst := range instances {
-		part := assignmentFor(msg.Content, inst.Name, instances)
-		if part == "" {
+	mine := mentionIndex(msg.Content, inst.Name)
+	if mine < 0 {
+		return false
+	}
+	for _, other := range instances {
+		if other.ID == inst.ID {
 			continue
 		}
-		switch stageOf(part) {
-		case stageDesign, stageBuild:
-			return true
+		if at := mentionIndex(msg.Content, other.Name); at >= 0 && at < mine {
+			return false
 		}
 	}
-	return false
+	return true
 }
