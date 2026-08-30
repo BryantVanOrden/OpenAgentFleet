@@ -92,6 +92,12 @@ reviewing wait to be handed something rather than starting immediately — you
 cannot test what does not exist, and an agent that starts anyway is busy when
 the builder finally publishes. The relay is bounded at six rounds.
 
+Naming agents also says who is not needed: if the message names anybody, only
+the named start work, and the rest are told plainly that it is not their job.
+Asked for one small thing from one agent, two others had started writing their
+own version of it — being shown a colleague's claim helps, but whether a model
+declines should not decide whether the fleet does the work three times.
+
 Each hop carries an instruction in its own terms: fix these defects and
 republish under the same name; try it as a user would and name the line; read
 it as somebody who will maintain it. "Do your part" was not something a model
