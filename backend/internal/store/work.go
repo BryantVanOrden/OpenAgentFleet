@@ -73,7 +73,12 @@ func (s *Store) WorkItem(ctx context.Context, id string) (*protocol.WorkItem, er
 // work by name ("the game loop"), and making them invent and remember ids
 // would mean every collaboration started by asking what the id was. A publish
 // to an existing name in the same workspace updates it and bumps the version.
-func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
+// validateWorkItem checks a publish and settles what kind it really is.
+//
+// Separate from the write so it can be exercised without a database: what
+// counts as an app has changed several times, each time because an agent
+// published something the rules had not anticipated.
+func validateWorkItem(w *protocol.WorkItem) error {
 	w.Name = strings.TrimSpace(w.Name)
 	if w.Name == "" {
 		return fmt.Errorf("a work item needs a name")
@@ -85,9 +90,22 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 		return fmt.Errorf("content is %d bytes; the limit is %d",
 			len(w.Content), MaxWorkContent)
 	}
+	// The label is the least reliable thing about a publish, in both
+	// directions. A tester that had just finished testing an app published its
+	// findings as one, was refused, and never tried again -- so a whole run of
+	// work was lost to a word. The content is the evidence: if it is plainly
+	// not a web page, it is a file, and the note says so rather than the work
+	// disappearing.
 	if w.Kind == protocol.WorkApp {
 		if err := checkAppDocument(w.Content); err != nil {
-			return err
+			if looksLikeMarkup(w.Content) {
+				// Meant as a page and broken as one: that is worth refusing,
+				// because publishing it would put something in the catalog
+				// that cannot run.
+				return err
+			}
+			w.Kind = protocol.WorkFile
+			w.MIME = ""
 		}
 	}
 	// A complete web page is an app, whatever the agent called it.
@@ -100,6 +118,13 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 	if w.Kind == protocol.WorkFile && checkAppDocument(w.Content) == nil {
 		w.Kind = protocol.WorkApp
 		w.MIME = "text/html"
+	}
+	return nil
+}
+
+func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
+	if err := validateWorkItem(w); err != nil {
+		return err
 	}
 
 	now := time.Now().UTC()
@@ -172,7 +197,6 @@ func (s *Store) DeleteWorkItem(ctx context.Context, id string) error {
 	return nil
 }
 
-
 // checkAppDocument rejects an "app" that is not actually a web page.
 //
 // An app is rendered in a web view, so publishing anything else under that
@@ -213,4 +237,21 @@ func checkAppDocument(content string) error {
 		}
 	}
 	return nil
+}
+
+// looksLikeMarkup reports whether content was trying to be a web page.
+//
+// It separates "this is prose and was mislabelled" from "this is a page and it
+// is broken". The first should be filed as what it is; the second is a real
+// mistake worth telling the author about, because a half-built page in the
+// catalog is one nobody can run.
+func looksLikeMarkup(content string) bool {
+	lower := strings.ToLower(content)
+	for _, tag := range []string{"<html", "<!doctype html", "<body", "<canvas",
+		"<script", "<div", "<head"} {
+		if strings.Contains(lower, tag) {
+			return true
+		}
+	}
+	return false
 }

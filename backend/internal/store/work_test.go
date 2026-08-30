@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
 // An "app" is rendered in a web view, so anything that is not a web page
@@ -128,5 +130,34 @@ func TestAWebPageFiledAsAFileBecomesAnApp(t *testing.T) {
 	networked := `<!DOCTYPE html><html><body><script src="https://x.example/a.js"></script></body></html>`
 	if checkAppDocument(networked) == nil {
 		t.Error("a page that loads over the network would be promoted")
+	}
+}
+
+// A tester that had just finished testing an app published its report as an
+// app, was refused, and never tried again: the run's whole output was lost to
+// one wrong word.
+func TestProseLabelledAsAnAppIsFiledAsAFile(t *testing.T) {
+	w := &protocol.WorkItem{
+		Name:    "rollr_test_report",
+		Kind:    protocol.WorkApp,
+		Content: "# Rollr test report\n\nRolling 3d6 shows \"Rolling...\" and never settles.\n",
+	}
+	if err := validateWorkItem(w); err != nil {
+		t.Fatalf("a mislabelled report should be filed, not refused: %v", err)
+	}
+	if w.Kind != protocol.WorkFile {
+		t.Errorf("kind = %q, want file", w.Kind)
+	}
+}
+
+// A page that was meant to be a page and is broken is still worth refusing.
+func TestBrokenPageLabelledAsAnAppIsStillRefused(t *testing.T) {
+	w := &protocol.WorkItem{
+		Name:    "halfbuilt",
+		Kind:    protocol.WorkApp,
+		Content: "<div id=\"app\"><script>start()</script></div>",
+	}
+	if err := validateWorkItem(w); err == nil {
+		t.Error("a broken page should be refused, not quietly filed as a file")
 	}
 }
