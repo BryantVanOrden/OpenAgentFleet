@@ -608,7 +608,10 @@ func (r *relay) forgetOthers(request string) {
 // does not need to ask.
 func briefFor(from, to relayStage, produced string) string {
 	const readFirst = "Start with read_work to see what is actually in the " +
-		"catalog. Work on what is there, not on what you imagine is there."
+		"catalog. Work on what is there, not on what you imagine is there. " +
+		"read_work also puts a runnable copy of anything a browser can show " +
+		"on your desktop and tells you the file:// path -- open that. None of " +
+		"this is on the web, so searching for it finds somebody else's."
 
 	// Name the report, or the catalog fills up with near-duplicates.
 	//

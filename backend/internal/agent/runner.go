@@ -591,14 +591,22 @@ func (r *Runner) execute(
 			// served -- typing http://localhost:8080/rollr.html, searching the
 			// web, and landing on a real company's site that happened to share
 			// the name -- and never once saw the thing it was testing.
+			// The path goes first, before the source.
+			//
+			// It was appended after the document, and a tester that had
+			// already opened a search engine read four thousand bytes of HTML,
+			// reached the sentence telling it where the file was, and carried
+			// on searching the web regardless. What the agent is meant to do
+			// next belongs at the top, where a small model will still be
+			// looking.
 			opened := ""
 			if path, ok := r.materialize(ctx, inst.ID, w); ok {
-				opened = fmt.Sprintf("\n\nA copy is on this desktop at %s — "+
-					"open that in the browser to try it. Do not look for it on "+
-					"the web; it is not published anywhere.", "file://"+path)
+				opened = fmt.Sprintf("A copy is on this desktop at %s — open "+
+					"that in the browser to try it. It is not published on the "+
+					"web, so do not search for it.\n\n", "file://"+path)
 			}
-			return fmt.Sprintf("%s %q by %s (version %d):\n%s%s%s",
-				w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix, opened), terminalNone
+			return fmt.Sprintf("%s%s %q by %s (version %d):\n%s%s",
+				opened, w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix), terminalNone
 		}
 
 		// Say what IS there. "Not found" sends a model guessing at names.
