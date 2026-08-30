@@ -453,9 +453,19 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 	// Testing and reviewing wait for something to exist. Starting them now
 	// produces a test of nothing and, worse, an agent that is busy when the
 	// builder finally publishes -- which is why every handoff was skipped.
+	//
+	// Unless nobody is going to make anything. "ToolCheck open the rollr app
+	// from the catalog and test it" names a tester first and points at work
+	// that already exists, and waiting for a build that was never asked for
+	// meant the request simply never happened. If no one was asked to produce,
+	// the thing to work on is already there.
 	if s.stageForAgent(ctx, inst, msg, plan).waitsForWork() {
-		s.waitForHandoff(ctx, inst, msg)
-		return
+		if s.someoneWillProduce(ctx, msg) {
+			s.waitForHandoff(ctx, inst, msg)
+			return
+		}
+		s.log.Info("starting downstream work; nobody was asked to produce anything",
+			"instance", inst.Name)
 	}
 	// One driver at a time, the same rule the task endpoint enforces: a
 	// broadcast arriving mid-task must not derail what the agent was already
@@ -724,7 +734,6 @@ func (s *Server) stageForAgent(ctx context.Context, inst protocol.Instance, msg 
 	return stageOf(plan)
 }
 
-
 // namedSomeoneElse reports whether the message named agents and this is not
 // one of them.
 //
@@ -745,4 +754,24 @@ func (s *Server) namedSomeoneElse(ctx context.Context, inst protocol.Instance, m
 		}
 	}
 	return anyNamed
+}
+
+// someoneWillProduce reports whether the message asks anybody to make
+// something, as opposed to only testing or reviewing what already exists.
+func (s *Server) someoneWillProduce(ctx context.Context, msg protocol.PeerMessage) bool {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return true // unknown: keep the old, cautious behaviour
+	}
+	for _, inst := range instances {
+		part := assignmentFor(msg.Content, inst.Name, instances)
+		if part == "" {
+			continue
+		}
+		switch stageOf(part) {
+		case stageDesign, stageBuild:
+			return true
+		}
+	}
+	return false
 }
