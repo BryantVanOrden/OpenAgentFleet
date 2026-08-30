@@ -183,8 +183,7 @@ func (b *Bus) DeleteConversation(ctx context.Context, id string) bool {
 		// exist. Hidden rather than removed, because the channel is implicit
 		// and would otherwise be synthesised straight back.
 		b.mu.Lock()
-		other := b.otherEveryoneChannelLocked()
-		if other == "" {
+		if b.otherEveryoneChannelLocked() == "" {
 			b.mu.Unlock()
 			return false
 		}
@@ -200,13 +199,10 @@ func (b *Bus) DeleteConversation(ctx context.Context, id string) bool {
 			hidden.Title, hidden.CreatedAt = prev.Title, prev.CreatedAt
 		}
 		b.conversations[protocol.BroadcastConversationID] = hidden
-		// Its messages move to the channel taking over, rather than being
-		// stranded with a conversation id nothing lists.
-		for i := range b.messages {
-			if b.messages[i].ConversationID == protocol.BroadcastConversationID {
-				b.messages[i].ConversationID = other
-			}
-		}
+		// Its messages go with it. They used to move to the channel taking
+		// over, which meant deleting a chat poured its contents into another
+		// one -- surprising, and not what "delete" says.
+		b.dropMessagesLocked(protocol.BroadcastConversationID)
 		st, log := b.convStore, b.log
 		b.mu.Unlock()
 
@@ -230,11 +226,7 @@ func (b *Bus) DeleteConversation(ctx context.Context, id string) bool {
 	}
 	_, existed := b.conversations[id]
 	delete(b.conversations, id)
-	for i := range b.messages {
-		if b.messages[i].ConversationID == id {
-			b.messages[i].ConversationID = ""
-		}
-	}
+	b.dropMessagesLocked(id)
 	st, log := b.convStore, b.log
 	b.mu.Unlock()
 
@@ -539,7 +531,6 @@ func (b *Bus) updateConversation(ctx context.Context, id string, apply func(*pro
 	return c, true
 }
 
-
 // otherEveryoneChannelLocked returns an everyone-channel other than the
 // built-in one, or "" if there is none. Caller holds the lock.
 //
@@ -581,7 +572,6 @@ func (b *Bus) defaultChannelLocked() string {
 	return protocol.BroadcastConversationID
 }
 
-
 // lastEveryoneChannelLocked reports whether removing id would leave the fleet
 // with no everyone-channel at all. Caller holds the lock.
 func (b *Bus) lastEveryoneChannelLocked(id string) bool {
@@ -601,7 +591,6 @@ func (b *Bus) lastEveryoneChannelLocked(id string) bool {
 	}
 	return true
 }
-
 
 // IsLastEveryoneChannel reports whether deleting this thread would leave the
 // fleet with nowhere for unaddressed messages to land.
@@ -625,4 +614,22 @@ func (b *Bus) IsLastEveryoneChannel(id string) bool {
 		return false
 	}
 	return b.lastEveryoneChannelLocked(id)
+}
+
+// dropMessagesLocked removes every message filed to a thread. Caller holds the
+// lock.
+//
+// They used to be unfiled instead. An unfiled message is not kept, it is
+// moved: it has nowhere to belong, so it reappears in whatever channel takes
+// unaddressed traffic, and deleting a chat quietly merged its contents into a
+// different one.
+func (b *Bus) dropMessagesLocked(conversationID string) {
+	kept := b.messages[:0]
+	for _, m := range b.messages {
+		if m.ConversationID == conversationID {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	b.messages = kept
 }

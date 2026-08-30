@@ -3,6 +3,7 @@ package vault
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
@@ -108,7 +109,14 @@ func TestUnfiledMessagesArePlacedByRecipient(t *testing.T) {
 }
 
 // Deleting a thread must not destroy what was said in it.
-func TestDeleteConversationKeepsMessages(t *testing.T) {
+// Deleting a thread takes its messages with it, and says so only once.
+//
+// This used to assert the opposite -- that the messages were kept -- on the
+// theory that closing a thread should not destroy the record. What actually
+// happened is that they were unfiled, and an unfiled message is not kept, it
+// is moved: it reappears in whatever channel takes unaddressed traffic. So
+// deleting a chat poured its contents into a different one.
+func TestDeleteConversationRemovesItsMessages(t *testing.T) {
 	b := NewBus()
 	ctx := context.Background()
 
@@ -121,8 +129,8 @@ func TestDeleteConversationKeepsMessages(t *testing.T) {
 	if b.DeleteConversation(ctx, c.ID) {
 		t.Error("deleting twice reported success the second time")
 	}
-	if got := len(b.ListMessages(ctx, "", 10)); got != 1 {
-		t.Errorf("message lost with the thread: %d remain", got)
+	if got := len(b.ListMessages(ctx, "", 10)); got != 0 {
+		t.Errorf("%d message(s) outlived the thread they were in", got)
 	}
 }
 
@@ -403,5 +411,79 @@ func TestUnaddressedMessagesFollowTheSurvivingChannel(t *testing.T) {
 	if msg.ConversationID != other.ID {
 		t.Errorf("message filed to %q, want the surviving channel %q",
 			msg.ConversationID, other.ID)
+	}
+}
+
+// Deleting a chat deletes what was said in it.
+//
+// Messages used to be unfiled rather than removed, on the theory that the
+// record should survive the thread. But an unfiled message is not kept, it is
+// moved: it has nowhere to belong, so it surfaces in whatever channel takes
+// unaddressed traffic. Deleting a chat quietly poured its contents into
+// another one, which is how a deleted thread's messages turned up in a
+// different broadcast channel.
+func TestDeletingAChatDeletesItsMessages(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	doomed := b.CreateConversation(ctx, "Scratch", []string{"a", "b"}, "")
+	keep := b.CreateConversation(ctx, "Keep", []string{"a", "c"}, "")
+
+	b.SendMessageIn(ctx, doomed.ID, "a", "Alpha", "b", "message", "in the doomed one", nil)
+	b.SendMessageIn(ctx, doomed.ID, "a", "Alpha", "b", "message", "also doomed", nil)
+	b.SendMessageIn(ctx, keep.ID, "a", "Alpha", "c", "message", "survives", nil)
+
+	if !b.DeleteConversation(ctx, doomed.ID) {
+		t.Fatal("the thread was not deleted")
+	}
+
+	// Nothing from the deleted thread anywhere, under any conversation.
+	for _, m := range b.ListMessages(ctx, "", 100) {
+		if strings.Contains(m.Content, "doomed") {
+			t.Errorf("a deleted thread's message survived in conversation %q: %q",
+				m.ConversationID, m.Content)
+		}
+	}
+
+	// And the thread that was not deleted is untouched.
+	left := b.ListConversationMessages(ctx, keep.ID, 100)
+	if len(left) != 1 || left[0].Content != "survives" {
+		t.Errorf("deleting one thread disturbed another: %+v", left)
+	}
+}
+
+// An answer that arrives after its thread was deleted goes where unaddressed
+// messages go, not into a void.
+//
+// Agents take a minute or two to reply and operators do not wait. Filing the
+// answer to a conversation that no longer exists wrote it somewhere listed
+// nowhere -- found only by reading the database.
+func TestReplyToADeletedThreadLandsSomewhereVisible(t *testing.T) {
+	b := NewBus()
+	ctx := context.Background()
+
+	c := b.CreateConversation(ctx, "short-lived", []string{"a", "b"}, "")
+	if !b.DeleteConversation(ctx, c.ID) {
+		t.Fatal("could not delete the thread")
+	}
+
+	// The agent answers the question it was asked before the thread went.
+	msg := b.SendMessageIn(ctx, c.ID, "a", "Alpha", "b", "reply", "late answer", nil)
+
+	if msg.ConversationID == c.ID {
+		t.Error("the reply was filed to a conversation that no longer exists")
+	}
+	if msg.ConversationID != protocol.BroadcastConversationID {
+		t.Errorf("reply landed in %q, want the default channel", msg.ConversationID)
+	}
+	// And it is actually readable there.
+	found := false
+	for _, m := range b.ListConversationMessages(ctx, protocol.BroadcastConversationID, 50) {
+		if m.Content == "late answer" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the late reply is not visible in the channel it was filed to")
 	}
 }

@@ -239,6 +239,17 @@ func (b *Bus) SendMessageAs(ctx context.Context, conversationID, fromID, fromNam
 
 func (b *Bus) sendFrom(ctx context.Context, conversationID, fromID, fromName, fromUserID, toID, kind, content string, data map[string]any) protocol.PeerMessage {
 	b.mu.Lock()
+	// A thread can be deleted between an agent being asked something and its
+	// answer arriving -- an agent takes a minute or two to reply, and the
+	// operator does not wait. Filing the answer to a conversation that no
+	// longer exists writes it into a void: it belongs to nothing, is listed
+	// nowhere, and is only found by reading the database. Send it where an
+	// unaddressed message goes instead.
+	if conversationID != "" && conversationID != protocol.BroadcastConversationID {
+		if _, ok := b.conversations[conversationID]; !ok {
+			conversationID = b.defaultChannelLocked()
+		}
+	}
 	b.seq++
 	msg := protocol.PeerMessage{
 		ID:               fmt.Sprintf("peer-msg-%d-%d", time.Now().UnixNano(), b.seq),

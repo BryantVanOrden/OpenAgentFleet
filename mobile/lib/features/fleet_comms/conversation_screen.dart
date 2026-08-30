@@ -257,9 +257,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       builder: (d) => AlertDialog(
         title: Text('Delete $name?'),
         content: const Text(
-          'The thread is removed from your comms list. What was said in it is '
-          'kept on the server — closing a thread should not destroy the record '
-          'of what your agents agreed.',
+          'The thread and everything said in it are removed. This cannot be '
+          'undone.',
         ),
         actions: [
           TextButton(

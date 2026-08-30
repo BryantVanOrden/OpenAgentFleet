@@ -57,7 +57,9 @@ class MessageTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Text(message.content,
+            // Selectable: quoting what an agent said, into a task or a bug
+            // report, is a normal thing to want and there was no way to do it.
+            SelectableText(message.content,
                 style: const TextStyle(fontSize: 13, height: 1.35)),
           ],
         ),
@@ -116,7 +118,7 @@ class MessageTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 5),
-                  Text(message.content,
+                  SelectableText(message.content,
                       style: const TextStyle(fontSize: 13, height: 1.35)),
                 ],
               ),

@@ -536,7 +536,10 @@ class _BubbleState extends ConsumerState<_Bubble> {
                     ),
                     const SizedBox(height: 6),
                   ],
-                  Text(message.body,
+                  // Selectable: quoting what an agent said, into a task or a
+                  // bug report, is a normal thing to want and there was no way
+                  // to do it.
+                  SelectableText(message.body,
                       style: const TextStyle(fontSize: 14, height: 1.35)),
                   // Only an unanswered plan offers the buttons; once approved
                   // or discarded it is history, and re-approving would start

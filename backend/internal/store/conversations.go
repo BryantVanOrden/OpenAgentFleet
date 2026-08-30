@@ -87,13 +87,30 @@ func (s *Store) ListConversations(ctx context.Context) ([]protocol.Conversation,
 // tidies the comms screen, and silently destroying the record of what agents
 // said to each other is not something a tidy-up should do. They become
 // unassigned and stop being listed.
+// DeleteConversation removes a thread and everything said in it.
+//
+// The messages used to be unfiled rather than deleted, on the theory that
+// closing a thread should not destroy the record of what the agents agreed.
+// In practice an unfiled message is not kept, it is moved: it has nowhere to
+// belong, so it surfaces in whatever channel takes unaddressed traffic, and
+// deleting a chat quietly poured its contents into another one. Deleting a
+// conversation now deletes its messages, which is what the word means and what
+// the confirmation says.
 func (s *Store) DeleteConversation(ctx context.Context, id string) error {
-	if _, err := s.pool.Exec(ctx,
-		`UPDATE peer_messages SET conversation_id=NULL WHERE conversation_id=$1`, id); err != nil {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
 		return norm(err)
 	}
-	_, err := s.pool.Exec(ctx, `DELETE FROM conversations WHERE id=$1`, id)
-	return norm(err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM peer_messages WHERE conversation_id=$1`, id); err != nil {
+		return norm(err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM conversations WHERE id=$1`, id); err != nil {
+		return norm(err)
+	}
+	return norm(tx.Commit(ctx))
 }
 
 // CompactConversation marks every message in a thread up to and including
