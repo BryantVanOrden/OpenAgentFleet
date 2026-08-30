@@ -105,6 +105,33 @@ twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
 
+Firefox no longer opens on its first-run onboarding modal. An agent sent to
+test a web page found a "Welcome to Firefox" dialog over it, clicked Continue,
+got a nearly identical onboarding panel, and was judged to be clicking into the
+void — two test runs died without ever reaching the page they were sent to.
+
+A sandbox whose container has been removed is rebuilt on start instead of
+failing. The instance kept pointing at a container id that no longer existed,
+so every start returned a 404 with a docker hash in it and the agent was
+bricked with no way back from the UI, by something as routine as `docker
+prune`.
+
+Who starts work is decided by mention order. A tester named first — "ToolCheck
+open the app from the catalog and test it, Builder fix what ToolCheck reports"
+— used to register as waiting to be handed a build nobody had asked for, and
+the request never happened. Whoever is named first starts; everyone named after
+them waits to be handed it.
+
+The test and review hops name the file they publish. Told only to "publish your
+findings as a file", each round invented a fresh name, so one app collected
+five defect reports and none of them was obviously the current one.
+
+A job is no longer called dead while the agent asked to do it is busy. The
+notice fired at 14:37 saying a builder would not come back to a request, and
+that builder started it at 14:42: a busy agent's reply is queued behind its
+model call, not dropped, so following the advice would have built the thing
+twice.
+
 Model capabilities come from Ollama rather than from the model's name. Vision
 support was decided by looking for "vl", "vision" or "llava" in the name, and
 the default model in `.env.example` reports vision but was offered as
