@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -250,6 +251,22 @@ func (b *Bus) sendFrom(ctx context.Context, conversationID, fromID, fromName, fr
 			conversationID = b.defaultChannelLocked()
 		}
 	}
+	// Drop a message an agent has just sent verbatim.
+	//
+	// Two agents deadlocked in fleet comms sent the same sentence three times
+	// in forty seconds -- Builder asking Researcher for a design Researcher
+	// was never going to produce. A model with nothing new to say repeats
+	// itself, and every repeat is another message that provokes another
+	// reply. Nothing was gained by the second one.
+	if fromID != "" {
+		if prior, dup := b.recentlySaidLocked(fromID, conversationID, content); dup {
+			// The one already there, not an empty message: a caller that
+			// shows what was sent should show the message that exists.
+			b.mu.Unlock()
+			return prior
+		}
+	}
+
 	b.seq++
 	msg := protocol.PeerMessage{
 		ID:               fmt.Sprintf("peer-msg-%d-%d", time.Now().UnixNano(), b.seq),
@@ -322,4 +339,33 @@ func (b *Bus) ListMessages(ctx context.Context, instanceID string, limit int) []
 		}
 	}
 	return out
+}
+
+// repeatWindow is how long a message counts as a repeat of itself.
+//
+// Long enough to catch a model going round in circles, short enough that an
+// agent legitimately saying "done" twice an hour apart is not silenced.
+const repeatWindow = 10 * time.Minute
+
+// recentlySaidLocked reports whether this agent has just sent this exact text
+// in this thread. Caller holds the lock.
+func (b *Bus) recentlySaidLocked(fromID, conversationID, content string) (protocol.PeerMessage, bool) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return protocol.PeerMessage{}, false
+	}
+	cutoff := time.Now().Add(-repeatWindow)
+	for i := len(b.messages) - 1; i >= 0; i-- {
+		m := b.messages[i]
+		if m.CreatedAt.Before(cutoff) {
+			// Messages are in order, so nothing older can match.
+			return protocol.PeerMessage{}, false
+		}
+		if m.FromInstanceID == fromID &&
+			m.ConversationID == conversationID &&
+			strings.TrimSpace(m.Content) == trimmed {
+			return m, true
+		}
+	}
+	return protocol.PeerMessage{}, false
 }
