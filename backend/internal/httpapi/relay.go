@@ -718,8 +718,12 @@ func (r *relay) stalledJobs(olderThan time.Duration) []*collaboration {
 // watchForStalledJobs tells the operator when a job cannot start.
 func (s *Server) watchForStalledJobs(ctx context.Context) {
 	const (
-		every   = time.Minute
-		patient = 3 * time.Minute
+		every = time.Minute
+		// How long a job may sit with everybody waiting before it is called
+		// stuck. This is mostly a bet on how long a busy fleet takes to
+		// answer: an agent that was mid-task when the request arrived replies
+		// when its model call comes back, which under load is minutes.
+		patient = 6 * time.Minute
 	)
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -742,18 +746,25 @@ func (s *Server) watchForStalledJobs(ctx context.Context) {
 				// name a builder, names the same one again, and gets the same
 				// notice. A busy agent does not come back to a broadcast it
 				// was busy for, so this has to say so.
+				// Somebody was asked and is still working: say nothing.
+				//
+				// This used to announce that the job was dead and advise
+				// sending it again. Then the timeline showed the truth --
+				// notice at 14:37, the same Builder starting that exact
+				// request at 14:42, handing off a minute later. A busy agent's
+				// reply is queued behind its model call, not dropped, so the
+				// job was never stuck and following the advice would have
+				// built the thing twice.
+				if busy := s.namedButBusy(ctx, job); len(busy) > 0 {
+					s.log.Info("job has not started yet; a named producer is busy",
+						"request", clipLine(job.Request, 60),
+						"busy", strings.Join(busy, ","))
+					continue
+				}
 				msg := "Nothing is going to reach " + waiting +
 					": they are waiting to be handed work, and nobody was asked " +
 					"to make anything. Name an agent to build or design it and " +
 					"they will pick it up."
-				if busy := s.namedButBusy(ctx, job); len(busy) > 0 {
-					msg = "Nothing is going to reach " + waiting + ": " +
-						strings.Join(busy, " and ") +
-						" was asked to make it but was already mid-task when this " +
-						"arrived, and an agent does not come back to a request it " +
-						"was busy for. Send it again now that they are free, or " +
-						"name someone else."
-				}
 				vault.GlobalBus.SendMessageIn(ctx, job.Thread, "", "Fleet",
 					"broadcast", peerReplyKind, msg, nil)
 				s.log.Info("job cannot start",
