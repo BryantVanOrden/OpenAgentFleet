@@ -56,6 +56,14 @@ func (s *Server) RunPeerResponder(ctx context.Context) {
 			if err != nil {
 				continue
 			}
+			// Whoever the message names answers first, in the order named.
+			// Replies are generated one at a time, so the order is also the
+			// order parts get claimed -- which is what lets a later agent see
+			// what an earlier one already took. The pending message is the
+			// same for everyone, so any unanswered one gives the ordering.
+			if pending, ok := s.anyPending(ctx, instances); ok {
+				instances = orderByMention(pending.Content, instances)
+			}
 			for i := range instances {
 				inst := instances[i]
 				if inst.State != protocol.InstanceRunning {
@@ -172,6 +180,18 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	// paraphrase of the question.
 	status := s.recentActivity(ctx, inst)
 
+	// What colleagues have already claimed, and who else is in the fleet.
+	//
+	// Without this every agent answers in isolation: told to work together on
+	// something, four of them each replied "I will take the lead on building
+	// it" within eighty seconds and four identical whole-game builds started.
+	// The instruction not to duplicate a colleague was useless because nobody
+	// could see a colleague. They reply over a minute or so, so a later one
+	// can genuinely read what an earlier one took -- it just had to be put in
+	// front of it.
+	claimed := s.claimsSoFar(ctx, inst, msg)
+	roster := s.fleetRoster(ctx, inst)
+
 	// Two different things get said in fleet comms, and answering both as a
 	// status update was wrong.
 	//
@@ -192,14 +212,24 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 			System: "You are the agent \"" + inst.Name + "\" in a fleet of autonomous " +
 				"desktop agents, reporting to your operator. " + scope +
 				" was messaged.\n\n" + status + "\n\n" +
+				roster + claimed +
 				"Decide first what you were sent.\n\n" +
 				"If it ASKS YOU TO DO SOMETHING -- build, make, write, fix, find " +
 				"out, work together on something -- reply starting with the single " +
 				"word PLAN: followed by the specific part YOU will take on, in one " +
-				"or two sentences. Pick a part that suits you and does not duplicate " +
-				"what an obvious colleague would take; say what you will actually " +
-				"produce. Do not ask for permission and do not ask which part to " +
-				"take -- decide.\n\n" +
+				"or two sentences. Say what you will actually produce. Do not ask " +
+				"for permission and do not ask which part to take -- decide.\n\n" +
+				"Answer as yourself, " + inst.Name + ", in the first person. Do not " +
+				"say you will take another agent's role or act as them -- they are " +
+				"answering for themselves.\n\n" +
+				"Dividing the work is the point. If a colleague above has already " +
+				"claimed a part, you may NOT take that part or restate it in other " +
+				"words -- pick something the work still needs and nobody has. If " +
+				"someone is already writing the thing itself, take the design, the " +
+				"assets, the test pass, the review, or a component they will need " +
+				"and can drop in. Only one agent writes the main artefact. If every " +
+				"obvious part is taken, say what you will do to support whoever has " +
+				"the hardest one, and be specific about it.\n\n" +
 				"Otherwise it is a QUESTION about you or your machine. Reply in one " +
 				"or two short sentences, in the first person, as a status update. " +
 				"Ground every claim in the history above: if it says you have run " +
@@ -277,14 +307,65 @@ const planMarker = "PLAN:"
 // sentence would turn "I have no plans today" into a task.
 func planFrom(body string) (string, bool) {
 	trimmed := strings.TrimSpace(body)
-	if !strings.HasPrefix(strings.ToUpper(trimmed), planMarker) {
+	if trimmed == "" {
 		return "", false
 	}
-	plan := strings.TrimSpace(trimmed[len(planMarker):])
-	if plan == "" {
-		return "", false
+
+	if strings.HasPrefix(strings.ToUpper(trimmed), planMarker) {
+		plan := strings.TrimSpace(trimmed[len(planMarker):])
+		if plan == "" {
+			return "", false
+		}
+		return plan, true
 	}
-	return plan, true
+
+	// A commitment without the marker still counts.
+	//
+	// Asked to divide up a job, two agents replied "I accept the task of
+	// writing the game itself" and "I will take the design phase" -- plainly
+	// taking a part, and neither started work, because neither had opened with
+	// the word the parser wanted. The marker is what the prompt asks for; this
+	// is what the models actually do about half the time, and refusing to read
+	// it made the two most important parts of a job silently not happen.
+	if commitsToWork(trimmed) {
+		return trimmed, true
+	}
+	return "", false
+}
+
+// commitsToWork reports whether a reply is an agent taking something on rather
+// than reporting its state.
+//
+// Deliberately narrow. The failure that matters is the other direction: a
+// status update read as a commitment starts a task nobody asked for, on an
+// agent that just said it was idle.
+func commitsToWork(body string) bool {
+	// The first sentence carries the commitment; the rest is elaboration.
+	first := body
+	if i := strings.IndexAny(first, ".\n"); i > 0 {
+		first = first[:i]
+	}
+	lower := strings.ToLower(strings.TrimSpace(first))
+
+	// A status report often opens in the first person too, so the words that
+	// mean "nothing is happening" veto the whole thing.
+	for _, idle := range []string{"idle", "available", "no tasks", "nothing to report",
+		"awaiting", "standing by", "ready to receive", "ready for"} {
+		if strings.Contains(lower, idle) {
+			return false
+		}
+	}
+
+	for _, opener := range []string{
+		"i will ", "i'll ", "i am taking ", "i'm taking ",
+		"i accept ", "i have taken ", "i will take", "i shall ",
+		"my part ", "i can take ", "i'm going to ", "i am going to ",
+	} {
+		if strings.HasPrefix(lower, opener) {
+			return true
+		}
+	}
+	return false
 }
 
 // startFromPlan turns an agent's stated part into a task it actually runs.
@@ -416,4 +497,82 @@ func trunc(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// claimsSoFar lists the parts colleagues have already taken on this request.
+//
+// The reason four agents all built the same game: each was asked in isolation,
+// so "do not duplicate a colleague" was advice about people it could not see.
+// Replies land over a minute or so, so whoever answers later can read what was
+// already claimed — provided somebody shows them.
+func (s *Server) claimsSoFar(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) string {
+	conv := msg.ConversationID
+	if conv == "" {
+		conv = vault.GlobalBus.DefaultChannel()
+	}
+
+	var claims []string
+	for _, m := range vault.GlobalBus.ListConversationMessages(ctx, conv, 40) {
+		// Only replies to this request, and only from someone else.
+		if !m.CreatedAt.After(msg.CreatedAt) || m.FromInstanceID == inst.ID {
+			continue
+		}
+		plan, ok := planFrom(m.Content)
+		if !ok {
+			continue
+		}
+		claims = append(claims, "- "+m.FromInstanceName+" has taken: "+clipLine(plan, 240))
+	}
+	if len(claims) == 0 {
+		return "\nNobody has claimed a part yet. You are first to answer, so take " +
+			"the part that most needs doing.\n\n"
+	}
+	return "\nAlready claimed by your colleagues — do not take any of these:\n" +
+		strings.Join(claims, "\n") + "\n\n"
+}
+
+// fleetRoster names the other agents and what each is for, so a part can be
+// left to whoever it suits rather than taken by whoever answers first.
+func (s *Server) fleetRoster(ctx context.Context, inst protocol.Instance) string {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil || len(instances) < 2 {
+		return ""
+	}
+	var lines []string
+	for _, other := range instances {
+		if other.ID == inst.ID || other.State != protocol.InstanceRunning {
+			continue
+		}
+		role := other.ArchetypeID
+		if t := protocol.BotTemplateByID(other.ArchetypeID); t != nil {
+			role = t.Name
+		}
+		if role == "" {
+			role = "general purpose"
+		}
+		lines = append(lines, "- "+other.Name+" ("+role+")")
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\nOther agents are working on this alongside you. They will answer " +
+		"for themselves -- you are not any of them, and must never reply as " +
+		"though you were:\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// anyPending returns an unanswered message for any agent, to decide the order
+// they answer in.
+//
+// The ordering has to be settled before the first reply is generated, and the
+// message is the same for all of them, so the first one found will do.
+func (s *Server) anyPending(ctx context.Context, instances []protocol.Instance) (protocol.PeerMessage, bool) {
+	for _, in := range instances {
+		if in.State != protocol.InstanceRunning {
+			continue
+		}
+		if msg, ok := s.nextUnanswered(ctx, in.ID, time.Time{}); ok {
+			return msg, true
+		}
+	}
+	return protocol.PeerMessage{}, false
 }

@@ -42,3 +42,40 @@ func TestPlanFrom(t *testing.T) {
 		})
 	}
 }
+
+
+// A commitment counts even without the marker, and a status update never does.
+//
+// Every string here was produced by a real agent in fleet comms. Two of the
+// commitments -- Builder taking the game and Researcher taking the design --
+// started no work, because neither opened with the word the parser wanted, and
+// the two most important parts of the job silently did not happen.
+func TestPlanFromReadsRealAgentReplies(t *testing.T) {
+	commitments := []string{
+		"I accept the task of writing the game itself. I will produce a complete, self-contained HTML/JS file.",
+		"I will take the design phase for the game, defining the core mechanics.",
+		"PLAN: I will take the testing role by creating a test script.",
+		"I'll handle the art and the sprite sheet.",
+		"I am taking the review pass once Builder is done.",
+	}
+	for _, c := range commitments {
+		if _, ok := planFrom(c); !ok {
+			t.Errorf("commitment not recognised, so no work would start:\n  %s", c)
+		}
+	}
+
+	statuses := []string{
+		"I am currently idle and available, as my previous attempts were cancelled.",
+		"I have been idle since my last message, so I am currently available.",
+		"I am currently idle and available on the XFCE desktop with nothing running.",
+		"I will be available once my current task finishes.",
+		"I am ready to receive instructions.",
+		"Standing by for the next task.",
+		"I have no plans today.",
+	}
+	for _, st := range statuses {
+		if plan, ok := planFrom(st); ok {
+			t.Errorf("a status update started work:\n  %s\n  parsed as: %s", st, plan)
+		}
+	}
+}
