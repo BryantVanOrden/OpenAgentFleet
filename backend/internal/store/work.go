@@ -85,6 +85,11 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 		return fmt.Errorf("content is %d bytes; the limit is %d",
 			len(w.Content), MaxWorkContent)
 	}
+	if w.Kind == protocol.WorkApp {
+		if err := checkAppDocument(w.Content); err != nil {
+			return err
+		}
+	}
 
 	now := time.Now().UTC()
 
@@ -132,6 +137,42 @@ func (s *Store) DeleteWorkItem(ctx context.Context, id string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+
+// checkAppDocument rejects an "app" that is not actually a web page.
+//
+// An app is rendered in a web view, so publishing anything else under that
+// kind produces a Play button that shows a wall of source code. A bot did
+// exactly that -- it published a Python file as an app -- and nothing stopped
+// it. The error says what is missing rather than just refusing, because the
+// reader is a model that can fix it and try again.
+func checkAppDocument(content string) error {
+	lower := strings.ToLower(content)
+	var missing []string
+	if !strings.Contains(lower, "<html") && !strings.Contains(lower, "<!doctype html") {
+		missing = append(missing, "an <html> element or <!DOCTYPE html>")
+	}
+	if !strings.Contains(lower, "<body") && !strings.Contains(lower, "<canvas") {
+		missing = append(missing, "a <body> or <canvas>")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"an app must be one self-contained HTML document, and this is missing %s. "+
+				"Publish source code as work_kind \"file\" instead",
+			strings.Join(missing, " and "))
+	}
+	// Self-contained is the whole containment story: the web view has no
+	// network, so an external reference is not a style choice, it is a
+	// resource that will never arrive.
+	for _, ref := range []string{"src=\"http", "src='http", "href=\"http", "href='http"} {
+		if strings.Contains(lower, ref) {
+			return fmt.Errorf(
+				"an app must be self-contained, and this loads something over the network. " +
+					"The web view has no network, so it would never arrive -- inline it")
+		}
 	}
 	return nil
 }
