@@ -49,7 +49,7 @@ in the client would not survive an edited URL.
 | `POST /observe`  | WebP frame, active window, flattened AT-SPI tree, difference hash |
 | `POST /act`      | Execute one action from the shared vocabulary (`click`, `type`, `python`, `shell`, `snapshot`, …). Note `spawn_agent` is **not** among them — it is handled entirely orchestrator-side and never reaches agentd |
 | `POST /record/*` | Start and stop a demonstration capture                        |
-| `POST /keyring`  | Inject a run-scoped credential onto tmpfs                     |
+| `POST /keyring`  | Inject a run-scoped credential into `/var/run/agentfleet/keyring` (mode 0700). Not tmpfs: only `/tmp` is mounted as tmpfs, so a credential written here is on the container's writable layer. See SECURITY.md, "Credentials" |
 | `DELETE /keyring`| Drop it again                                                 |
 | `GET /voice/voices`, `POST /voice/speak` | The TTS surface           |
 
@@ -130,4 +130,9 @@ Migrations are embedded in the binary and applied automatically on boot in filen
 Two Docker networks:
 * `control`: Holds database, orchestrator API, and admin console.
 * `agentfleet_sandbox`: Holds the sandboxes; the orchestrator joins both to proxy the desktop and speak to `agentd`.
-* Sandbox containers have no published host ports and use `nftables` to enforce egress filtering (blocking RFC1918 private networks by default).
+* Sandbox containers have no published host ports. Egress filtering with
+  `nftables` is available but **off unless the instance carries a policy** —
+  an allow list, a deny list, or `block_local`. A bot provisioned without one
+  can reach whatever its network can reach, including RFC1918 addresses. This
+  used to read "blocking RFC1918 private networks by default", which was the
+  reassuring direction to be wrong in; SECURITY.md has always said otherwise.

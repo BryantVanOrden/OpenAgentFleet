@@ -111,7 +111,7 @@ per-bot setting.
 
 ## [1.1.0] — 2026-08-29
 
-Sixty commits since v1.0.0. The theme is that v1.0.0 was built for one operator
+Eighty-two commits since v1.0.0. The theme is that v1.0.0 was built for one operator
 and one bot at a time, and this release is about several of each: departments
 with their own people and machines, several models with different jobs, several
 conversations with the same agent, and pipelines that put several bots in a row.

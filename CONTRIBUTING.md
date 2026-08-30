@@ -46,7 +46,8 @@ cd ../../admin && npm run build
 cd ../mobile && flutter analyze && flutter test
 ```
 
-`make test` runs all of these together, but it needs Go, Python, Node and Flutter
+`make test` runs all of these together (it used to run `flutter analyze` and
+skip `flutter test` entirely, so nine mobile test files never ran in CI), but it needs Go, Python, Node and Flutter
 all present; running them individually is easier to debug when one is missing.
 
 Some backend store tests need a reachable Postgres and skip themselves without

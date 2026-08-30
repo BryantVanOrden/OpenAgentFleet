@@ -14,7 +14,9 @@ This guide covers setting up the development environment, running components loc
 * **Python** (3.10+)
 * **Flutter** 3.24+ *(optional, for the mobile app)* — `mobile/pubspec.yaml`
   requires Dart `>=3.5.0`, which means Flutter 3.24 or newer.
-* **Ollama** *(optional, for local vision model testing with `qwen2.5vl:7b`)*
+* **Ollama** *(optional, for local vision model testing with `qwen3.5:4b`)* —
+  note it reports coordinates on a 0-1000 scale where `qwen2.5vl` reports
+  pixels; `AGENT_COORD_SPACE=auto` covers both.
 
 There is no `.tool-versions`, `mise.toml` or `.nvmrc` in the repository, so
 nothing pins these for you.

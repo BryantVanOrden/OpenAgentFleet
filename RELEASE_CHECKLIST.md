@@ -50,36 +50,37 @@ To build the Linux desktop bundle, the Windows `.exe` and the Android APK:
    `RUN_HEAVY_BUILDS`.) Alternatively, run the workflow manually from the Actions
    tab with **Force heavy cross-platform builds** ticked, which sets the same
    condition for one run without leaving it on for every push.
-2. Push to `master`, or dispatch the workflow manually.
+2. **Push the tag.** `git tag -a v1.2.0 -m "AgentFleet v1.2.0" && git push
+   origin v1.2.0`. The workflow triggers on `tags: [ 'v*' ]`, takes the version
+   from the tag it was built for, and creates the release.
 
-Three things about this workflow are not what you would expect, and all three
-will bite on a second release:
+Two things about this workflow are still worth knowing:
 
-- **Pushing a tag does nothing.** `.github/workflows/ci.yml` triggers on push to
-  `master`/`main`, on pull requests, and on manual dispatch. It has no `tags:`
-  filter, so `git push origin v1.1.0` runs no workflow at all.
-- **The publish job hardcodes `TAG="v1.0.0"`.** The `publish-release` job creates
-  or uploads to the `v1.0.0` release, whatever version you are actually shipping.
-  Until that is parameterised, assets for any later version will land on the
-  v1.0.0 release. Either edit the job before running it, or download the
-  artefacts from the workflow run and attach them to the right release by hand.
+- **Only a tag build publishes.** A push to `master` runs the tests and then
+  exits the publish job with "not a tag build; nothing to release". This is
+  deliberate — it is what stops every merge re-uploading assets — but it means
+  a manual dispatch on a branch will not cut a release however long you wait.
 - **The heavy builds run on every push to `master` once the variable is set.**
   `RUN_HEAVY_BUILDS=yes` is not scoped to releases. Turning it off again after a
   release is part of the job.
 
-Release notes are written by hand into `docs/RELEASE_NOTES_<version>.md` and
-`CHANGELOG.md`; the workflow's `--generate-notes` produces a commit list, not
-those.
+Release notes are written by hand into `docs/RELEASE_NOTES_<version>.md`, and
+the workflow prefers that file when it exists; it falls back to
+`--generate-notes`, which produces a commit list rather than prose.
+
+> Earlier versions of this checklist said a tag triggered nothing and that the
+> publish job hardcoded `v1.0.0`. Both were true and both are fixed; following
+> the old workaround now would attach the wrong assets to the wrong release.
 
 ---
 
 ### 5. Publish container images to GHCR
 ```bash
 # Build sandbox image
-docker build -t ghcr.io/bryantvanorden/agentfleet-sandbox:latest -f sandbox/Dockerfile .
+docker build -t ghcr.io/bryantvanorden/agentfleet-sandbox:latest ./sandbox
 
 # Build orchestrator image
-docker build -t ghcr.io/bryantvanorden/agentfleet-backend:latest -f backend/Dockerfile .
+docker build -t ghcr.io/bryantvanorden/agentfleet-backend:latest ./backend
 
 # Push images
 docker push ghcr.io/bryantvanorden/agentfleet-sandbox:latest

@@ -1,6 +1,6 @@
 # AgentFleet v1.1.0
 
-Sixty commits since v1.0.0.
+Eighty-two commits since v1.0.0.
 
 v1.0.0 was built around one operator and one bot at a time. This release is about
 several of each: departments with their own people and machines, several models
@@ -260,11 +260,19 @@ is in `securityOpts` in `backend/internal/fleet/tiers.go` and in
 
 ## Upgrading
 
-- **Database migrations run automatically at boot.** Fifteen migrations
-  (`0008`–`0022`) arrive with this release, adding nine tables — `orgs`,
+- **Database migrations run automatically at boot.** Twenty migrations
+  (`0008`–`0027`) arrive with this release, adding twelve tables — `orgs`,
   `org_members`, `bot_grants`, `model_combos`, `model_combo_roles`,
-  `chat_sessions`, `conversations`, `conversation_members` and `pipelines` — plus
-  columns on several existing ones. Take a backup first, as always.
+  `chat_sessions`, `conversations`, `conversation_members`, `pipelines`,
+  `instance_orgs`, `work_items` and `api_keys` — plus columns on several
+  existing ones.
+
+  **One is destructive.** `0025` copies `instances.org_id` into the new
+  `instance_orgs` table and then runs `ALTER TABLE instances DROP COLUMN
+  IF EXISTS org_id`, because a bot can now belong to several departments and
+  two records of the same fact drift apart. The copy happens first and in the
+  same migration, so no assignment is lost — but a dropped column does not come
+  back. Take a backup first, and mean it this time.
 - **Rebuild your images.** The backend Dockerfile moved to Go 1.25 and the
   sandbox image changed. If your deploy has been silently reusing a stale image —
   see the note above — you would not have the security fix.

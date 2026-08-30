@@ -98,7 +98,7 @@ test: ## Run every test suite across Go, Python agentd, Python SDK, React Admin,
 	cd sandbox/agentd && python -m unittest discover -p "test_*.py"
 	cd sdk/python && python -m unittest discover -s tests -p "test_*.py"
 	cd admin && npm run build
-	cd mobile && flutter analyze
+	cd mobile && flutter analyze && flutter test
 
 .PHONY: fmt
 fmt: ## Format Go and Dart sources
