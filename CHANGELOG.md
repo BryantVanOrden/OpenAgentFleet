@@ -92,6 +92,13 @@ reviewing wait to be handed something rather than starting immediately — you
 cannot test what does not exist, and an agent that starts anyway is busy when
 the builder finally publishes. The relay is bounded at six rounds.
 
+Work one agent hands another does not wait for a person. It arrives with
+instructions from a colleague, nobody is standing by to answer, and each wait
+holds up everyone downstream — one run spent three eight-minute waits inside
+twenty minutes and reached two hops. Afterwards the same pipeline ran three
+hops in under ten. An operator's own task still waits the full eight minutes,
+because that is the case where somebody might actually reply.
+
 Naming agents also says who is not needed: if the message names anybody, only
 the named start work, and the rest are told plainly that it is not their job.
 Asked for one small thing from one agent, two others had started writing their
