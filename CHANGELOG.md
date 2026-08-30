@@ -105,6 +105,23 @@ twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
 
+An app in the catalog can no longer be replaced by something that is not one.
+A tester published its report under the app's own name; the report was filed as
+a file, took the app's place, and the working app was gone. Publishing over a
+name is how a fix reaches the thing it fixes, so the name is not the problem —
+changing what the thing is, is.
+
+A mislabelled publish is filed rather than refused. A tester that had just
+finished testing an app published its findings as one, was refused with a clear
+explanation, did not act on it, and a run's entire output was lost to a wrong
+word. Content that is plainly not a web page is now filed as a file. Something
+that was trying to be a page and failed is still refused.
+
+Every agent is told the same thing about reaching shared work. The handoff
+brief explained that `read_work` opens what it finds; a task started directly
+from a broadcast did not, so an agent went looking for the app in the desktop's
+application launcher while it sat open in a browser window behind.
+
 Clicks no longer fail with "mousemove failed: timed out after 15s". `xdotool
 mousemove --sync` waits for a motion event, and moving the pointer somewhere it
 already is produces none, so it blocked for the full timeout — clicking the
