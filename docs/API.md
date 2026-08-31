@@ -414,7 +414,15 @@ is not a second copy nobody notices.
 | `GET` | `/api/work` | any | The catalog, filtered to what you may see. |
 | `GET` | `/api/work/{id}` | any | One item. 404 if you may not see it. |
 | `POST` | `/api/work` | operator | Publish or replace an item. |
+| `PATCH` | `/api/work/{id}` | operator | Rename an item, move it between folders, or both. |
 | `DELETE` | `/api/work/{id}` | operator | Remove one. A workspace takes its contents. |
+
+`POST` addresses an item by name and folder, which is what publishing means: an
+agent that publishes `rollr` twice has edited it. That makes `POST` the wrong
+tool for renaming — the old name would be left behind — and for moving, which
+would copy rather than move. `PATCH` addresses the row itself. A `parent_id` of
+`""` means the top level, and omitting `parent_id` leaves the item where it is,
+so a rename does not drag it out of its folder.
 
 Publishing is also what moves a shared job along: when an agent working on a
 fleet request publishes, whoever has the next part is woken and handed it. See

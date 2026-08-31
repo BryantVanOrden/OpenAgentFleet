@@ -71,7 +71,14 @@
   one self-contained HTML document each — that the phone renders and runs from
   a tab in Vault. They reach it with `publish_work` and `read_work`, keyed by
   name, so improving a colleague's work is an edit that bumps its version
-  rather than a second copy nobody notices.
+  rather than a second copy nobody notices. `read_work` also opens what it
+  finds on the agent's own desktop, so a bot asked to test an app can run it
+  rather than only read its source.
+- **A file browser over the catalog.** The Vault tab walks folders with a
+  breadcrumb, and you can create, rename, move, edit and delete anything in it.
+  The editor colours HTML, CSS, JavaScript, JSON, Dart, Go, Python, shell, SQL,
+  YAML and Markdown. Runnable items keep their tap for "play" and put the rest
+  behind a long press, because a game is still a file.
 - **Per-bot personality and voice.** Each bot carries its own personality,
   prefilled at creation from the personality its archetype ships with and
   editable at any time; it is read when a prompt is built, so a change lands on

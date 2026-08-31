@@ -397,6 +397,24 @@ consume CPU and it can draw anything it likes. Treat an app the way you would
 treat a script a colleague sent you — the catalog says which bot published it
 and at which version, which is there so that question has an answer.
 
+## What a model provider sees
+
+Every screenshot an agent takes goes to whichever provider serves the vision
+role, and that provider may be a hosted API. This has always been true of the
+agent loop — a step is a picture of the desktop and a question about it — and
+two things added since make it worth stating plainly:
+
+- **`read_work` puts catalog content on the agent's desktop**, so a colleague's
+  published file can appear in the next screenshot.
+- **Demonstration recording captures frames**, and the compiler sends them to
+  the vision model to name the control that was clicked. A recording made on a
+  desktop with a password manager or a customer's data open sends those pixels
+  to the configured provider.
+
+Point the vision role at a local model if that matters. Ollama is the default
+for exactly this reason, and the role can be pinned independently of the models
+used for other roles — see **Engines are administration, not use** above.
+
 ## Known gaps
 
 Open, known, and listed here rather than discovered later. Each is a real

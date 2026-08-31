@@ -15,7 +15,11 @@ this one.
 ## What has changed since
 
 Verified against the tree at v1.1.0. Findings not listed here were not re-checked
-and should be assumed to still stand.
+and should be assumed to still stand. **The v1.2.0 additions — the work
+catalog and its file browser, the relay, demonstration frames sent to the
+vision model, and the orchestrator's write-into-a-sandbox path — have not
+been through a review of this kind.** For what those surfaces do and where
+they are gated, see [SECURITY.md](SECURITY.md).
 
 - **F1, the headline finding — `python` / `mount_tool` / `call_tool` bypassing
   the shell toggle — is fixed at all three enforcement points.** They share the

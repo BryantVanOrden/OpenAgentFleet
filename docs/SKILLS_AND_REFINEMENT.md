@@ -22,8 +22,14 @@ AgentFleet solves this by recording **semantic interactions**:
 
 ### Capture Pipeline (`sandbox/agentd/recorder.py`)
 While recording is active, `agentd` monitors:
-* **X RECORD extension**: Key presses, mouse button clicks, double-clicks, drags, and scrolls.
+* **X RECORD extension**: Key presses, mouse button clicks, double-clicks, drags, and scrolls. Modifier keys are state on the keystroke that follows them, not events of their own, and a shifted character is read from the shifted keysym rather than by uppercasing what was typed.
 * **AT-SPI D-Bus hierarchy**: Extracts the `role` (e.g. `push button`, `menu item`, `text entry`) and accessible `label` of the target widget at the exact millisecond of the click.
+* **A frame**: a small screenshot at each moment worth one — a click, or a key that means something on its own. The thirty keystrokes of a typed URL produce one step and no pictures.
+
+> **Not every application has an accessibility tree.** Firefox exposes nothing
+> useful over AT-SPI, so a demonstration of using a browser has coordinates and
+> no labels. That is what the frame is for: see *Describing a step from its
+> picture* below.
 
 ### Semantic Compilation (`backend/internal/recorder/compile.go`)
 Raw input traces are full of noise (mouse jitter, key pauses, redundant focus events). `recorder.Compile` processes the raw trace:
@@ -32,7 +38,28 @@ Raw input traces are full of noise (mouse jitter, key pauses, redundant focus ev
   This happens in the recorder itself (`sandbox/agentd/recorder.py`), not in
   `compile.go`; the thresholds quoted here are that file's.
 * **Focus Normalization**: Redundant window switches and temporary focus changes are eliminated.
-* **Label Preservation**: Every step retains its accessible `role` and `label`, with screen coordinates stored only as a secondary fallback.
+* **Label Preservation**: Every step retains its accessible `role` and `label`, with screen coordinates stored only as a secondary fallback. A step that has a label renders without its coordinate on purpose — the label is what survives a window moving, and offering the pixel beside it invites the reader back to the brittle one.
+* **Unstorable bytes are dropped**: labels and key names come off a keyboard and out of an accessibility tree, and both produce things that are not text. A NUL in a trace once failed the entire save, after the demonstration had been performed.
+
+### Describing a step from its picture
+
+Where the application exposed no label, the compiler sends the step's frame to
+the vision model and asks what is at the point that was touched. A step that
+would have compiled to
+
+```
+Click at 690,121 (no accessible label was exposed — locate it visually)
+```
+
+becomes
+
+```
+Click element labelled "the address bar at the top of the browser"
+```
+
+The frames are kept in the artifact store beside the trace, under
+`recordings/<skill-id>/step-NN.webp`, so a person reviewing a skill can see what
+the demonstration saw.
 
 ---
 
@@ -53,6 +80,13 @@ The compiled skill is rendered into markdown that reads as instructions to a col
 The recording is a guide, not a script: labels and layout may have moved.
 Verify each outcome on screen before moving on.
 ```
+
+> **Replay is not yet reliable.** Recording and compiling are sound, and a
+> skill reads correctly. Following one step by step is another matter: in
+> testing, an agent handed this skill did the first steps, found the control by
+> its description, and then repeated that step instead of moving on. Treat a
+> recorded skill as good context for a task rather than as something that will
+> run itself.
 
 ---
 
