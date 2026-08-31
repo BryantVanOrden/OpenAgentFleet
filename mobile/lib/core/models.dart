@@ -1455,10 +1455,10 @@ class WorkItem {
     this.parentId = '',
   });
 
-  /// A self-contained HTML document this app can render and run.
   /// Text: notes, code, data.
   static const kindFile = 'file';
 
+  /// A self-contained HTML document this app can render and run.
   static const kindApp = 'app';
 
   /// A group of related items several agents worked on together.

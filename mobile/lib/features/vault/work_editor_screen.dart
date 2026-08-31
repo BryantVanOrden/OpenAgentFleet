@@ -217,34 +217,31 @@ class _WorkEditorScreenState extends State<WorkEditorScreen> {
             Expanded(
               child: Container(
                 color: Fleet.ink900,
-                // Code is read by line, so it scrolls sideways rather than
-                // wrapping: a wrapped line in a file of HTML is worse than a
-                // scrollbar.
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: MediaQuery.of(context).size.width,
-                    ),
-                    child: IntrinsicWidth(
-                      child: TextField(
-                        controller: _controller,
-                        maxLines: null,
-                        expands: false,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        keyboardType: TextInputType.multiline,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 13,
-                          height: 1.45,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.fromLTRB(16, 14, 16, 120),
-                        ),
-                      ),
-                    ),
+                // Wrapped to the width of the screen.
+                //
+                // This used to sit inside a horizontal scroll view so long
+                // lines could be read without wrapping, which sounds right for
+                // code and is not what it did: a horizontally scrolling
+                // viewport hands its child an unbounded width, so the field
+                // never wrapped anything and one long line ran off the side
+                // forever. Wrapping to the screen is both the fix and the
+                // better default on a phone.
+                child: TextField(
+                  controller: _controller,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  keyboardType: TextInputType.multiline,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    height: 1.45,
+                  ),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.fromLTRB(16, 14, 16, 120),
                   ),
                 ),
               ),
