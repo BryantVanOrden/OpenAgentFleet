@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,6 +121,17 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 			"a webhook needs a signing secret: it starts real work and takes no other authentication")
 		return
 	}
+	// Rejected rather than quietly downgraded to generic: a webhook created as
+	// "githib" would verify with the wrong scheme and reject every delivery,
+	// which looks like a broken integration rather than a typo.
+	if k := strings.TrimSpace(req.Kind); k != "" && normaliseKind(k) == KindGeneric &&
+		!strings.EqualFold(k, string(KindGeneric)) {
+		fail(w, http.StatusBadRequest,
+			"unknown webhook kind "+strconv.Quote(k)+": use generic, github, stripe or crm")
+		return
+	}
+	req.Kind = string(normaliseKind(req.Kind))
+
 	req.ID = req.Token
 	req.CreatedAt = time.Now().UTC()
 	req.Active = true
@@ -187,14 +199,26 @@ func (s *Server) handleIncomingWebhook(w http.ResponseWriter, r *http.Request) {
 			"this webhook has no signing secret and cannot start work; recreate it")
 		return
 	}
-	if !verifyWebhookSignature(wh.Secret, body, r) {
-		s.logger().Warn("webhook signature rejected", "token", token, "name", wh.Name)
+	// Verified with the scheme the declared sender actually uses. Stripe's is
+	// not the generic one, so a Stripe webhook used to fail on every delivery.
+	kind := normaliseKind(wh.Kind)
+	if err := verifyFor(kind, wh.Secret, body, r); err != nil {
+		s.logger().Warn("webhook signature rejected",
+			"token", token, "name", wh.Name, "kind", kind, "err", err)
+		// One message for every cause: telling a caller why its signature was
+		// rejected tells an attacker how close they got.
 		fail(w, http.StatusUnauthorized, "signature missing or invalid")
 		return
 	}
 
-	goal := renderGoal(wh.GoalTemplate, body)
-	task, err := s.dispatchTrigger(r.Context(), wh.TargetInstanceID, wh.TargetArchetype, goal, "webhook:"+wh.Name)
+	// What happened, extracted from the payload rather than left for the agent
+	// to work out. A generic webhook gets an empty summary and renders exactly
+	// as it did before.
+	summary := summarise(kind, body, r)
+	goal := renderProviderGoal(wh.GoalTemplate, summary, body)
+
+	task, err := s.dispatchTrigger(r.Context(), wh.TargetInstanceID, wh.TargetArchetype, goal,
+		firstNonEmptyStr("webhook:"+wh.Name, "webhook"))
 	if err != nil {
 		if errors.Is(err, errNoTarget) {
 			// 503, not 500: the webhook is configured correctly and the caller
@@ -220,8 +244,12 @@ func (s *Server) handleIncomingWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":        "dispatched",
-		"webhook":       wh.Name,
+		"status":  "dispatched",
+		"webhook": wh.Name,
+		// Echoed so the sender's own delivery log shows what was understood.
+		// GitHub and Stripe both display the response body next to the
+		// delivery, which makes this the cheapest possible debugging aid.
+		"event":         summary.Event,
 		"task_id":       task.ID,
 		"instance_id":   task.InstanceID,
 		"dispatched_at": now,

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type WebhookRecord, type CronTriggerRecord } from "../lib/api";
+import {
+  api,
+  WEBHOOK_KINDS,
+  type CronTriggerRecord,
+  type WebhookKind,
+  type WebhookRecord,
+} from "../lib/api";
 import { Button, ErrorNote, Field, Modal, cx, inputClass } from "../components/ui";
 
 export default function Triggers() {
@@ -15,6 +21,11 @@ export default function Triggers() {
   const [whToken, setWhToken] = useState("");
   const [whArchetype, setWhArchetype] = useState("fullstack_dev");
   const [whGoal, setWhGoal] = useState("");
+  const [whKind, setWhKind] = useState<WebhookKind>("generic");
+  // The ingress endpoint takes no other authentication, so the backend refuses
+  // to create a webhook without one. This form did not send it at all, so every
+  // create from the console failed with a 400 the operator could not act on.
+  const [whSecret, setWhSecret] = useState("");
 
   const [cronName, setCronName] = useState("");
   const [cronSchedule, setCronSchedule] = useState("0 * * * *");
@@ -38,22 +49,43 @@ export default function Triggers() {
   }, [load]);
 
   const handleCreateWebhook = async () => {
-    if (!whName.trim() || !whGoal.trim()) return;
+    if (!whName.trim() || !whGoal.trim() || !whSecret.trim()) return;
     try {
       await api.createWebhook({
         name: whName.trim(),
         token: whToken.trim() || undefined,
         target_archetype: whArchetype,
         goal_template: whGoal.trim(),
+        kind: whKind,
+        secret: whSecret.trim(),
       });
       setCreatingWebhook(false);
       setWhName("");
       setWhToken("");
       setWhGoal("");
+      setWhSecret("");
+      setWhKind("generic");
       void load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  /**
+   * A signing secret the operator can paste into the sending system.
+   *
+   * Generated in the browser with the Web Crypto API rather than Math.random:
+   * this is the only thing standing between an anonymous caller and an
+   * autonomous agent on the fleet.
+   */
+  const generateSecret = () => {
+    const raw = new Uint8Array(32);
+    crypto.getRandomValues(raw);
+    setWhSecret(
+      Array.from(raw)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(""),
+    );
   };
 
   const handleCreateCron = async () => {
@@ -126,12 +158,24 @@ export default function Triggers() {
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-semibold text-sm text-ink-100">{wh.name}</h3>
-                  <span className="rounded bg-sky-500/15 text-sky-400 px-1.5 py-0.2 font-mono text-[10px]">
-                    target: {wh.target_archetype}
-                  </span>
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    <span className="rounded bg-cool-500/15 px-1.5 font-mono text-[10px] text-cool-500">
+                      target: {wh.target_archetype}
+                    </span>
+                    {/* Which signature scheme applies. A Stripe webhook filed as
+                        generic rejects every delivery, so it has to be visible. */}
+                    <span className="rounded bg-ink-800 px-1.5 font-mono text-[10px] text-ink-300">
+                      {wh.kind ?? "generic"}
+                    </span>
+                    {wh.has_secret === false && (
+                      <span className="rounded bg-bad-500/15 px-1.5 font-mono text-[10px] text-bad-500">
+                        no secret — will refuse deliveries
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span className="rounded bg-live-500/15 text-live-400 px-2 py-0.5 font-mono text-[10px]">
-                  Active
+                  {wh.active ? "Active" : "Inactive"}
                 </span>
               </div>
 
@@ -192,14 +236,50 @@ export default function Triggers() {
               className={inputClass}
             />
           </Field>
-          <Field label="Custom Ingress Token (optional)">
+          <Field label="Custom Ingress Token (optional — leave blank to have one generated)">
             <input
               type="text"
-              placeholder="e.g. github-pr-sync"
+              placeholder="at least 24 characters, or blank"
               value={whToken}
               onChange={(e) => setWhToken(e.target.value)}
               className={inputClass}
             />
+          </Field>
+
+          <Field label="Sender">
+            <select
+              value={whKind}
+              onChange={(e) => setWhKind(e.target.value as WebhookKind)}
+              className={inputClass}
+            >
+              {WEBHOOK_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-ink-400">
+              {WEBHOOK_KINDS.find((k) => k.value === whKind)?.hint}
+            </p>
+          </Field>
+
+          <Field label="Signing secret (required)">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="paste the sender's signing secret, or generate one"
+                value={whSecret}
+                onChange={(e) => setWhSecret(e.target.value)}
+                className={inputClass}
+              />
+              <Button size="sm" onClick={generateSecret}>
+                Generate
+              </Button>
+            </div>
+            <p className="mt-1 text-xs text-ink-400">
+              This endpoint takes no other authentication and starts real work, so an
+              unsigned webhook is refused. It is never shown again after this.
+            </p>
           </Field>
           <Field label="Target Bot Archetype">
             <select
@@ -225,7 +305,11 @@ export default function Triggers() {
           </Field>
           <div className="flex justify-end gap-2 pt-2 border-t border-ink-800">
             <Button onClick={() => setCreatingWebhook(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreateWebhook}>
+            <Button
+              variant="primary"
+              onClick={handleCreateWebhook}
+              disabled={!whName.trim() || !whGoal.trim() || !whSecret.trim()}
+            >
               Create Webhook
             </Button>
           </div>

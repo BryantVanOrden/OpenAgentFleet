@@ -301,12 +301,47 @@ export interface SwarmTeam {
   updated_at: string;
 }
 
+/** Which sender a webhook is for; selects the signature scheme. */
+export type WebhookKind = "generic" | "github" | "stripe" | "crm";
+
+export const WEBHOOK_KINDS: { value: WebhookKind; label: string; hint: string }[] = [
+  {
+    value: "generic",
+    label: "Generic",
+    hint: "HMAC-SHA256 of the body in X-Hub-Signature-256 or X-AgentFleet-Signature.",
+  },
+  {
+    value: "github",
+    label: "GitHub",
+    hint: "Paste the secret into the repository's webhook settings. Events are summarised.",
+  },
+  {
+    value: "stripe",
+    label: "Stripe",
+    hint: "Use the whsec_… signing secret from the Stripe dashboard, not your API key.",
+  },
+  {
+    value: "crm",
+    label: "CRM / form",
+    hint: "A bare JSON document. Contact and deal fields are extracted where present.",
+  },
+];
+
 export interface WebhookRecord {
   id: string;
   token: string;
   name: string;
+  target_instance_id?: string;
   target_archetype: string;
   goal_template: string;
+  kind?: WebhookKind;
+  /**
+   * Never returned by the API — the listing projection drops it, because a
+   * shared signing key is a credential. Present here because it is accepted on
+   * create.
+   */
+  secret?: string;
+  has_secret?: boolean;
   active: boolean;
   last_triggered_at?: string;
   created_at: string;

@@ -20,6 +20,15 @@ type Webhook struct {
 	TargetInstanceID string `json:"target_instance_id,omitempty"`
 	TargetArchetype  string `json:"target_archetype"`
 	GoalTemplate     string `json:"goal_template"`
+	// Kind selects the signature scheme and the payload summariser:
+	// "generic" (the default), "github", "stripe" or "crm".
+	//
+	// It has to be stored rather than sniffed from the headers. Choosing the
+	// verifier by looking at which header arrived would let a caller pick its
+	// own scheme, and the whole point of the signature is that the caller does
+	// not get to choose. Empty means generic, so every webhook created before
+	// this existed keeps behaving exactly as it did.
+	Kind string `json:"kind,omitempty"`
 	// Secret, when set, is the HMAC-SHA256 key the ingress endpoint verifies
 	// the request body against. It is accepted on create and never returned:
 	// the listing projection drops it, because a shared signing key is a
@@ -48,8 +57,18 @@ type CronTrigger struct {
 
 // ---------------------------------------------------------------- webhooks ---
 
+// orGeneric keeps the kind column non-empty. The column is NOT NULL with a
+// default, and an empty string would read back as a kind nothing recognises
+// rather than as "the original generic behaviour".
+func orGeneric(kind string) string {
+	if kind == "" {
+		return "generic"
+	}
+	return kind
+}
+
 const webhookSelect = `SELECT id,token,name,target_instance_id,target_archetype,goal_template,
-    COALESCE(secret,''),active,last_triggered_at,created_at FROM webhooks`
+    COALESCE(secret,''),active,last_triggered_at,created_at,COALESCE(kind,'generic') FROM webhooks`
 
 func (s *Store) UpsertWebhook(ctx context.Context, wh *Webhook) error {
 	if wh.ID == "" {
@@ -59,12 +78,12 @@ func (s *Store) UpsertWebhook(ctx context.Context, wh *Webhook) error {
 		wh.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO webhooks(id,token,name,target_instance_id,target_archetype,goal_template,secret,active,last_triggered_at,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		`INSERT INTO webhooks(id,token,name,target_instance_id,target_archetype,goal_template,secret,active,last_triggered_at,created_at,kind)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (id) DO UPDATE SET token=$2,name=$3,target_instance_id=$4,target_archetype=$5,
-             goal_template=$6,secret=$7,active=$8`,
+             goal_template=$6,secret=$7,active=$8,kind=$11`,
 		wh.ID, wh.Token, wh.Name, wh.TargetInstanceID, wh.TargetArchetype, wh.GoalTemplate,
-		wh.Secret, wh.Active, wh.LastTriggeredAt, wh.CreatedAt)
+		wh.Secret, wh.Active, wh.LastTriggeredAt, wh.CreatedAt, orGeneric(wh.Kind))
 	return norm(err)
 }
 
@@ -79,7 +98,8 @@ func (s *Store) ListWebhooks(ctx context.Context) ([]Webhook, error) {
 	for rows.Next() {
 		var wh Webhook
 		if err := rows.Scan(&wh.ID, &wh.Token, &wh.Name, &wh.TargetInstanceID, &wh.TargetArchetype,
-			&wh.GoalTemplate, &wh.Secret, &wh.Active, &wh.LastTriggeredAt, &wh.CreatedAt); err != nil {
+			&wh.GoalTemplate, &wh.Secret, &wh.Active, &wh.LastTriggeredAt, &wh.CreatedAt,
+			&wh.Kind); err != nil {
 			return nil, err
 		}
 		out = append(out, wh)
