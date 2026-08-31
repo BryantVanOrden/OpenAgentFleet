@@ -1,6 +1,6 @@
 # AgentFleet v1.2.0
 
-Sixty-seven commits since v1.1.0.
+Seventy-two commits since v1.1.0.
 
 v1.1.0 was about several of each thing — several departments, several models,
 several bots in a row. This release is about what those bots actually produce.
@@ -78,6 +78,50 @@ to work, and each had been quietly breaking runs:
   event, and moving the pointer somewhere it already is produces none — so it
   blocked for the full fifteen seconds. Clicking the same button twice was
   enough to trigger it.
+
+## The shared work tab is a file system
+
+The catalog had folders in the data and a flat list in the app. You could see
+what was in a workspace but not put anything there, move anything out, rename
+anything, or change a file without asking an agent to republish it.
+
+It now walks folders one level at a time with a breadcrumb, and everything can
+be created, renamed, moved, edited or deleted. Moving refuses to offer a folder
+that sits inside the thing being moved, because the server refuses it too.
+
+Runnable items keep their tap for "play" and put the rest behind a long press —
+the menu says "Edit source", because a game is still a file.
+
+The editor colours what it is showing: HTML, CSS, JavaScript, JSON, Dart, Go,
+Python, shell, SQL, YAML and Markdown, picked from the file name first and the
+content second, since agents publish `rollr` rather than `rollr.html`.
+
+## Recorded demonstrations that can be followed
+
+Recording a demonstration used to fail at the last step: stopping it returned
+"unsupported Unicode escape sequence" and the whole trace was discarded after it
+had been performed. The NUL in it was the Shift key, which also split typing in
+two around itself; shifted punctuation was recorded unshifted, so a `file://`
+URL came back with a semicolon in it; and keys that are not characters had no
+name, rendering as "Press " with nothing after.
+
+Steps also carry a picture now. A step was a coordinate and, where the
+application exposed one, an accessible label — and Firefox exposes nothing, so a
+browser demonstration compiled to `Click at 690,121 (no accessible label was
+exposed)`. The recorder takes a small frame at each moment worth one, and the
+compiler asks the vision model what is at the point that was touched:
+
+```
+2. Click element labelled "the address bar at the top of the browser"
+```
+
+The frames are kept beside the trace, so a person reviewing a skill can see what
+the demonstration saw.
+
+**Known limitation.** Replaying a skill gets started and then loses its place: in
+testing, an agent followed the first steps, found the address bar by its
+description, then clicked it repeatedly instead of moving on. Recording and
+compiling are sound; following a skill step by step is not yet reliable.
 
 ## Administration separated from use
 

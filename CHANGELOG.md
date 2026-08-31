@@ -6,7 +6,7 @@ semantic versioning.
 
 ## [1.2.0] — 2026-08-30
 
-Sixty-seven commits since the 1.1.0 notes were written. Where v1.1.0 was about
+Seventy-two commits since the 1.1.0 notes were written. Where v1.1.0 was about
 several of each thing, this is about the agents producing something you can
 keep, about telling administration apart from use, and — for most of the second
 half — about the difference between a fleet that looks busy and one that is
@@ -112,6 +112,38 @@ holds up everyone downstream — one run spent three eight-minute waits inside
 twenty minutes and reached two hops. Afterwards the same pipeline ran three
 hops in under ten. An operator's own task still waits the full eight minutes,
 because that is the case where somebody might actually reply.
+
+The shared work tab is a file system. The catalog had folders in the data and a
+flat list in the app: you could see what was in a workspace but not put anything
+there, move anything out, rename anything, or change a file without asking an
+agent to republish it. It now walks folders with a breadcrumb, and everything
+can be created, renamed, moved, edited or deleted. Runnable items keep a tap for
+"play" and put the rest behind a long press, because a game is still a file.
+
+The editor colours what it shows — HTML, CSS, JavaScript, JSON, Dart, Go,
+Python, shell, SQL, YAML and Markdown — picked from the file name and then from
+the content, since agents publish "rollr" rather than "rollr.html".
+
+Demonstration recording produces something usable. Stopping a recording used to
+fail outright with "unsupported Unicode escape sequence": the trace contained a
+NUL, which was the Shift key — `keysym_to_string(Shift_L)` returns a
+one-character string, so a modifier passed the test for "a character was typed".
+That also split typing in two around it. Shifted punctuation was recorded
+unshifted, so a demonstration of typing a `file://` URL came back with a
+semicolon. Keys that are not characters had no name at all and rendered as
+"Press " with nothing after it.
+
+Recorded steps now carry a picture and a description taken from it. A step used
+to be a coordinate and, where the application exposed one, an accessible label —
+and Firefox exposes nothing, so a browser demonstration compiled to "Click at
+690,121 (no accessible label was exposed)". The recorder takes a small frame at
+each moment worth one, and the compiler asks the vision model what is at the
+point that was touched, so the step reads "Click element labelled \"the address
+bar at the top of the browser\"".
+
+Firefox's Terms of Use dialog no longer covers a fresh profile. `SkipOnboarding`
+suppresses the tour but not that dialog; the earlier onboarding fix only
+appeared to work because the profile it was tested on already existed.
 
 An app in the catalog can no longer be replaced by something that is not one.
 A tester published its report under the app's own name; the report was filed as
