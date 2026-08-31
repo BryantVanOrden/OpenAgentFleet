@@ -17,12 +17,23 @@ could not verify is tagged **unverified**. Read `ARCHITECTURE.md` first.
 >   longer talks about a scale factor; it states the image's own dimensions, and
 >   `backend/internal/agent/coordspace.go` calibrates each model's convention by
 >   measurement rather than instruction.
-> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 32.
+> - **§1's action vocabulary is out of date.** It lists 15 actions; there are 33.
 >   The additions include `python`, `spawn_agent`, `mount_tool`, `unmount_tool`,
->   `call_tool`, `deep_search`, `remember`, `recall`, `speak`, `message_peer`,
->   `delegate_task`, `share_secret`, `share_session`, `snapshot`, `rollback`,
->   and `publish_work` / `read_work` for the shared work catalog.
+>   `call_tool`, `call_mcp`, `deep_search`, `remember`, `recall`, `speak`,
+>   `message_peer`, `delegate_task`, `share_secret`, `share_session`, `snapshot`,
+>   `rollback`, and `publish_work` / `read_work` for the shared work catalog.
 >   `backend/internal/agent/parse.go` holds the authoritative set.
+> - **Three of those actions were advertised and unreachable**, which is worse
+>   than absent: the model spends a turn on an action that returns "unknown
+>   action". `call_mcp` was declared in the protocol, given three dedicated
+>   fields and an entire admin screen, and left out of the parser's accepted set;
+>   `speak` parsed and reached a tone generator whose output was discarded. Both
+>   work now. The general lesson is in §1.8's spirit: an action is only real if
+>   the parser accepts it, the runner dispatches it, and the prompt says it
+>   exists.
+> - **`remember` now takes `memory_scope`.** Every memory used to go to the
+>   recording agent's own namespace, so the fleet-wide episodic memory the harness
+>   assumes had nothing in it.
 > - **The a11y tree clip is 4000 bytes, not 6000.**
 > - **`buildTurn`'s order has changed**: a fleet/messages block now sits between
 >   the skill and the screen.

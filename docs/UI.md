@@ -84,8 +84,12 @@ top-level page; what remains here is the deployment secret store.
 > **This gallery covers eight of the console's sections.** The navigation also
 > carries Mission Control, Pipelines, Fleet Vault, MCP Hub, Financials and
 > Autopilot Sinks, plus the voice co-pilot launcher, none of which are
-> photographed here. Two of them — MCP Hub and Mission Control — front features
-> that are not finished; see the README's "What is partly built".
+> photographed here. The caveat that used to sit here — that MCP Hub and Mission
+> Control fronted unfinished features — no longer applies: both are backed by
+> working implementations. The screenshots are simply out of date, and the
+> Pipelines page in particular has changed shape since (it now has a stage and
+> dependency editor rather than a single create button). Regenerate the set with
+> `make screenshots`.
 
 | Dark | Light |
 | --- | --- |

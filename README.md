@@ -372,12 +372,24 @@ the three `make` targets under WSL or Git Bash is the better path. See
 ## Smoke tests
 
 ```bash
-# Basic smoke test: provisions sandbox, verifies observation, injects input, checks screen dhash change
+# Provisions a sandbox, verifies observation, injects input, checks the screen changed
 make smoke
 
-# Full end-to-end agent smoke test with real autonomous model execution
+# The same, plus a real autonomous task against a real model
 make smoke-agent
+
+# The subsystems that were once stubs: registers a real MCP server over JSON-RPC
+# and calls a tool on it, checks pipeline conditions and cycles are validated,
+# checks a swarm refuses invented members, and signs a Stripe delivery the way
+# Stripe signs it (and checks the old scheme is refused)
+VERIFY_EMAIL=you@example.com VERIFY_PASSWORD=... make verify-features
 ```
+
+`verify-features` exists because unit tests could not have caught what was wrong
+with most of those: the MCP bridge passed every test it had while speaking no
+protocol at all, and Stripe webhooks were rejected on 100% of real deliveries
+while the generic HMAC tests stayed green. It talks to a running stack and starts
+a real MCP server in a container.
 
 ---
 
@@ -426,6 +438,7 @@ make smoke-agent
 make doctor           # Check Docker, RAM, ports, secrets and model availability
 make env              # Create .env from the example, generate secrets, set DOCKER_GID
 make sandbox          # Build the sandbox desktop image on its own
+make sandbox-dev      # Build the developer-heavy image (compilers, Rust, Go, GPU hints)
 make up               # Build the sandbox image and start the whole stack
 make down             # Stop the stack (sandboxes are left running)
 make nuke             # Stop everything and delete all data
@@ -433,6 +446,7 @@ make logs             # Tail orchestrator logs
 make psql             # Open a database shell
 make smoke            # End-to-end test against a running stack
 make smoke-agent      # The same, plus a real autonomous task against a real model
+make verify-features  # MCP, pipelines, swarms, webhooks, memory, archetype packages
 make clean-sandboxes  # Destroy every sandbox container this platform created
 make test             # Go, Python agentd, Python SDK, admin build, flutter analyze
 make screenshots      # Recapture the documentation screenshots

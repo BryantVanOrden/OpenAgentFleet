@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { api, getToken, setToken, type Alert, type User } from "./lib/api";
+import { api, artifactUrl, getToken, setToken, type Alert, type User } from "./lib/api";
 import { useEvents } from "./lib/events";
 import { cx } from "./components/ui";
 import ToastHost, { toast } from "./components/Toasts";
@@ -104,6 +104,38 @@ export default function App() {
           body: inst.last_error,
           href: "/fleet",
         });
+      }
+    }
+
+    // An agent said something out loud.
+    //
+    // The orchestrator synthesises the audio and stores it as a task artifact,
+    // then emits this. Without a listener the whole `speak` action stopped one
+    // step short of anyone hearing it — which is the same shape as the bug it
+    // replaced, where the sandbox generated audio nothing consumed.
+    if (event.type === "agent.speech") {
+      const speech = event.payload as
+        | { text?: string; artifact_key?: string; voice?: string }
+        | undefined;
+      if (!speech?.text) return;
+
+      // The transcript is shown regardless, because audio can fail to play for
+      // reasons that have nothing to do with the fleet: a muted tab, or a
+      // browser that has not yet had a user gesture to permit autoplay.
+      toast({
+        tone: "good",
+        title: "An agent is speaking",
+        body: speech.text.slice(0, 160),
+        href: "/fleet",
+      });
+
+      if (speech.artifact_key) {
+        const audio = new Audio(artifactUrl(speech.artifact_key));
+        // Autoplay is blocked until the page has seen a gesture. Swallowed
+        // rather than surfaced: the operator already has the transcript, and a
+        // console that shouts about browser autoplay policy on every utterance
+        // would be worse than a quiet one.
+        void audio.play().catch(() => {});
       }
     }
   });

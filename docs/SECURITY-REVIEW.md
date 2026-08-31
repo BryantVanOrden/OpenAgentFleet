@@ -56,26 +56,42 @@ they are gated, see [SECURITY.md](SECURITY.md).
   README was: `sandbox/init-archetype.sh` now tells the model to check with
   `sudo -n true` first. The sudoers grant is also no longer `NOPASSWD:ALL` — it
   carries a `Cmnd_Alias` deny-list.
-- **F10 (passwordless sudo, disarmed by one flag) is superseded rather than
-  fixed, and the trade was made in the other direction.** `no-new-privileges` is
-  now deliberately *not* set. Sudo is gated by the setuid bit on `/usr/bin/sudo`,
-  cleared at provision unless granted and changeable at runtime through
-  `Manager.SetSudo`. The reasoning, and what is lost, are in `securityOpts` in
-  `backend/internal/fleet/tiers.go` and in the "Sudo in the sandbox" section of
-  SECURITY.md. F10's recommendation to "keep `no-new-privileges`" was not taken.
-  Its request to drop the "sudo enabled (NOPASSWD)" line from the archetype
-  README was: `sandbox/init-archetype.sh` now tells the model to check with
-  `sudo -n true` first.
-- **F11 (the prompt advertising three actions the parser rejects) is fixed.**
-  `remember`, `recall` and `speak` are all in `validActions` in
-  `backend/internal/agent/parse.go`, along with the peer-messaging, sharing and
-  snapshot actions that had the same problem. The claim in F11 that
-  `backend/internal/memory/engine.go` is referenced from nowhere is also no
-  longer true.
+- **F11 (the prompt advertising actions the parser rejects) is fixed, and the
+  same class of bug recurred once more since.** `remember`, `recall` and `speak`
+  are all in `validActions` in `backend/internal/agent/parse.go`, along with the
+  peer-messaging, sharing and snapshot actions that had the same problem. The
+  claim in F11 that `backend/internal/memory/engine.go` is referenced from
+  nowhere is also no longer true. `call_mcp` had the identical defect — declared
+  in the protocol with three dedicated fields and a whole admin screen, absent
+  from `validActions` — and is now accepted and dispatched.
 - **F12 (`deep_search` SSRF) still stands.** `sandbox/agentd/search.py` validates
   only that the URL starts with `http`.
-- **Counts quoted in the review are stale.** The action vocabulary is 30 kinds,
+- **Counts quoted in the review are stale.** The action vocabulary is 33 kinds,
   not the 20 the review counted.
+
+### Surfaces added since this review, not covered by it
+
+Listed so their absence is deliberate rather than an oversight. None has been
+through a review of this kind; each is described in SECURITY.md.
+
+- **The MCP client** (`backend/internal/mcp/`). Registering a stdio server asks
+  the orchestrator to execute a command, in the orchestrator's own container.
+  Admin-only, logged, and disableable with `MCP_DISABLE_STDIO=true`. Tool results
+  go straight into an agent's next prompt, so a hostile MCP server is a
+  prompt-injection vector with a very short path. One finding was caught during
+  implementation and fixed: `ListServers` serialised the `env` map — bearer
+  tokens and API keys — on a route open to every authenticated role.
+- **Provider-specific webhook parsing** (`httpapi/webhook_providers.go`). The
+  signature schemes are stricter than what they replaced, but the payload
+  summaries deliberately place attacker-controlled text (a pull request title, a
+  customer email) at the top of an agent's goal.
+- **Swarm peer review.** Publishing an artifact starts tasks on other instances,
+  and the artifact's content is placed in those agents' prompts. It is fenced as
+  untrusted, which is the same protection the screen gets and no stronger.
+- **Archetype import** (`httpapi/archetypes.go`). Admin-only; installs skills,
+  registers MCP servers and can provision a bot from a file that arrived from
+  elsewhere. `sudo_access` is never taken from a manifest, and credentials are
+  never carried in one.
 
 ---
 

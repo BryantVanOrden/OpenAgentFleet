@@ -142,12 +142,27 @@ npm run build
 
 ### End-to-End Smoke Tests
 ```bash
-# Smoke test (provisions sandbox, tests observation/action, verifies screen dhash change)
+# Provisions a sandbox, tests observation and action, verifies the screen changed
 make smoke
 
-# Full autonomous agent smoke test with real LLM
+# The same, plus a real autonomous task against a real model
 make smoke-agent
+
+# The subsystems that were once stubs. Needs an admin account.
+VERIFY_EMAIL=you@example.com VERIFY_PASSWORD=... make verify-features
 ```
+
+`verify-features` registers a real MCP server in a container and calls a tool on
+it, checks that pipeline conditions and cycles are rejected at save, that a swarm
+refuses members that are not real instances, and that a Stripe delivery signed
+the way Stripe signs it is accepted while the old body-only HMAC is not.
+
+It exists because unit tests could not have caught what was wrong with most of
+those subsystems. The MCP bridge passed every test it had while returning
+invented tools and canned results; the tests asserted the shape of the response,
+which was correct, rather than that anything had been executed. If you add a
+subsystem that talks to something outside this process, add a check here as well
+as a unit test.
 
 ---
 
@@ -159,12 +174,13 @@ make smoke-agent
 | `backend/internal/agent/` | Perceive-decide-act loop, prompt building, action parsing, stall detection, sub-agent delegation, and continual refinement engine |
 | `backend/internal/fleet/` | Docker Engine REST API client, hardware tier management, cgroups and quota enforcement |
 | `backend/internal/connectors/` | Model gateways (OpenAI, Anthropic, Gemini, Antigravity, Ollama, OpenAI-compatible), the fallback chain, and role-based routing through model combinations |
-| `backend/internal/pipeline/` | Multi-bot DAG pipelines. Topological order, executed one node at a time |
-| `backend/internal/swarm/` | Shared-blackboard multi-bot swarms |
-| `backend/internal/memory/` | Per-instance episodic memory behind the `remember` and `recall` actions |
-| `backend/internal/mcp/` | MCP bridge for custom tool servers |
+| `backend/internal/pipeline/` | Multi-bot DAG pipelines. Independent stages run concurrently; edge conditions decide whether a stage runs or is skipped |
+| `backend/internal/swarm/` | Shared-blackboard multi-bot swarms, with a task per member and peer review of artifacts |
+| `backend/internal/memory/` | Episodic memory behind `remember` and `recall`: private per bot, plus a shared fleet pool |
+| `backend/internal/mcp/` | MCP client — JSON-RPC 2.0 over stdio and Streamable HTTP |
+| `backend/internal/voice/` | Text-to-speech sidecar client, shared by the API and the agent loop |
 | `backend/internal/schedule/` | Cron expression parsing and the trigger scheduler |
-| `backend/internal/telemetry/` | Token counting and cost accounting |
+| `backend/internal/telemetry/` | Token counting (including cached reads) and cost accounting |
 | `backend/internal/notify/` | Push notification dispatch (FCM, APNs) |
 | `backend/internal/artifacts/` | Screenshot and artifact storage, filesystem or S3 |
 | `backend/internal/config/` | Environment configuration and its defaults |

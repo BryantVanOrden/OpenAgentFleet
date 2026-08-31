@@ -42,6 +42,10 @@ smoke: ## End-to-end test against a running stack (provisions and destroys a san
 smoke-agent: ## Same, plus a real autonomous task against a real model
 	@bash scripts/smoke.sh --with-agent
 
+.PHONY: verify-features
+verify-features: ## Check the subsystems that were once stubs (MCP, pipelines, swarms, webhooks, memory, packages)
+	@bash scripts/verify-features.sh
+
 .PHONY: screenshots
 screenshots: ## Recapture the documentation screenshots from the running console
 	@docker run --rm --network agentfleet_control -v "$(CURDIR)/scripts:/scripts:ro" -v "$(CURDIR)/docs/images:/out" -e BASE_URL=http://admin:80 -e AF_EMAIL="$${SHOT_EMAIL:-demo@agentfleet.local}" -e AF_PASSWORD="$${SHOT_PASSWORD:-agentfleet-demo-1234}" -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 mcr.microsoft.com/playwright:v1.49.1-noble sh -c 'mkdir -p /tmp/pw && cd /tmp/pw && npm i --silent --no-audit --no-fund playwright@1.49.1 >/dev/null 2>&1 && cp /scripts/screenshots.mjs . && node screenshots.mjs'

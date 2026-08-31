@@ -72,8 +72,13 @@ func (r *Runner) speak(ctx context.Context, task *protocol.Task, inst *protocol.
 		return "speech was synthesised but could not be stored: " + clip(err.Error(), 200)
 	}
 
-	// The event the console and the phone act on. They already hold an
-	// authenticated session, so a relative artifact path is all they need.
+	// The event a client acts on. The console plays it and shows the transcript
+	// (see the agent.speech case in admin/src/App.tsx); the phone app speaks its
+	// own chat replies through the same sidecar but does not yet subscribe to
+	// this event. Emitting it regardless is right — the audio is stored and the
+	// event is the record that it exists — but the outcome below says "the
+	// console" rather than "the console and the app", because the second half
+	// would be a claim about a listener that is not there.
 	r.bus.Emit("agent.speech", inst.ID, task.ID, map[string]any{
 		"text":         clip(text, 500),
 		"voice":        audio.Voice,
@@ -83,6 +88,6 @@ func (r *Runner) speak(ctx context.Context, task *protocol.Task, inst *protocol.
 		"bytes":        len(audio.Body),
 	})
 
-	return fmt.Sprintf("spoken aloud in voice %q (%d bytes of audio, delivered to the console and the app): %s",
+	return fmt.Sprintf("spoken aloud in voice %q (%d bytes of audio, played in the operator's console): %s",
 		audio.Voice, len(audio.Body), clip(text, 160))
 }

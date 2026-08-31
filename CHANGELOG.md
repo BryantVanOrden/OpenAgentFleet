@@ -158,6 +158,24 @@ ccache and the GPU loader hints, layered on the base image so agentd cannot drif
 from it, with a build-time check that each toolchain can actually compile and run
 something.
 
+### A test for the class of bug this was
+
+`scripts/verify-features.sh`, wired up as `make verify-features`. It registers a
+real MCP server in a container and calls a tool on it, checks that pipeline
+conditions and cycles are rejected at save, that a swarm refuses members that are
+not real instances, and that a Stripe delivery signed the way Stripe signs it is
+accepted while the old body-only HMAC is not.
+
+It exists because unit tests could not have caught most of what was wrong here.
+The MCP bridge passed every test it had while speaking no protocol at all — the
+tests asserted the shape of the response, which was correct, rather than that
+anything had been executed. Stripe webhooks were rejected on 100% of real
+deliveries while the generic HMAC tests stayed green.
+
+There is also a mechanical check that the parser's accepted action set and the
+prompt's advertised set are identical in both directions. That mismatch is what
+made `call_mcp` and `speak` unreachable, and it is invisible in review.
+
 ### Also
 
 - The Flutter app did not compile. Two `ReorderableListView` call sites passed
@@ -168,6 +186,14 @@ something.
 - `renderGoal` decided whether to append the raw payload by checking the template
   for `{{` *after* substitution, so a goal that had already used the payload got
   the whole thing appended underneath it.
+- The `agent.speech` event had no listener. Routing `speak` to the sidecar and
+  storing the audio stopped one step short of anyone hearing it — the same shape
+  as the bug it replaced, where the sandbox generated audio nothing consumed. The
+  console now plays it and shows the transcript. The phone app speaks its own
+  chat replies through the same sidecar but does not subscribe to this event, so
+  the action's outcome line says "played in the operator's console" rather than
+  claiming an app listener that is not there.
+- `SECURITY-REVIEW.md` carried a duplicated F10 finding.
 
 
 ## [1.2.0] — 2026-08-30

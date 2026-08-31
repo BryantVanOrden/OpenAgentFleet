@@ -78,8 +78,22 @@ Or trigger the workflow manually at any time under **Actions** $\rightarrow$ **A
 
 Once public, you can feature:
 - 📖 [Official Documentation & Architecture](../README.md)
-- 🐝 Multi-Agent Swarm Mission Control
-- 🎙️ Pocket TTS Real-Time Voice Co-Pilot (with 6 curated voices)
-- 🧠 Long-Term Episodic Vector Memory
-- 📱 Flutter iOS/Android Companion App
-- 🐍 Python Client SDK & `fleetctl` CLI
+- 🐝 Multi-agent swarm mission control, with peer review of what agents produce
+- 🎙️ Pocket TTS voice, with six distinct speakers
+- 🧠 Long-term episodic memory, shared across the fleet
+- 🔌 Model Context Protocol client (stdio and Streamable HTTP)
+- ⛓️ Parallel DAG pipelines with conditional branches
+- 📱 Flutter companion app on five platforms
+- 🐍 Python client SDK & `fleetctl` CLI
+
+Two honesty notes for whoever writes the announcement, because both have a
+specific caveat that is easy to overstate:
+
+- **Memory** uses real embeddings *when an embedding-capable provider is
+  configured* (Ollama, OpenAI or Gemini) and a hashed keyword index otherwise.
+  `/api/memory/fleet` reports which. Do not describe it flatly as "vector
+  memory" — a fleet on Anthropic alone gets the keyword index, because Anthropic
+  has no embedding API.
+- **The README's "What is partly built"** section is the list to check before
+  claiming anything. It is kept current deliberately; the announcement should not
+  contradict it.

@@ -11,12 +11,13 @@ One binary, one process, several concerns kept in separate packages:
 | `fleet`       | Provisions and supervises sandboxes over the Docker Engine REST API   |
 | `agent`       | The perceive → decide → act loop, stall detection, recursive sub-agents, and continual self-refinement |
 | `connectors`  | Normalises chat completion across OpenAI, Anthropic, Gemini, Antigravity, Ollama and OpenAI-compatible gateways; owns the fallback chain and role-based routing through model combinations |
-| `pipeline`    | Multi-bot DAG workflows, run in topological order one node at a time |
-| `swarm`       | Shared-blackboard swarms. A data structure today; it starts no work   |
-| `memory`      | Per-instance episodic memory behind `remember` and `recall`           |
-| `mcp`         | Custom tool server registry. Does not yet speak the MCP protocol      |
+| `pipeline`    | Multi-bot DAG workflows. Independent stages run concurrently (bounded); each edge carries a condition that decides whether its downstream stage runs or is skipped |
+| `swarm`       | Shared-blackboard swarms. Starts a real task per member and routes artifacts through peer review |
+| `memory`      | Episodic memory behind `remember` and `recall`, private per bot plus a shared fleet pool. Real embeddings when a provider offers them, a hashed keyword index otherwise |
+| `mcp`         | Model Context Protocol client: JSON-RPC 2.0 over stdio or Streamable HTTP, with tool discovery and invocation |
+| `voice`       | Client for the text-to-speech sidecar, shared by the API and the agent loop |
 | `schedule`    | Cron parsing and the trigger scheduler                                |
-| `telemetry`   | Token counting and cost accounting                                    |
+| `telemetry`   | Token counting (including cached reads) and cost accounting            |
 | `config`      | Environment configuration and defaults                                |
 | `recorder`    | Compiles a raw demonstration trace into a semantic skill              |
 | `vault`       | AES-256-GCM sealed credential storage                                 |

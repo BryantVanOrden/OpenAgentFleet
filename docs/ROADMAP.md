@@ -98,15 +98,29 @@ The two things standing in the way, both deliberately narrow:
 
 ### Pipelines, from here
 
-The DAG engine runs nodes one at a time in topological order. Two things the UI
-already draws are not yet executed:
+- ~~**Parallel execution of independent nodes.**~~ — **built.** Every stage whose
+  dependencies have settled runs concurrently, bounded by the pipeline's
+  `max_parallel` (default 4, because each stage starts a real task on a real
+  desktop).
+- ~~**Conditional edges.**~~ — **built.** `always`, `success`, `failure`,
+  `contains:`, `not_contains:`, `equals:` and `matches:`, validated at save so a
+  misspelling is a 400 rather than a branch that silently never fires. A stage
+  whose conditions are not met is skipped rather than failed, and skipping
+  propagates downstream.
+- ~~**A graph builder.**~~ — **built.** The console's create button used to post a
+  fixed three-node pipeline and everything else was a viewer, so an existing
+  pipeline could not be edited at all.
 
-- **Parallel execution of independent nodes.** Layers are computed and displayed;
-  the engine still walks them sequentially.
-- **Conditional edges.** `PipelineEdge.condition` is stored, round-tripped and
-  shown, and nothing evaluates it. Every node in topological order runs
-  regardless of how its upstream finished; the only branching is the run-wide
-  abort on error.
+What is left:
+
+- **Runs do not survive a restart.** Pipelines persist; a run in flight does not.
+  The executor's state is in memory, so an orchestrator restart mid-run leaves
+  the run recorded as `running` indefinitely and loses the node results that had
+  already landed. Persisting run state — and resuming from the last settled node
+  rather than restarting the graph — is the work.
+- **No fan-out over a collection.** A stage runs once. "Run this stage for each
+  item the previous stage returned" needs a map construct the graph has no way to
+  express.
 
 ## Deliberately not planned
 
