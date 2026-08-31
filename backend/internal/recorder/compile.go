@@ -134,6 +134,20 @@ func Compile(name string, events []protocol.RawEvent) *protocol.Skill {
 				Meta: map[string]string{"to_x": fmt.Sprint(to[0]), "to_y": fmt.Sprint(to[1])},
 			})
 		}
+
+		// The picture belongs to whatever step this event just produced.
+		//
+		// Attached here rather than in each branch because every branch that
+		// matters ends in an append, and the recorder only takes a picture for
+		// the events that produce one: a click, or a key that means something
+		// on its own. Typing a URL is thirty events and one step.
+		if frame := ev.Extra["frame"]; frame != "" && len(steps) > 0 {
+			last := &steps[len(steps)-1]
+			if last.Meta == nil {
+				last.Meta = map[string]string{}
+			}
+			last.Meta["frame"] = frame
+		}
 	}
 	flushTyping()
 	steps = dedupe(steps)
@@ -173,6 +187,9 @@ func clean(s *protocol.SkillStep) {
 	s.Param = scrub(s.Param)
 	s.Assert = scrub(s.Assert)
 	for k, v := range s.Meta {
+		if k == "frame" {
+			continue // base64 image data, replaced by a key before storage
+		}
 		s.Meta[k] = scrub(v)
 	}
 }
@@ -266,6 +283,9 @@ func renderStep(s protocol.SkillStep) string {
 		case s.Label != "" && s.Role != "":
 			return fmt.Sprintf("%s element: Role=%q, Label=%q", verb, s.Role, s.Label)
 		case s.Label != "":
+			// Deliberately without the coordinate. A label is what makes a step
+			// survive a window moving; offering the pixel alongside it invites
+			// the reader back to the brittle one.
 			return fmt.Sprintf("%s element labelled %q", verb, s.Label)
 		case s.Selector != "":
 			return fmt.Sprintf("%s browser element %q", verb, s.Selector)

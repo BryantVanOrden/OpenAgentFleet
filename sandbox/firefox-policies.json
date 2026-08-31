@@ -14,7 +14,8 @@
       "FeatureRecommendations": false,
       "UrlbarInterventions": false,
       "SkipOnboarding": true,
-      "MoreFromMozilla": false
+      "MoreFromMozilla": false,
+      "SkipTermsOfUse": true
     },
     "FirefoxHome": {
       "Highlights": false,
@@ -22,6 +23,31 @@
       "Snippets": false,
       "SponsoredTopSites": false
     },
-    "Homepage": { "URL": "about:blank", "StartPage": "homepage" }
+    "Homepage": {
+      "URL": "about:blank",
+      "StartPage": "homepage"
+    },
+    "Preferences": {
+      "browser.aboutwelcome.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "datareporting.policy.dataSubmissionPolicyBypassNotification": {
+        "Value": true,
+        "Status": "locked"
+      },
+      "browser.startup.homepage_override.mstone": {
+        "Value": "ignore",
+        "Status": "locked"
+      },
+      "browser.sessionstore.resume_from_crash": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "browser.shell.checkDefaultBrowser": {
+        "Value": false,
+        "Status": "locked"
+      }
+    }
   }
 }

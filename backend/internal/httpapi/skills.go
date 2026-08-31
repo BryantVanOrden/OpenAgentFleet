@@ -1,11 +1,18 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 
+	"encoding/base64"
+	"fmt"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/agent"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/recorder"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"strings"
+	"time"
 )
 
 func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +117,14 @@ func (s *Server) handleRecordStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	skill := recorder.Compile(res.Name, res.Events)
+	// The id has to exist before the pictures are filed, because it is what
+	// they are filed under. Left to UpsertSkill, every recording wrote its
+	// frames to "recordings//step-NN.webp" and the second recording overwrote
+	// the first.
+	if skill.ID == "" {
+		skill.ID = store.NewID()
+	}
+	s.describeSteps(r.Context(), inst, skill)
 	if err := s.db.UpsertSkill(r.Context(), skill); err != nil {
 		failErr(w, err)
 		return
@@ -209,4 +224,105 @@ func (s *Server) handleRefineSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, refined)
+}
+
+// describeSteps files each step's picture and says what is in it.
+//
+// A recorded step is a coordinate and, where the application exposes one, an
+// accessible label. Firefox exposes nothing, so a demonstration of using a
+// browser compiled to "Click at 690,121" -- which replays on an identical
+// screen and tells an agent nothing about what it is aiming at. Watching one
+// replay bears that out: it found the address bar, clicked it three more times,
+// and stopped.
+//
+// The recorder now takes a picture at each interesting moment, so there is
+// something to look at. This stores it and asks the vision model to name the
+// control, turning a coordinate into "the address bar at the top of the
+// browser window" -- which is what the skill file promised to contain all
+// along.
+func (s *Server) describeSteps(ctx context.Context, inst *protocol.Instance, sk *protocol.Skill) {
+	if s.art == nil {
+		return
+	}
+	chain := connectors.PreferredChain("", inst.ProviderIDs)
+
+	for i := range sk.Steps {
+		step := &sk.Steps[i]
+		encoded := step.Meta["frame"]
+		if encoded == "" {
+			continue
+		}
+		// The picture never goes in the database: it is megabytes of base64
+		// per recording, and jsonb is the wrong place for it.
+		delete(step.Meta, "frame")
+
+		raw, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			continue
+		}
+		key := fmt.Sprintf("recordings/%s/step-%02d.webp", sk.ID, step.Index)
+		if err := s.art.Put(ctx, key, "image/webp", raw); err != nil {
+			s.log.Warn("could not store a recorded step's picture",
+				"skill", sk.ID, "step", step.Index, "err", err)
+			continue
+		}
+		step.Meta["frame"] = key
+
+		// An application that exposed a real label has already said it better
+		// than a model will guess it.
+		if strings.TrimSpace(step.Label) != "" {
+			continue
+		}
+		if label := s.nameTheControl(ctx, chain, encoded, step); label != "" {
+			step.Label = label
+		}
+	}
+	// Compile rendered the markdown before any of this existed, so the
+	// descriptions would never have reached the file anybody reads.
+	sk.Markdown = recorder.Render(sk)
+}
+
+// nameTheControl asks what is at the point the demonstration touched.
+func (s *Server) nameTheControl(ctx context.Context, chain []string, frameB64 string, step *protocol.SkillStep) string {
+	where := "the screen"
+	if len(step.Coordinates) == 2 {
+		where = fmt.Sprintf("the point %d,%d", step.Coordinates[0], step.Coordinates[1])
+	}
+	what := "clicked"
+	if step.Kind == protocol.ActKey {
+		what = fmt.Sprintf("pressed %q with the focus", step.Key)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	resp, err := s.models.CompleteRole(ctx, chain, protocol.RoleVision, connectors.Request{
+		System: "You name user-interface controls. You answer with a short " +
+			"noun phrase and nothing else: no sentence, no explanation, no " +
+			"punctuation at the end.",
+		MaxTokens: 40,
+		Messages: []connectors.Message{{
+			Role: connectors.RoleUser,
+			Text: fmt.Sprintf(
+				"Someone demonstrating a task %s at %s in this screenshot.\n\n"+
+					"Name what is there, the way you would tell a colleague "+
+					"where to click: its visible text if it has any, and where "+
+					"it is if it does not. For example: the \"Roll Dice\" button, "+
+					"or the address bar at the top of the browser.\n\n"+
+					"If you cannot tell, answer exactly: unknown",
+				what, where),
+			Image:     frameB64,
+			ImageMime: "image/webp",
+		}},
+	})
+	if err != nil {
+		s.log.Warn("could not describe a recorded step", "err", err)
+		return ""
+	}
+	label := strings.TrimSpace(resp.Text)
+	label = strings.Trim(label, "\"'.")
+	if label == "" || strings.EqualFold(label, "unknown") || len(label) > 120 {
+		return ""
+	}
+	return label
 }

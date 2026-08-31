@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 import a11y
+import capture
 
 try:
     from Xlib import X, XK, display
@@ -213,6 +214,7 @@ class Recorder:
         self._append({
             "type": "click", "button": button, "x": x, "y": y,
             "window": ctx["window"], "role": ctx["role"], "label": ctx["label"],
+            "extra": self._frame(),
         })
 
     def _on_key(self, event) -> None:
@@ -261,10 +263,35 @@ class Recorder:
             key = "+".join(parts)
 
         ctx = self._context_at(*self._pointer)
+        # A frame for the keys that mean something on their own -- Return,
+        # ctrl+a, Escape -- and none for the letters in between. Somebody
+        # typing a URL produces thirty keystrokes and one interesting picture.
         self._append({
             "type": "key", "key": key,
             "window": ctx["window"], "role": ctx["role"], "label": ctx["label"],
+            "extra": self._frame() if len(key) > 1 else None,
         })
+
+    def _frame(self) -> dict | None:
+        """A small picture of the screen as it was when this happened.
+
+        Recorded steps are coordinates and, where the application exposes one,
+        an accessible label. Firefox exposes nothing, so a demonstration of
+        using a browser compiled to "click at 690,121" -- which is enough for a
+        replay on an identical screen and nothing at all for an agent trying to
+        work out what it is aiming at. The picture is what makes the step
+        describable later.
+
+        Small on purpose: a demonstration has a handful of interesting moments
+        and no need for any of them at full resolution.
+        """
+        try:
+            b64, _ = capture.encode(capture.grab(), max_width=720, quality=55)
+        except Exception:
+            # A recording that loses its pictures is worth far more than one
+            # that stops because a grab failed.
+            return None
+        return {"frame": b64}
 
     # ---------------------------------------------------------------- helpers ---
 
