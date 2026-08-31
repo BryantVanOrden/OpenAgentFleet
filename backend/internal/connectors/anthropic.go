@@ -65,6 +65,11 @@ type anResponse struct {
 	Usage      struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
+		// Anthropic reports cache traffic as two extra counters *alongside*
+		// input_tokens rather than inside it: a cache read is billed at 10% of
+		// the input rate, a cache write at 125%. Only the read is a saving.
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	} `json:"usage"`
 	Error *struct {
 		Type    string `json:"type"`
@@ -152,11 +157,19 @@ func (c *anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("%s: empty completion (stop_reason %s)", c.p.Name, out.StopReason)
 	}
+	// Anthropic keeps cache reads and writes out of input_tokens, so the prompt
+	// total has to be reassembled to mean the same thing it means for every
+	// other provider: all the input tokens for this turn. Without this a cached
+	// turn reports a tiny prompt count and the fleet looks like it stopped
+	// sending a system prompt.
+	cached := out.Usage.CacheReadInputTokens
+	prompt := out.Usage.InputTokens + cached + out.Usage.CacheCreationInputTokens
 	return &Response{
 		Text:         text,
 		Model:        firstNonEmpty(out.Model, c.p.Model),
-		PromptTokens: out.Usage.InputTokens,
+		PromptTokens: prompt,
 		OutputTokens: out.Usage.OutputTokens,
+		CachedTokens: cached,
 		Provider:     c.p.ID,
 		Latency:      time.Since(start),
 	}, nil

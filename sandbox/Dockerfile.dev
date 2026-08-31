@@ -1,0 +1,110 @@
+# AgentFleet developer-heavy sandbox: the base desktop plus a build toolchain.
+#
+# The `developer-heavy` tier asks for `agentfleet/sandbox:latest-dev` (see
+# fleet.DefaultTiers, which appends "-dev" to the configured image). Nothing
+# built that tag, so selecting the tier produced an instance stuck in `pulling`
+# on an image that does not exist anywhere — the tier was selectable and could
+# not start. This is that image.
+#
+# It is a layer on top of the base rather than a fork of it: the desktop, agentd,
+# the accessibility bus and the egress policy are identical, and only the
+# toolchain differs. A fork would drift, and the thing that drifts first is
+# agentd — the one part the orchestrator talks to.
+ARG BASE_IMAGE=agentfleet/sandbox:latest
+FROM ${BASE_IMAGE}
+
+# Back to root to install; the base image's ENTRYPOINT drops to `agent` itself.
+USER root
+
+# Compilers and heavy build tooling. The tier's stated purpose is "game engine
+# builds, C++/Rust compiles, GPU workloads", so what it needs over the base is a
+# toolchain rather than more applications.
+#
+# clang and gcc both: real projects pin one or the other, and having only gcc
+# turns "build this repo" into "first work out why -fsanitize is unrecognised".
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ clang lld make cmake ninja-build ccache \
+        gdb valgrind linux-tools-common \
+        autoconf automake libtool bison flex \
+        python3-dev libssl-dev zlib1g-dev libffi-dev \
+        libgl1-mesa-dev libglu1-mesa-dev libx11-dev libxext-dev \
+        libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
+        mesa-utils vulkan-tools libvulkan1 \
+        openjdk-17-jdk-headless \
+        nodejs npm \
+        docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust via rustup rather than apt: Ubuntu's rustc trails badly enough that
+# `cargo build` on a current crate fails on the edition, and a toolchain the
+# agent cannot update is worse than none. Installed into /opt so it is shared
+# rather than living in the home directory, which is a volume on some tiers.
+ENV RUSTUP_HOME=/opt/rust \
+    CARGO_HOME=/opt/cargo \
+    PATH=/opt/cargo/bin:/usr/lib/ccache:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable \
+    && chmod -R a+rX /opt/rust /opt/cargo \
+    && /opt/cargo/bin/rustc --version
+
+# Go, for the same reason. Pinned: an agent that gets a different compiler each
+# time the image is rebuilt cannot reproduce a build it did last week.
+ARG GO_VERSION=1.23.4
+RUN arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+         amd64) goarch=amd64 ;; \
+         arm64) goarch=arm64 ;; \
+         *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" \
+        | tar -C /usr/local -xz \
+    && /usr/local/go/bin/go version
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOPATH=/home/agent/go \
+    GOTOOLCHAIN=local
+
+# ccache in front of the compilers, sized for a tier with a 150 GB disk. A
+# rebuild of the same tree is the common case for an agent iterating on a fix,
+# and without this each iteration pays full compile time.
+RUN mkdir -p /var/cache/ccache \
+    && chown -R agent:agent /var/cache/ccache \
+    && printf 'max_size = 20G\ncache_dir = /var/cache/ccache\n' > /etc/ccache.conf
+ENV CCACHE_CONFIGPATH=/etc/ccache.conf
+
+# The GPU half of the tier. These are the runtime loader hints the NVIDIA
+# container toolkit expects; they are inert without `--gpus`, which the
+# orchestrator only passes when the tier profile sets GPU and the host has a
+# runtime. Declaring them here is what makes an image that *can* use a GPU
+# rather than one that silently cannot.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,display
+
+# Go's module cache and Rust's registry both live under the agent's home, so
+# they have to be writable before the first build rather than on first failure.
+RUN mkdir -p /home/agent/go/pkg/mod /home/agent/.cargo \
+    && chown -R agent:agent /home/agent/go /home/agent/.cargo
+
+# Prove the toolchain is actually usable, at build time rather than in front of
+# an agent. A dev image whose compilers are present but broken is the failure
+# this whole file exists to avoid.
+RUN set -eu; \
+    tmp="$(mktemp -d)"; \
+    printf '#include <stdio.h>\nint main(void){puts("cc ok");return 0;}\n' > "$tmp/a.c"; \
+    gcc "$tmp/a.c" -o "$tmp/a" && "$tmp/a"; \
+    clang "$tmp/a.c" -o "$tmp/ac" && "$tmp/ac"; \
+    printf 'fn main(){println!("rust ok");}\n' > "$tmp/a.rs"; \
+    /opt/cargo/bin/rustc "$tmp/a.rs" -o "$tmp/ar" && "$tmp/ar"; \
+    printf 'package main\nimport "fmt"\nfunc main(){fmt.Println("go ok")}\n' > "$tmp/a.go"; \
+    cd "$tmp" && HOME=/tmp /usr/local/go/bin/go run a.go; \
+    rm -rf "$tmp"
+
+# Inherited from the base image and restated so this file is readable on its
+# own: the entrypoint drops privileges to `agent`, and supervisord runs the
+# desktop, the VNC servers and agentd.
+EXPOSE 6901 6902 7900
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \
+    CMD curl -fsS http://localhost:${AGENTD_PORT}/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf", "-n"]

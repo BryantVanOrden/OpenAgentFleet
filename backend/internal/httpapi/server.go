@@ -151,6 +151,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/mcp/servers", auth(roleAdmin, s.handleRegisterMCPServer))
 	mux.Handle("DELETE /api/mcp/servers/{id}", auth(roleAdmin, s.handleDeleteMCPServer))
 	mux.Handle("GET /api/mcp/tools", auth(roleAny, s.handleListMCPTools))
+	mux.Handle("POST /api/mcp/servers/{id}/refresh", auth(roleAdmin, s.handleRefreshMCPTools))
 	mux.Handle("POST /api/mcp/call", auth(roleOperator, s.handleCallMCPTool))
 
 	// Multi-Bot Workflow DAG Pipelines

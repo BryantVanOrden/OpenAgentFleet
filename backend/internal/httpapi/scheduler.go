@@ -5,10 +5,45 @@ import (
 	"errors"
 	"time"
 
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/pipeline"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/telemetry"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
+
+// telemetryStore adapts *store.Store to telemetry.Store.
+//
+// Only the totals need adapting: telemetry declares its own StoredTotals so the
+// telemetry package does not import the store package, which would be an import
+// cycle the first time the store wants to price anything. The other two methods
+// pass straight through.
+type telemetryStore struct{ db *store.Store }
+
+func (t telemetryStore) InsertTelemetryTurn(ctx context.Context, rec protocol.TokenTelemetryRecord) error {
+	return t.db.InsertTelemetryTurn(ctx, rec)
+}
+
+func (t telemetryStore) RecentTelemetryTurns(ctx context.Context, limit int) ([]protocol.TokenTelemetryRecord, error) {
+	return t.db.RecentTelemetryTurns(ctx, limit)
+}
+
+func (t telemetryStore) TelemetryTotals(ctx context.Context) (telemetry.StoredTotals, error) {
+	got, err := t.db.TelemetryTotals(ctx)
+	if err != nil {
+		return telemetry.StoredTotals{}, err
+	}
+	return telemetry.StoredTotals{
+		PromptTokens:     got.PromptTokens,
+		CompletionTokens: got.CompletionTokens,
+		CachedTokens:     got.CachedTokens,
+		CostUSD:          got.CostUSD,
+		LatencyMS:        got.LatencyMS,
+		Turns:            got.Turns,
+	}, nil
+}
 
 // StartBackground gives the fleet-wide singletons their persistence and starts
 // the cron engine. Call it once, after Migrate, before serving.
@@ -32,6 +67,12 @@ func (s *Server) StartBackground(ctx context.Context) {
 		}
 		if err := memory.GlobalEngine.AttachStore(ctx, s.db, s.logger()); err != nil {
 			s.logger().Error("episodic memory not loaded; the index stays in-memory", "err", err)
+		}
+		if err := telemetry.GlobalTracker.AttachStore(ctx, telemetryStore{s.db}, s.logger()); err != nil {
+			s.logger().Error("spend history not loaded; the cost dashboard starts at zero", "err", err)
+		}
+		if err := mcp.GlobalMCP.AttachStore(ctx, s.db, s.logger()); err != nil {
+			s.logger().Error("MCP registrations not loaded; the hub starts empty", "err", err)
 		}
 	}
 	// Gives the pipeline engine a way to actually run a node. Without this it

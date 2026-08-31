@@ -55,6 +55,19 @@ type Response struct {
 	Model        string
 	PromptTokens int
 	OutputTokens int
+	// CachedTokens is the part of PromptTokens the provider served from its
+	// prompt cache and bills at a discount (usually 10% of the input rate).
+	//
+	// Every provider reports it under a different name and none of them were
+	// read, so the cost dashboard's "cached" column summed a field nothing ever
+	// populated and read zero forever. That is not a cosmetic gap: an agent loop
+	// resends a long system prompt every turn, which is precisely the shape
+	// prompt caching is for, so on a real fleet this is most of the input spend.
+	//
+	// It is a subset of PromptTokens, not an addition to it — every provider
+	// counts cached reads inside the prompt total — so pricing has to subtract
+	// before applying the full input rate rather than adding another line.
+	CachedTokens int
 	Provider     string
 	Latency      time.Duration
 }

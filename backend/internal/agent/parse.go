@@ -17,6 +17,10 @@ var validActions = map[protocol.ActionKind]bool{
 	protocol.ActUnmountTool: true, protocol.ActCallTool: true,
 	protocol.ActDeepSearch: true, protocol.ActRemember: true,
 	protocol.ActRecall: true, protocol.ActSpeak: true,
+	// MCP. The action, its three fields and an entire admin screen existed with
+	// nothing accepting it here, so a model told about the fleet's MCP tools got
+	// "unknown action" back and could not reach a single one of them.
+	protocol.ActCallMCP: true,
 	// Peer messaging. These existed as constants in the protocol with nothing
 	// accepting or handling them, so an agent that tried to reach another agent
 	// got "unknown action" back. Fleet-wide collaboration needs no swarm to be
@@ -141,6 +145,20 @@ func ParseAction(raw string) (protocol.Action, error) {
 		}
 		if strings.TrimSpace(a.ToolName) == "" {
 			return a, fmt.Errorf("call_tool needs tool_name")
+		}
+	case protocol.ActCallMCP:
+		// Models name the tool in whichever field looks most natural, so the
+		// near-misses are accepted rather than costing a step. The server id is
+		// genuinely optional: the manager resolves a tool name to its server, so
+		// the model does not have to know which server provides what.
+		if a.MCPToolName == "" {
+			a.MCPToolName = firstNonEmpty(a.ToolName, a.Target)
+		}
+		if strings.TrimSpace(a.MCPToolName) == "" {
+			return a, fmt.Errorf("call_mcp needs mcp_tool_name")
+		}
+		if a.MCPParams == nil && a.ToolParameters != nil {
+			a.MCPParams = a.ToolParameters
 		}
 	case protocol.ActDeepSearch:
 		if a.Query == "" && a.Text != "" {

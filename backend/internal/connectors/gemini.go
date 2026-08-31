@@ -65,6 +65,8 @@ type gmResponse struct {
 	UsageMetadata struct {
 		PromptTokenCount     int `json:"promptTokenCount"`
 		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		// Gemini's context-cache hit, already included in promptTokenCount.
+		CachedContentTokenCount int `json:"cachedContentTokenCount"`
 	} `json:"usageMetadata"`
 	Error *struct {
 		Message string `json:"message"`
@@ -172,6 +174,7 @@ func (c *gemini) Complete(ctx context.Context, req Request) (*Response, error) {
 		Model:        c.p.Model,
 		PromptTokens: out.UsageMetadata.PromptTokenCount,
 		OutputTokens: out.UsageMetadata.CandidatesTokenCount,
+		CachedTokens: out.UsageMetadata.CachedContentTokenCount,
 		Provider:     c.p.ID,
 		Latency:      time.Since(start),
 	}, nil

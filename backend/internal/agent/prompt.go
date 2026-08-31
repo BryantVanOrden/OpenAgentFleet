@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
@@ -18,7 +21,7 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|call_mcp|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "mark": 1,
   "coordinates": [x, y],
@@ -32,6 +35,9 @@ Schema:
   "tool_description": "short explanation of what the tool does (for mount_tool)",
   "tool_parameters": {"param1": "value1"},
   "tool_handler": "python function definition (for mount_tool)",
+  "mcp_tool_name": "name of the MCP tool to invoke (for call_mcp)",
+  "mcp_params": {"param1": "value1"},
+  "mcp_server_id": "optional; omit and the tool name is resolved to its server",
   "work_name": "what other agents refer to this item by (for publish_work/read_work)",
   "work_kind": "file|app|workspace (for publish_work)",
   "work_workspace": "name of the workspace this belongs in (optional)",
@@ -96,6 +102,11 @@ Rules:
 - Use "mount_tool" when you want to synthesize a reusable helper tool (defining a
   Python function). It will be available on subsequent turns via "call_tool".
 - Use "call_tool" with "tool_name" and "tool_parameters" to invoke any mounted tool.
+- Use "call_mcp" with "mcp_tool_name" and "mcp_params" to invoke a tool on one of
+  the fleet's Model Context Protocol servers. The tools available to you are
+  listed below the schema; if none are listed, this fleet has no MCP servers and
+  the action will not work. Prefer an MCP tool over driving a website by hand
+  when one exists for the job — it is faster and cannot misclick.
 - Use "unmount_tool" when finished with a dynamic tool to keep the context clean.
 - Use "spawn_agent" with "sub_goal" when a distinct sub-task should be delegated
   to a child agent worker (e.g. searching, compiling, testing).
@@ -130,7 +141,97 @@ func buildSystem(inst *protocol.Instance, mounted map[string]protocol.MountedToo
 		}
 	}
 
+	// The MCP catalogue, listed only when the fleet actually has one.
+	//
+	// Listed at all because a tool a model is not told about is a tool it will
+	// never call: `call_mcp` was in the action vocabulary with no way to learn
+	// what could be passed to it. Omitted entirely on a fleet with no MCP
+	// servers, rather than printed as an empty heading, so the common case
+	// spends no tokens on it.
+	sb.WriteString(mcpCatalogue())
+
 	return sb.String()
+}
+
+// mcpTools is the source of the MCP catalogue in the prompt. A package-level
+// variable so tests can pin the list without registering real servers.
+var mcpTools = func() []protocol.MCPTool {
+	return mcp.GlobalMCP.ListTools(context.Background(), "")
+}
+
+func mcpCatalogue() string {
+	tools := mcpTools()
+	if len(tools) == 0 {
+		return ""
+	}
+
+	// Sorted for a stable prompt: the manager iterates a map, so an unsorted
+	// list would reorder between turns and defeat prompt caching on the system
+	// message for no benefit.
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
+
+	var sb strings.Builder
+	sb.WriteString("\nMCP Tools (call with action \"call_mcp\", passing \"mcp_tool_name\" " +
+		"and \"mcp_params\"):\n")
+
+	// Capped. A fleet with a dozen MCP servers can expose hundreds of tools,
+	// and pasting all of them would crowd out the screen description that the
+	// agent actually needs to act on.
+	const maxListed = 60
+	for i, t := range tools {
+		if i == maxListed {
+			fmt.Fprintf(&sb, "- ...and %d more; ask for them by name if you need one\n",
+				len(tools)-maxListed)
+			break
+		}
+		fmt.Fprintf(&sb, "- %s: %s\n", t.Name, clip(oneLine(t.Description), 160))
+		if names := schemaParamNames(t.InputSchema); names != "" {
+			fmt.Fprintf(&sb, "  params: %s\n", names)
+		}
+	}
+	return sb.String()
+}
+
+// schemaParamNames summarises a JSON Schema as a parameter list.
+//
+// The full schema is too verbose for a system prompt — one tool's schema can run
+// to a page — and the names plus which are required is what a model needs to
+// form a call.
+func schemaParamNames(schema map[string]any) string {
+	props, ok := schema["properties"].(map[string]any)
+	if !ok || len(props) == 0 {
+		return ""
+	}
+	required := make(map[string]bool)
+	if req, ok := schema["required"].([]any); ok {
+		for _, r := range req {
+			if s, ok := r.(string); ok {
+				required[s] = true
+			}
+		}
+	}
+
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	parts := make([]string, 0, len(names))
+	for _, n := range names {
+		if required[n] {
+			parts = append(parts, n+" (required)")
+			continue
+		}
+		parts = append(parts, n)
+	}
+	return clip(strings.Join(parts, ", "), 240)
+}
+
+// oneLine flattens a description so a multi-paragraph one cannot break the
+// single-line-per-tool layout the model is reading.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // buildTurn assembles the user message for one step. The image goes in its own
@@ -249,6 +350,8 @@ func summarise(a protocol.Action) string {
 		return fmt.Sprintf("unmount_tool %s", a.ToolName)
 	case protocol.ActCallTool:
 		return fmt.Sprintf("call_tool %s", a.ToolName)
+	case protocol.ActCallMCP:
+		return fmt.Sprintf("call_mcp %s", a.MCPToolName)
 	case protocol.ActDeepSearch:
 		q := a.Query
 		if q == "" {

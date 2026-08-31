@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -27,8 +28,60 @@ func (s *Server) handleRegisterMCPServer(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	res := mcp.GlobalMCP.RegisterServer(r.Context(), srv)
-	writeJSON(w, http.StatusCreated, res)
+
+	// Bounded: registering a server now opens a connection, runs the MCP
+	// handshake and lists tools, and for stdio spawns a process. A server that
+	// never answers must not hold the request open indefinitely.
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+
+	res, err := mcp.GlobalMCP.RegisterServer(ctx, srv)
+	if err != nil {
+		// 400, not 500: the server is unreachable or misconfigured, which is
+		// something the operator can fix and needs to be told about. Registering
+		// used to always report success and produce one invented tool.
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, redactMCP(res))
+}
+
+// redactMCP keeps the env map out of the API response.
+//
+// It holds whatever the operator put there, which for a hosted MCP server is an
+// API key and for an HTTP one is usually a bearer token. The previous handler
+// echoed the whole struct straight back.
+func redactMCP(srv protocol.MCPServer) map[string]any {
+	keys := make([]string, 0, len(srv.Env))
+	for k := range srv.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return map[string]any{
+		"id": srv.ID, "name": srv.Name, "transport": srv.Transport,
+		"command": srv.Command, "args": srv.Args, "url": srv.URL,
+		"tools_count": srv.ToolsCount, "active": srv.Active,
+		"created_at": srv.CreatedAt, "updated_at": srv.UpdatedAt,
+		// The names are useful for diagnosing a missing variable; the values
+		// are not the console's business.
+		"env_keys": keys,
+	}
+}
+
+// handleRefreshMCPTools re-asks a server what tools it has.
+//
+// Servers may change their catalogue at runtime. Nothing subscribes to
+// notifications/tools/list_changed yet, so this is the manual equivalent.
+func (s *Server) handleRefreshMCPTools(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+
+	tools, err := mcp.GlobalMCP.RefreshTools(ctx, r.PathValue("id"))
+	if err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tools": tools, "count": len(tools)})
 }
 
 func (s *Server) handleDeleteMCPServer(w http.ResponseWriter, r *http.Request) {
@@ -54,9 +107,19 @@ func (s *Server) handleCallMCPTool(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	res, err := mcp.GlobalMCP.CallTool(r.Context(), req.ServerID, req.ToolName, req.Params)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	res, err := mcp.GlobalMCP.CallTool(ctx, req.ServerID, req.ToolName, req.Params)
 	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
+		// A tool that ran and reported failure is a 200 carrying is_error, not a
+		// transport problem: the caller asked a question and got an answer.
+		if errors.Is(err, mcp.ErrToolFailed) && res != nil {
+			writeJSON(w, http.StatusOK, res)
+			return
+		}
+		fail(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

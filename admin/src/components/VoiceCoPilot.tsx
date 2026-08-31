@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import * as api from "../lib/api";
 import { ErrorNote, Modal, cx } from "./ui";
 
 export interface VoiceOption {
@@ -70,8 +71,50 @@ export default function VoiceCoPilot({
     Array<{ sender: "user" | "bot"; text: string; time: string }>
   >([]);
   const [error, setError] = useState<string | null>(null);
+  // Whether the sidecar answered. Null while unknown, so the banner does not
+  // flash "unavailable" during the first request.
+  const [ttsAvailable, setTtsAvailable] = useState<boolean | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Declared before the effects that clean up with it: it is a const, so the
+  // effects below would be referencing it before initialisation otherwise.
+  const stopPlayback = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  };
+
+  // Ask the sidecar what it can do, once the modal is actually opened. Asking
+  // on mount would probe it for every operator who never opens this panel.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void api.voice
+      .list()
+      .then((cat) => {
+        if (cancelled) return;
+        setTtsAvailable(cat.available);
+        if (cat.available && cat.default) setSelectedVoice(cat.default);
+      })
+      .catch(() => {
+        if (!cancelled) setTtsAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  // Closing the panel has to silence it. Without this an utterance keeps
+  // playing over whatever the operator does next, with no visible control.
+  useEffect(() => {
+    if (!open) stopPlayback();
+  }, [open]);
+
+  useEffect(() => stopPlayback, []);
 
   useEffect(() => {
     // Check browser SpeechRecognition support
@@ -136,34 +179,77 @@ export default function VoiceCoPilot({
       if (onSendSpokenCommand) {
         await onSendSpokenCommand(text);
       }
-      // Simulate/trigger voice feedback from Pocket TTS
-      playSpeechSynthesis(`Executing directive: ${text}`, selectedVoice);
+      await speakAloud(`Executing directive: ${text}`, selectedVoice);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const playSpeechSynthesis = (text: string, voiceId: string) => {
+  /**
+   * Speak text in the fleet's own voice.
+   *
+   * This called `window.speechSynthesis` and nothing else, so a modal titled
+   * "Pocket TTS Real-Time Voice Co-Pilot" was actually the operating system's
+   * built-in robot voice, the six speakers in the picker above were labels on a
+   * pitch multiplier, and the sidecar holding the real weights was never
+   * contacted. Now it asks the sidecar, and only falls back to the browser when
+   * there is no sidecar to ask -- with the fallback said out loud in the
+   * transcript, so nobody mistakes the OS voice for the product again.
+   */
+  const speakAloud = async (text: string, voiceId: string) => {
     setIsSpeaking(true);
     const now = new Date().toLocaleTimeString();
     setConversation((prev) => [...prev, { sender: "bot", text, time: now }]);
 
-    // Native SpeechSynthesis fallback or backend streaming
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const profile = CURATED_VOICES.find((v) => v.id === voiceId);
-      if (profile) {
-        utterance.pitch = profile.gender === "female" ? 1.2 : 0.85;
-        utterance.rate = 1.05;
+    // Anything still playing is stale the moment there is something newer to
+    // say, and two overlapping utterances are unintelligible.
+    stopPlayback();
+
+    try {
+      const url = await api.voice.speak(text, voiceId);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      // Revoked on both paths: a blob per utterance that is never released
+      // holds the whole WAV in memory for the lifetime of the page.
+      const done = () => {
+        URL.revokeObjectURL(url);
+        if (audioRef.current === audio) audioRef.current = null;
+        setIsSpeaking(false);
+      };
+      audio.onended = done;
+      audio.onerror = () => {
+        done();
+        setError("The synthesised audio could not be played by this browser.");
+      };
+      await audio.play();
+    } catch (err) {
+      setIsSpeaking(false);
+      const detail = err instanceof Error ? err.message : String(err);
+      if (browserFallback(text, voiceId)) {
+        setError(`Speech service unavailable (${detail}) - using this browser's built-in voice.`);
+      } else {
+        setError(`Speech unavailable: ${detail}`);
       }
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-      window.speechSynthesis.speak(utterance);
-    } else {
-      setTimeout(() => setIsSpeaking(false), 2000);
     }
   };
+
+  /** Last resort when the sidecar is not deployed. Returns whether it ran. */
+  const browserFallback = (text: string, voiceId: string): boolean => {
+    if (!("speechSynthesis" in window)) return false;
+    setIsSpeaking(true);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const profile = CURATED_VOICES.find((v) => v.id === voiceId);
+    if (profile) {
+      utterance.pitch = profile.gender === "female" ? 1.2 : 0.85;
+      utterance.rate = 1.05;
+    }
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    return true;
+  };
+
 
   if (!open) return null;
 
@@ -177,7 +263,9 @@ export default function VoiceCoPilot({
               Live Voice Dialogue {instanceName ? `· ${instanceName}` : ""}
             </h4>
             <p className="text-xs text-ink-400">
-              Spoken duplex communication powered by Kyutai Labs Pocket TTS.
+              {ttsAvailable === false
+                ? "No text-to-speech sidecar is deployed — falling back to this browser's built-in voice."
+                : "Spoken duplex communication powered by Kyutai Labs Pocket TTS."}
             </p>
           </div>
 

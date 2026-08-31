@@ -49,6 +49,11 @@ VOICE_ALIASES: dict[str, str] = {
     "lyra": "eve",
 }
 
+# The shipped default, named once so the resolver, the catalogue and the
+# warm-up cannot disagree about it. They did: resolve_voice fell back to "echo"
+# while every document and picker said "shadow".
+DEFAULT_VOICE = "shadow"
+
 ALIAS_BLURB = {
     "shadow": "Low and level",
     "atlas": "Warm, unhurried",
@@ -94,7 +99,11 @@ def resolve_voice(name: str | None) -> str:
     """Map an alias or a raw speaker name onto a real speaker."""
     key = (name or "").strip().lower()
     if not key:
-        return VOICE_ALIASES["echo"]
+        # "shadow" is the documented default -- it is what the docs, the
+        # console's picker and the sandbox's voice table all name. This returned
+        # "echo", so which voice you actually got depended on whether the caller
+        # bothered to fill the field in, and the two sounded nothing alike.
+        return VOICE_ALIASES[DEFAULT_VOICE]
     if key in VOICE_ALIASES:
         return VOICE_ALIASES[key]
     if key in ALL_VOICES:
@@ -160,6 +169,9 @@ def voices() -> list[dict]:
             "description": ALIAS_BLURB.get(alias, ""),
             "speaker": speaker,
             "preset": True,
+            # Marked so a picker can show which one it will get if it asks for
+            # nothing, rather than each client hardcoding its own guess.
+            "default": alias == DEFAULT_VOICE,
         }
         for alias, speaker in VOICE_ALIASES.items()
     ]

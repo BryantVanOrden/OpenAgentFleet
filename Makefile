@@ -50,6 +50,12 @@ screenshots: ## Recapture the documentation screenshots from the running console
 sandbox: ## Build the sandbox desktop image
 	docker build -t agentfleet/sandbox:latest ./sandbox
 
+.PHONY: sandbox-dev
+sandbox-dev: sandbox ## Build the developer-heavy image (compilers, Rust, Go, GPU hints)
+	docker build -t agentfleet/sandbox:latest-dev \
+		--build-arg BASE_IMAGE=agentfleet/sandbox:latest \
+		-f ./sandbox/Dockerfile.dev ./sandbox
+
 .PHONY: up
 up: env sandbox ## Build the sandbox image and start the whole stack
 	$(COMPOSE) up -d --build

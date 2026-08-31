@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,16 @@ const maxRecords = 20000
 type modelPrice struct {
 	prompt     float64
 	completion float64
+	// cachedDiscount is the fraction of the prompt rate charged for a token the
+	// provider served from its prompt cache. OpenAI and Anthropic both bill a
+	// cache read at 10% of input; Gemini charges 25%. Zero means "use
+	// defaultCachedDiscount", so entries that predate this keep working.
+	cachedDiscount float64
 }
+
+// defaultCachedDiscount is the 10% cache-read rate OpenAI and Anthropic
+// both charge, applied to any model whose table entry does not say otherwise.
+const defaultCachedDiscount = 0.10
 
 // modelPrices is a coarse per-model price table matched by substring, because a
 // provider row's model name carries a version suffix (e.g.
@@ -39,8 +49,9 @@ var modelPrices = map[string]modelPrice{
 	"gpt-4o":         {prompt: 0.0000025, completion: 0.00001},
 	"gpt-4":          {prompt: 0.00003, completion: 0.00006},
 	"o1":             {prompt: 0.000015, completion: 0.00006},
-	"gemini-1.5-pro": {prompt: 0.00000125, completion: 0.000005},
-	"gemini":         {prompt: 0.0000003, completion: 0.0000012},
+	// Gemini's context cache is charged at 25% of input, not 10%.
+	"gemini-1.5-pro": {prompt: 0.00000125, completion: 0.000005, cachedDiscount: 0.25},
+	"gemini":         {prompt: 0.0000003, completion: 0.0000012, cachedDiscount: 0.25},
 }
 
 // defaultPrice is the fallback for an unrecognised model. It matches the old
@@ -76,6 +87,30 @@ func sortedKeysByLength(m map[string]modelPrice) []string {
 	return keys
 }
 
+// Store is the durable half: one row per turn, plus the all-time totals.
+//
+// An interface rather than *store.Store so the tracker works with no database,
+// which is how the tests build it and how GlobalTracker behaves until the server
+// attaches a store on boot.
+type Store interface {
+	InsertTelemetryTurn(ctx context.Context, rec protocol.TokenTelemetryRecord) error
+	TelemetryTotals(ctx context.Context) (StoredTotals, error)
+	RecentTelemetryTurns(ctx context.Context, limit int) ([]protocol.TokenTelemetryRecord, error)
+}
+
+// StoredTotals mirrors store.TelemetryTotals. Declared here so the telemetry
+// package does not import the store package — the dependency runs the other
+// way for every other subsystem and reversing it for this one would make an
+// import cycle the moment the store wants to price anything.
+type StoredTotals struct {
+	PromptTokens     int64
+	CompletionTokens int64
+	CachedTokens     int64
+	CostUSD          float64
+	LatencyMS        int64
+	Turns            int64
+}
+
 // Tracker records token usage, API cost calculations, and response latencies.
 type Tracker struct {
 	mu      sync.RWMutex
@@ -86,6 +121,12 @@ type Tracker struct {
 	agg FinancialSummary
 	// sumLatency is the un-averaged latency total behind agg.AvgLatencyMS.
 	sumLatency int64
+
+	// store is optional. When nil the tracker is in-memory only, and every
+	// figure on the cost dashboard resets to zero on the next deploy — which is
+	// what it did for every fleet before this was wired up.
+	store Store
+	log   *slog.Logger
 }
 
 var GlobalTracker = NewTracker()
@@ -94,6 +135,53 @@ func NewTracker() *Tracker {
 	return &Tracker{
 		records: make([]protocol.TokenTelemetryRecord, 0),
 	}
+}
+
+// AttachStore makes spend durable: the all-time totals and the recent turns are
+// loaded back, and every turn afterwards is written through.
+//
+// The totals come from SQL rather than from replaying the loaded rows, because
+// the retained window is a few hundred turns and the lifetime total is millions
+// — adding up only what was hydrated would report a fleet's entire history as
+// whatever happened since the last restart, which is the bug this replaces
+// wearing a different hat.
+func (t *Tracker) AttachStore(ctx context.Context, st Store, log *slog.Logger) error {
+	if log == nil {
+		log = slog.Default()
+	}
+	totals, err := st.TelemetryTotals(ctx)
+	if err != nil {
+		return err
+	}
+	recent, err := st.RecentTelemetryTurns(ctx, maxRecords/40) // 500
+	if err != nil {
+		return err
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.store = st
+	t.log = log
+
+	// Anything recorded before the attach is already in the aggregates and is
+	// not yet in the table, so it is added on top rather than replaced.
+	t.agg.TotalPromptTokens += totals.PromptTokens
+	t.agg.TotalCompletionTokens += totals.CompletionTokens
+	t.agg.TotalCachedTokens += totals.CachedTokens
+	t.agg.TotalCostUSD += totals.CostUSD
+	t.agg.TurnsCount += int(totals.Turns)
+	t.sumLatency += totals.LatencyMS
+
+	// Oldest first, matching the append order RecordTurn uses, so the drill-down
+	// reads chronologically either way it was populated.
+	for i := len(recent) - 1; i >= 0; i-- {
+		t.records = append(t.records, recent[i])
+	}
+	if len(t.records) > maxRecords {
+		keep := t.records[len(t.records)-maxRecords:]
+		t.records = append(make([]protocol.TokenTelemetryRecord, 0, maxRecords), keep...)
+	}
+	return nil
 }
 
 func (t *Tracker) RecordTurn(ctx context.Context, rec protocol.TokenTelemetryRecord) protocol.TokenTelemetryRecord {
@@ -107,11 +195,30 @@ func (t *Tracker) RecordTurn(ctx context.Context, rec protocol.TokenTelemetryRec
 		rec.CreatedAt = time.Now().UTC()
 	}
 
+	// CachedTokens is a subset of PromptTokens, so the cached part is billed at
+	// the cache rate and only the remainder at the full input rate. Clamped
+	// because a provider reporting more cached than prompt tokens (a
+	// mis-mapped field on some OpenAI-compatible server) would otherwise make
+	// the uncached count negative and credit the fleet money.
+	if rec.CachedTokens < 0 {
+		rec.CachedTokens = 0
+	}
+	if rec.CachedTokens > rec.PromptTokens {
+		rec.CachedTokens = rec.PromptTokens
+	}
+
 	// Price by the record's own model rather than one fixed pair, so an Opus turn
 	// and a Haiku turn are not billed identically.
 	if rec.CostUSD == 0 {
 		p := priceFor(rec.ModelName)
-		rec.CostUSD = (float64(rec.PromptTokens) * p.prompt) + (float64(rec.CompletionTokens) * p.completion)
+		discount := p.cachedDiscount
+		if discount <= 0 {
+			discount = defaultCachedDiscount
+		}
+		uncached := rec.PromptTokens - rec.CachedTokens
+		rec.CostUSD = (float64(uncached) * p.prompt) +
+			(float64(rec.CachedTokens) * p.prompt * discount) +
+			(float64(rec.CompletionTokens) * p.completion)
 	}
 
 	// Fold into the running aggregates first, so trimming below cannot drop a
@@ -129,6 +236,23 @@ func (t *Tracker) RecordTurn(ctx context.Context, rec protocol.TokenTelemetryRec
 		// reslicing so the backing array does not pin the trimmed records.
 		keep := t.records[len(t.records)-maxRecords:]
 		t.records = append(make([]protocol.TokenTelemetryRecord, 0, maxRecords), keep...)
+	}
+	st, log := t.store, t.log
+
+	if st != nil {
+		// In a goroutine, and deliberately: RecordTurn is called from the agent
+		// loop between a model turn and the next observation, holds the
+		// tracker's write lock, and a database round trip here would put every
+		// running agent behind Postgres on the hot path. The turn is already
+		// counted in the aggregates above, so a failed write costs the row, not
+		// the total.
+		go func() {
+			// Detached from the turn's context: the task can finish, and cancel
+			// its context, before this write lands.
+			if err := st.InsertTelemetryTurn(context.WithoutCancel(ctx), rec); err != nil && log != nil {
+				log.Warn("turn cost not persisted", "id", rec.ID, "task", rec.TaskID, "err", err)
+			}
+		}()
 	}
 	return rec
 }

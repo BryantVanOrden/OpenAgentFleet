@@ -194,7 +194,12 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	if !m.docker.ImageExists(ctx, p.Image) {
 		m.log.Info("pulling sandbox image", "image", p.Image)
 		if err := m.docker.PullImage(ctx, p.Image); err != nil {
-			return fmt.Errorf("image %s unavailable: %w (build it with `make sandbox`)", p.Image, err)
+			// Name the target that builds *this* image. The developer-heavy tier
+			// uses a different tag and a different Dockerfile, so a blanket
+			// "run make sandbox" sent whoever picked that tier to a command that
+			// could not fix their problem.
+			return fmt.Errorf("image %s unavailable: %w (build it with `%s`)",
+				p.Image, err, buildTargetFor(p.Image))
 		}
 	}
 

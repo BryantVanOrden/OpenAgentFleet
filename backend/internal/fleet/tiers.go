@@ -80,6 +80,19 @@ func TierByName(tiers []protocol.TierProfile, name protocol.Tier) protocol.TierP
 	return tiers[0]
 }
 
+// buildTargetFor names the make target that produces an image tag.
+//
+// The developer-heavy tier runs a different image built from a different
+// Dockerfile, so telling everyone to run `make sandbox` sent whoever picked
+// that tier to a command that rebuilds the base and leaves the tag they need
+// still missing.
+func buildTargetFor(image string) string {
+	if strings.HasSuffix(image, "-dev") {
+		return "make sandbox-dev"
+	}
+	return "make sandbox"
+}
+
 // ApplyOverride layers per-instance resource tweaks over a tier profile.
 func ApplyOverride(p protocol.TierProfile, o *protocol.ResourceOverride) protocol.TierProfile {
 	if o == nil {

@@ -378,7 +378,14 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			ModelName:        resp.Model,
 			PromptTokens:     resp.PromptTokens,
 			CompletionTokens: resp.OutputTokens,
-			LatencyMS:        int(resp.Latency.Milliseconds()),
+			// A subset of PromptTokens, not an addition: the tracker prices the
+			// uncached remainder at the full input rate and this at the cache
+			// rate. Nothing populated it before, so the cached column read zero
+			// on every fleet and the input spend was overstated by whatever the
+			// provider had actually cached — on an agent loop resending the same
+			// system prompt every turn, most of it.
+			CachedTokens: resp.CachedTokens,
+			LatencyMS:    int(resp.Latency.Milliseconds()),
 		})
 
 		history = append(history, turnSummary{Step: task.Step, Action: summarise(action), Outcome: outcome})
@@ -621,6 +628,18 @@ func (r *Runner) execute(
 		}
 		return "no work item called " + name + ". The catalog holds: " +
 			strings.Join(names, ", "), terminalNone
+
+	// Handled here rather than in the sandbox. agentd's version synthesised a
+	// modulated tone, returned it base64'd in a field nothing read, and the
+	// sandbox has no audio device or path to the operator anyway. See speech.go.
+	case protocol.ActSpeak:
+		return r.speak(ctx, task, inst, a), terminalNone
+
+	// MCP tool calls go through the orchestrator, not the sandbox. The
+	// connections live here — one per server for the whole fleet rather than
+	// one per desktop — and a stdio server is a child process of this binary.
+	case protocol.ActCallMCP:
+		return r.callMCP(ctx, inst, a), terminalNone
 
 	case protocol.ActShareSecret:
 		key := firstNonEmpty(a.SecretKey, a.Target)

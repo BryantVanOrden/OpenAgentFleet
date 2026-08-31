@@ -62,6 +62,14 @@ type oaResponse struct {
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
+		// OpenAI nests the cache hit inside prompt_tokens_details, and it is
+		// already counted in prompt_tokens. Several OpenAI-compatible servers
+		// (vLLM, LiteLLM, Groq) copy the same shape, which is why this connector
+		// reads it for the compatible kinds too; ones that omit it simply
+		// report zero.
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
@@ -147,6 +155,7 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 		Model:        firstNonEmpty(out.Model, c.p.Model),
 		PromptTokens: out.Usage.PromptTokens,
 		OutputTokens: out.Usage.CompletionTokens,
+		CachedTokens: out.Usage.PromptTokensDetails.CachedTokens,
 		Provider:     c.p.ID,
 		Latency:      time.Since(start),
 	}, nil

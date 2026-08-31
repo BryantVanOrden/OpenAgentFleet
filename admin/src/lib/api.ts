@@ -651,3 +651,61 @@ export function vncUrl(instanceId: string, viewOnly = false): string {
 export function artifactUrl(key: string): string {
   return `/api/artifacts/${key}?token=${encodeURIComponent(getToken() ?? "")}`;
 }
+
+// ------------------------------------------------------------------- voice ---
+
+export interface TtsVoice {
+  id: string;
+  name: string;
+  description?: string;
+  speaker?: string;
+  preset?: boolean;
+  default?: boolean;
+}
+
+export interface TtsCatalogue {
+  available: boolean;
+  reason?: string;
+  default?: string;
+  voices: TtsVoice[];
+}
+
+export const voice = {
+  /** What the sidecar can actually say, or why it cannot. */
+  list: () => get<TtsCatalogue>("/api/voice/voices"),
+
+  /**
+   * Synthesise one utterance and return it as a playable blob URL.
+   *
+   * The response is audio, not JSON, so it cannot go through `request()` --
+   * which parses every body as JSON and would throw on a WAV. The console used
+   * to skip this endpoint entirely and call `window.speechSynthesis` instead,
+   * so the "Pocket TTS voice co-pilot" was the operating system's own robot
+   * voice and the sidecar's six distinct speakers were never heard.
+   *
+   * The caller owns the returned URL and must revokeObjectURL it, or every
+   * utterance leaks a blob for the lifetime of the page.
+   */
+  speak: async (text: string, voiceId?: string, speed?: number): Promise<string> => {
+    const token = getToken();
+    const headers = new Headers({ "Content-Type": "application/json" });
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    const res = await fetch("/api/voice/speak", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text, voice: voiceId, speed }),
+    });
+    if (!res.ok) {
+      let message = `${res.status} ${res.statusText}`;
+      try {
+        const body = await res.json();
+        if (body?.error) message = body.error;
+      } catch {
+        /* the error body is not always JSON */
+      }
+      throw new ApiError(message, res.status);
+    }
+    return URL.createObjectURL(await res.blob());
+  },
+};
