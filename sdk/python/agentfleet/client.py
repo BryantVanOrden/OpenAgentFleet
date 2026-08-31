@@ -43,7 +43,14 @@ class FleetClient:
         method: str,
         path: str,
         data: Optional[dict[str, Any]] = None,
+        raw: bool = False,
     ) -> Any:
+        """One HTTP round trip. With raw=True the body comes back as bytes.
+
+        raw exists for the one endpoint that does not speak JSON:
+        /api/voice/speak streams WAV audio, and decoding that as UTF-8 to
+        json.loads it is an exception, not a response.
+        """
         url = f"{self.base_url}{path}"
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
@@ -57,8 +64,10 @@ class FleetClient:
                 status = resp.status
                 if status == 204:
                     return None
-                raw = resp.read().decode("utf-8")
-                return json.loads(raw) if raw else None
+                if raw:
+                    return resp.read()
+                raw_body = resp.read().decode("utf-8")
+                return json.loads(raw_body) if raw_body else None
         except urllib.error.HTTPError as exc:
             err_body = exc.read().decode("utf-8")
             msg = err_body
@@ -170,10 +179,25 @@ class FleetClient:
 
     # ----------------------------------------------------------------- Voice ---
 
-    def speak(self, text: str, voice: str = "shadow") -> dict[str, Any]:
-        """Synthesizes speech using Pocket TTS across 6 curated voice models."""
-        payload = {"text": text, "voice": voice}
-        return self._post("/voice/speak", payload) or {"status": "spoken", "voice": voice}
+    def speak(self, text: str, voice: str = "shadow", speed: float = 0) -> bytes:
+        """Synthesize speech and return the WAV bytes.
+
+        This never worked before: it posted to /voice/speak — no /api prefix, so
+        a guaranteed 404 — and when the path was corrected the endpoint returns
+        audio, which the JSON plumbing would have thrown on. The `or {...}`
+        fallback then fabricated a success dict, which is the exact behaviour
+        this codebase keeps having to unlearn. Callers get the audio or an
+        exception; a fleet with no TTS sidecar raises FleetApiError with the
+        server's explanation.
+        """
+        payload: dict[str, Any] = {"text": text, "voice": voice}
+        if speed:
+            payload["speed"] = speed
+        return self._request("POST", "/api/voice/speak", data=payload, raw=True)
+
+    def voices(self) -> dict[str, Any]:
+        """The voices the fleet can produce, or {"available": false, ...}."""
+        return self._get("/api/voice/voices")
 
     # ----------------------------------------------------------- MCP & Pipelines ---
 
@@ -181,10 +205,48 @@ class FleetClient:
         """Lists connected Model Context Protocol (MCP) servers."""
         return self._get("/api/mcp/servers") or []
 
-    def register_mcp_server(self, name: str, command: str, transport: str = "stdio") -> dict[str, Any]:
-        """Registers a new Model Context Protocol tool server."""
-        payload = {"name": name, "command": command, "transport": transport}
+    def register_mcp_server(
+        self,
+        name: str,
+        transport: str = "stdio",
+        command: Optional[str] = None,
+        args: Optional[list[str]] = None,
+        url: Optional[str] = None,
+        env: Optional[dict[str, str]] = None,
+    ) -> dict[str, Any]:
+        """Register an MCP tool server. The orchestrator connects, completes the
+        handshake and discovers tools before storing anything, so a server that
+        cannot be reached is an exception here rather than a broken row.
+
+        stdio: `command` is one executable and `args` its argv — the server is
+        exec'd directly, not through a shell, so a full command line stuffed
+        into `command` execs a binary with a space in its name and fails. (The
+        old signature invited exactly that.) The process runs inside the
+        orchestrator's container, so the executable has to exist there.
+
+        http: pass `url`; `env` becomes extra request headers, which is how a
+        bearer token is supplied.
+        """
+        payload: dict[str, Any] = {"name": name, "transport": transport}
+        if command:
+            payload["command"] = command
+        if args:
+            payload["args"] = args
+        if url:
+            payload["url"] = url
+        if env:
+            payload["env"] = env
         return self._post("/api/mcp/servers", payload) or {}
+
+    def call_mcp_tool(
+        self, tool_name: str, params: Optional[dict[str, Any]] = None, server_id: str = ""
+    ) -> dict[str, Any]:
+        """Invoke one MCP tool. server_id is optional — the orchestrator
+        resolves the tool name to whichever server provides it."""
+        return self._post(
+            "/api/mcp/call",
+            {"server_id": server_id, "tool_name": tool_name, "params": params or {}},
+        ) or {}
 
     def list_pipelines(self) -> list[dict[str, Any]]:
         """Lists multi-bot workflow DAG pipelines."""

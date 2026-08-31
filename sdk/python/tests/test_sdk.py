@@ -370,16 +370,30 @@ class TestSwarmComms(TransportMixin, unittest.TestCase):
         )
         self.assertEqual(msg.to_bot, "QA Bot")
 
-    def test_speak_request_shape(self):
-        self.queue(_FakeResponse({"status": "spoken"}))
-        self.client.speak("all clear", voice="aura")
-        self.assert_call("POST", "/voice/speak", {"text": "all clear", "voice": "aura"})
+    def test_speak_hits_the_real_endpoint_and_returns_audio(self):
+        # These assertions used to pin the bug: the old test asserted the path
+        # /voice/speak (no /api prefix — a guaranteed 404 against the server)
+        # and a fabricated {"status": "spoken"} fallback. The endpoint streams
+        # WAV, so the contract is bytes in, bytes out.
+        wav = b"RIFF....WAVEfmt "
+        self.queue(_FakeResponse(wav))
+        got = self.client.speak("all clear", voice="aura")
+        self.assert_call("POST", "/api/voice/speak", {"text": "all clear", "voice": "aura"})
+        self.assertEqual(got, wav)
+        self.assertIsInstance(got, bytes)
 
-    def test_speak_falls_back_when_body_is_empty(self):
-        self.queue(_FakeResponse(None, status=204))
-        self.assertEqual(
-            self.client.speak("hi"), {"status": "spoken", "voice": "shadow"}
+    def test_speak_passes_speed_only_when_set(self):
+        self.queue(_FakeResponse(b"RIFF"))
+        self.client.speak("hi", voice="shadow", speed=1.5)
+        self.assert_call(
+            "POST", "/api/voice/speak", {"text": "hi", "voice": "shadow", "speed": 1.5}
         )
+
+    def test_voices_reports_availability(self):
+        self.queue(_FakeResponse({"available": False, "reason": "no sidecar", "voices": []}))
+        got = self.client.voices()
+        self.assert_call("GET", "/api/voice/voices", None)
+        self.assertFalse(got["available"])
 
 
 # ------------------------------------------------------------------ errors ---

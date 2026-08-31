@@ -10,7 +10,10 @@ readme = "README.md"
 authors = [
     { name = "Bryant VanOrden", email = "supermanismebvo123@gmail.com" }
 ]
-license = { text = "Apache-2.0" }
+# Matches the repository's LICENSE. This said Apache-2.0, so the one artifact
+# that gets published to a package index would have claimed a more permissive
+# grant than the code it wraps actually carries.
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

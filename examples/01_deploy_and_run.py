@@ -4,8 +4,11 @@
 from agentfleet import FleetClient
 
 def main():
-    # 1. Connect to AgentFleet orchestrator
+    # 1. Connect and authenticate. Every route needs a session: create your
+    #    admin through the console's first-run screen (http://localhost:8081),
+    #    then either log in here or pass token="..." to FleetClient.
     fleet = FleetClient("http://localhost:8080")
+    fleet.login("you@example.com", "your-password")
 
     print("🚀 Deploying a specialized Full-Stack Developer bot...")
     bot = fleet.deploy_bot(

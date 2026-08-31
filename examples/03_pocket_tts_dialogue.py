@@ -1,27 +1,57 @@
 #!/usr/bin/env python3
-"""Example 3: Pocket TTS Real-Time Voice Synthesis across 6 curated voice models."""
+"""Example 3: synthesize speech with the Pocket TTS sidecar.
+
+`speak()` returns the WAV bytes — this writes one file per voice so you have
+something to actually listen to. The sidecar is optional; a fleet without one
+says so and this example reports that instead of pretending it spoke. (An
+earlier version printed a success line for every voice against an endpoint the
+SDK could never reach.)
+"""
+
+from pathlib import Path
 
 from agentfleet import FleetClient
+from agentfleet.exceptions import FleetApiError
+
+VOICES = [
+    ("shadow", "Male (default) — low and level"),
+    ("atlas", "Male — warm, unhurried"),
+    ("vortex", "Male — bright and quick"),
+    ("echo", "Male — clear, neutral"),
+    ("aura", "Female — soft, higher register"),
+    ("lyra", "Female — light and articulate"),
+]
+
 
 def main():
     fleet = FleetClient("http://localhost:8080")
+    # fleet.login("you@example.com", "...")   # or FleetClient(token=...)
 
-    # 4 Male voices, 2 Female voices
-    voices = [
-        ("shadow", "Male (Default)", "Cyberpunk operative & tech lead"),
-        ("atlas", "Male", "Resonant, authoritative architectural leader"),
-        ("vortex", "Male", "Dynamic, high-velocity engineer"),
-        ("echo", "Male", "Calm, analytical quant"),
-        ("aura", "Female", "Crisp, futuristic AI co-pilot"),
-        ("lyra", "Female", "Warm, conversational guide"),
-    ]
+    # Ask first rather than failing six times: availability is reported, and a
+    # deployment with no TTS sidecar is a normal configuration.
+    catalogue = fleet.voices()
+    if not catalogue.get("available"):
+        print("🔇 No text-to-speech sidecar on this fleet:")
+        print(f"   {catalogue.get('reason', 'not deployed')}")
+        print("   Deploy the `tts` compose service and re-run.")
+        return
 
-    print("🎙️ Testing Pocket TTS Curated Voice Models:\n")
-    for vid, gender, tag in voices:
-        text = f"AgentFleet voice profile {vid} operational. Standing by for task instructions."
-        print(f"Synthesizing [{vid.upper()}] ({gender} - {tag})...")
-        res = fleet.speak(text, voice=vid)
-        print(f" -> Output voice: {res.get('voice', vid)}\n")
+    out = Path("tts-samples")
+    out.mkdir(exist_ok=True)
+
+    print("🎙️ Synthesizing the six curated voices:\n")
+    for vid, blurb in VOICES:
+        try:
+            wav = fleet.speak(f"AgentFleet voice profile {vid} operational.", voice=vid)
+        except FleetApiError as exc:
+            print(f"  ✗ {vid}: {exc}")
+            continue
+        path = out / f"{vid}.wav"
+        path.write_bytes(wav)
+        print(f"  ✓ {vid:<7} {len(wav):>7,} bytes -> {path}   ({blurb})")
+
+    print(f"\nPlay them from {out}/ — every agent on the fleet speaks with these.")
+
 
 if __name__ == "__main__":
     main()

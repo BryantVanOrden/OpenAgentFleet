@@ -6,11 +6,17 @@ Official Python SDK and command-line management client for **AgentFleet**, the h
 
 ## 📦 Installation
 
+From this repository — the SDK is **not on PyPI yet** (see the release
+checklist), so `pip install agentfleet` does not install this project and, if
+that name is ever registered by someone else, would install code that is not
+ours. Install from the source you can read:
+
 ```bash
-pip install agentfleet
+git clone https://github.com/BryantVanOrden/AgentFleet.git
+pip install -e AgentFleet/sdk/python
 ```
 
-Or for local development:
+Or from a checkout:
 ```bash
 cd sdk/python
 pip install -e .
