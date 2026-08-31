@@ -7,7 +7,7 @@ several bots in a row. This release is about what those bots actually produce.
 They now have somewhere to put work, a way to hand it to each other, and a way
 to run what a colleague built rather than only read it.
 
-The full list is in [CHANGELOG.md](../CHANGELOG.md). This page covers what is
+The full list is in [CHANGELOG.md](https://github.com/BryantVanOrden/AgentFleet/blob/master/CHANGELOG.md). This page covers what is
 worth knowing before you upgrade.
 
 ---
