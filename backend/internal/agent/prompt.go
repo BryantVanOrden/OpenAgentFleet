@@ -35,6 +35,7 @@ Schema:
   "tool_description": "short explanation of what the tool does (for mount_tool)",
   "tool_parameters": {"param1": "value1"},
   "tool_handler": "python function definition (for mount_tool)",
+  "memory_scope": "bot|fleet (for remember; bot is the default and is private)",
   "mcp_tool_name": "name of the MCP tool to invoke (for call_mcp)",
   "mcp_params": {"param1": "value1"},
   "mcp_server_id": "optional; omit and the tool name is resolved to its server",
@@ -71,7 +72,12 @@ Rules:
   clean web summaries with citations without manual browser clicking.
 - Use "recall" with "query" to semantically search fleet episodic memory for past
   solutions, verified scripts, and AT-SPI selectors.
-- Use "remember" with "text" to store a valuable discovery into fleet episodic memory.
+- Use "remember" with "text" to store a valuable discovery into episodic memory.
+  It is private to you by default. Add "memory_scope": "fleet" when the finding
+  would help ANY bot on this fleet — a working selector for a shared internal
+  tool, a build flag that fixes a common failure, where a system actually lives.
+  Keep it private when it is about your own desktop, your own half-finished work,
+  or anything specific to this one task.
 - Add "about_user": true to a "remember" when the note is about the PERSON who asked
   rather than about the machine — a preference they stated, how they like to be
   answered, what they are responsible for. Those notes come back when that person

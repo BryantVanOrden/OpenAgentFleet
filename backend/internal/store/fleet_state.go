@@ -98,12 +98,13 @@ func (s *Store) UpsertMemory(ctx context.Context, m protocol.MemoryRecord) error
 		m.CreatedAt = time.Now().UTC()
 	}
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO episodic_memories(id,namespace,title,content,tags,embedding,source_task_id,source_instance_id,created_at,about_user_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		`INSERT INTO episodic_memories(id,namespace,title,content,tags,embedding,source_task_id,source_instance_id,created_at,about_user_id,embed_model)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (id) DO UPDATE SET namespace=$2,title=$3,content=$4,tags=$5,embedding=$6,
-             source_task_id=$7,source_instance_id=$8,about_user_id=$10`,
+             source_task_id=$7,source_instance_id=$8,about_user_id=$10,embed_model=$11`,
 		m.ID, m.Namespace, m.Title, m.Content, string(tags), string(embedding),
-		m.SourceTaskID, m.SourceInstanceID, m.CreatedAt, nullIfEmpty(m.AboutUserID))
+		m.SourceTaskID, m.SourceInstanceID, m.CreatedAt, nullIfEmpty(m.AboutUserID),
+		m.EmbedModel)
 	return norm(err)
 }
 
@@ -115,7 +116,7 @@ func (s *Store) ListMemories(ctx context.Context, namespace string, limit int) (
 	}
 	q := `SELECT id,namespace,title,content,COALESCE(tags,''),COALESCE(embedding,''),
              COALESCE(source_task_id,''),COALESCE(source_instance_id,''),created_at,
-             COALESCE(about_user_id,'')
+             COALESCE(about_user_id,''),COALESCE(embed_model,'')
           FROM episodic_memories`
 	args := []any{limit}
 	if namespace != "" {
@@ -134,7 +135,8 @@ func (s *Store) ListMemories(ctx context.Context, namespace string, limit int) (
 		var m protocol.MemoryRecord
 		var tags, embedding string
 		if err := rows.Scan(&m.ID, &m.Namespace, &m.Title, &m.Content, &tags, &embedding,
-			&m.SourceTaskID, &m.SourceInstanceID, &m.CreatedAt, &m.AboutUserID); err != nil {
+			&m.SourceTaskID, &m.SourceInstanceID, &m.CreatedAt, &m.AboutUserID,
+			&m.EmbedModel); err != nil {
 			return nil, err
 		}
 		if tags != "" {

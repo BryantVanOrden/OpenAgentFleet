@@ -138,6 +138,7 @@ func (s *Server) Routes() http.Handler {
 	// What each bot has chosen to remember, and a way to take one back out.
 	mux.Handle("GET /api/instances/{id}/memories", auth(roleAny, s.handleListInstanceMemories))
 	mux.Handle("DELETE /api/instances/{id}/memories/{memoryId}", auth(roleOperator, s.handleForgetMemory))
+	mux.Handle("GET /api/memory/fleet", auth(roleAny, s.handleFleetMemory))
 	// Conversations: the named threads comms messages are filed into.
 	mux.Handle("GET /api/comms/conversations", auth(roleAny, s.handleListConversations))
 	mux.Handle("POST /api/comms/conversations", auth(roleOperator, s.handleCreateConversation))

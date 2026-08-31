@@ -150,6 +150,9 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 			"pipelines cannot run: nothing is wired up to execute a node")
 	}
 
+	// Checked before a run id exists: a cyclic graph can never execute, and
+	// recording a run that immediately fails would put a permanent failure in
+	// the history for a pipeline that was never startable.
 	order, err := TopoOrder(p)
 	if err != nil {
 		return protocol.PipelineRun{}, err
@@ -159,8 +162,12 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 		firstNode = order[0].ID
 	}
 
-	e.mu.Lock()
+	states := make(map[string]string, len(p.Nodes))
+	for _, n := range p.Nodes {
+		states[n.ID] = NodeWaiting
+	}
 
+	e.mu.Lock()
 	runID := fmt.Sprintf("run-%d", time.Now().UnixNano())
 	run := protocol.PipelineRun{
 		ID:            runID,
@@ -168,56 +175,28 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 		Status:        "running",
 		CurrentNodeID: firstNode,
 		NodeResults:   make(map[string]string),
+		NodeStates:    states,
 		StartedAt:     time.Now().UTC(),
 	}
 	e.runs[runID] = run
 	snapshot := snapshotRun(run)
 	e.mu.Unlock()
 
-	// Real execution, in dependency order. What is stored as a graph now runs
-	// as one: the previous loop walked the node list in declaration order and
-	// ignored the edges, so a node could "complete" before the node it
-	// depended on had started.
+	// Real execution: every node whose dependencies have settled runs, several
+	// at a time, with each incoming edge's condition deciding whether the node
+	// runs or is skipped. What is drawn as a graph now executes as one.
+	//
+	// Two things this replaced. The original loop walked the node list in
+	// declaration order and ignored the edges entirely, so a node could
+	// "complete" before the node it depended on had started. The version after
+	// that honoured the edges but ran strictly one node at a time and ignored
+	// every condition, so a pipeline built to fan work out to three bots took
+	// three times as long as it should and ran both sides of a success/failure
+	// branch.
 	go func() {
 		// Detached from the request that started the run: a pipeline outlives
 		// the HTTP call that triggered it.
-		runCtx := context.WithoutCancel(ctx)
-
-		for _, node := range order {
-			e.mu.Lock()
-			r := e.runs[runID]
-			r.CurrentNodeID = node.ID
-			e.runs[runID] = r
-			e.mu.Unlock()
-
-			result, err := runner(runCtx, node)
-
-			e.mu.Lock()
-			r = e.runs[runID]
-			if err != nil {
-				// One node failing stops the run. Continuing would hand the
-				// next node a dependency that never produced anything, and
-				// report the whole pipeline as complete regardless.
-				r.NodeResults[node.ID] = "failed: " + err.Error()
-				r.Status = "failed"
-				now := time.Now().UTC()
-				r.FinishedAt = &now
-				e.runs[runID] = r
-				e.mu.Unlock()
-				return
-			}
-			r.NodeResults[node.ID] = result
-			e.runs[runID] = r
-			e.mu.Unlock()
-		}
-
-		e.mu.Lock()
-		r := e.runs[runID]
-		r.Status = "completed"
-		now := time.Now().UTC()
-		r.FinishedAt = &now
-		e.runs[runID] = r
-		e.mu.Unlock()
+		newExecutor(e, runID, p).Run(context.WithoutCancel(ctx), runner)
 	}()
 
 	return snapshot, nil
@@ -249,6 +228,15 @@ func snapshotRun(r protocol.PipelineRun) protocol.PipelineRun {
 		results[k] = v
 	}
 	r.NodeResults = results
+
+	// NodeStates needs the same treatment for the same reason: it is a map on a
+	// struct handed out by value while the executor is still writing to it.
+	states := make(map[string]string, len(r.NodeStates))
+	for k, v := range r.NodeStates {
+		states[k] = v
+	}
+	r.NodeStates = states
+
 	if r.FinishedAt != nil {
 		at := *r.FinishedAt
 		r.FinishedAt = &at

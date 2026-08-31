@@ -42,13 +42,13 @@ const defaultCachedDiscount = 0.10
 // billing an Opus turn at Sonnet rates (the previous single hardcoded pair) was
 // wrong by 5x, not that this is invoice-accurate.
 var modelPrices = map[string]modelPrice{
-	"claude-opus":    {prompt: 0.000015, completion: 0.000075},
-	"claude-sonnet":  {prompt: 0.000003, completion: 0.000015},
-	"claude-haiku":   {prompt: 0.0000008, completion: 0.000004},
-	"gpt-4o-mini":    {prompt: 0.00000015, completion: 0.0000006},
-	"gpt-4o":         {prompt: 0.0000025, completion: 0.00001},
-	"gpt-4":          {prompt: 0.00003, completion: 0.00006},
-	"o1":             {prompt: 0.000015, completion: 0.00006},
+	"claude-opus":   {prompt: 0.000015, completion: 0.000075},
+	"claude-sonnet": {prompt: 0.000003, completion: 0.000015},
+	"claude-haiku":  {prompt: 0.0000008, completion: 0.000004},
+	"gpt-4o-mini":   {prompt: 0.00000015, completion: 0.0000006},
+	"gpt-4o":        {prompt: 0.0000025, completion: 0.00001},
+	"gpt-4":         {prompt: 0.00003, completion: 0.00006},
+	"o1":            {prompt: 0.000015, completion: 0.00006},
 	// Gemini's context cache is charged at 25% of input, not 10%.
 	"gemini-1.5-pro": {prompt: 0.00000125, completion: 0.000005, cachedDiscount: 0.25},
 	"gemini":         {prompt: 0.0000003, completion: 0.0000012, cachedDiscount: 0.25},

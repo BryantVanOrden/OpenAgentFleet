@@ -583,19 +583,31 @@ type WorkflowPipeline struct {
 	Description string         `json:"description,omitempty"`
 	Nodes       []PipelineNode `json:"nodes"`
 	Edges       []PipelineEdge `json:"edges"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	// MaxParallel bounds how many nodes run at once. Zero means the engine's
+	// default. Every node starts a real task on a real desktop, so a graph with
+	// no edges and no limit would try to start every node simultaneously.
+	MaxParallel int       `json:"max_parallel,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // PipelineRun tracks an execution of a workflow pipeline.
 type PipelineRun struct {
-	ID            string            `json:"id"`
-	PipelineID    string            `json:"pipeline_id"`
-	Status        string            `json:"status"` // "running", "completed", "failed"
+	ID         string `json:"id"`
+	PipelineID string `json:"pipeline_id"`
+	Status     string `json:"status"` // "running", "completed", "failed", "cancelled"
+	// CurrentNodeID is the most recently started node. It predates parallel
+	// execution and cannot describe several nodes running at once; NodeStates is
+	// the accurate answer. Kept because the console and the app both read it.
 	CurrentNodeID string            `json:"current_node_id,omitempty"`
 	NodeResults   map[string]string `json:"node_results,omitempty"`
-	StartedAt     time.Time         `json:"started_at"`
-	FinishedAt    *time.Time        `json:"finished_at,omitempty"`
+	// NodeStates is each node's state: waiting, running, done, failed, skipped.
+	// "skipped" is how a branch whose edge condition was not met is reported —
+	// distinct from failed, since a failure branch that does not fire because
+	// nothing failed is the pipeline working.
+	NodeStates map[string]string `json:"node_states,omitempty"`
+	StartedAt  time.Time         `json:"started_at"`
+	FinishedAt *time.Time        `json:"finished_at,omitempty"`
 }
 
 // TokenTelemetryRecord tracks token usage, dollar cost, and latency for financial telemetry.
@@ -616,14 +628,23 @@ type TokenTelemetryRecord struct {
 
 // MemoryRecord represents a long-term cross-fleet semantic memory item.
 type MemoryRecord struct {
-	ID               string    `json:"id"`
-	Namespace        string    `json:"namespace"`
-	Title            string    `json:"title"`
-	Content          string    `json:"content"`
-	Tags             []string  `json:"tags,omitempty"`
-	Embedding        []float32 `json:"embedding,omitempty"`
-	SourceTaskID     string    `json:"source_task_id,omitempty"`
-	SourceInstanceID string    `json:"source_instance_id,omitempty"`
+	ID        string    `json:"id"`
+	Namespace string    `json:"namespace"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	Tags      []string  `json:"tags,omitempty"`
+	Embedding []float32 `json:"embedding,omitempty"`
+	// EmbedModel names the model Embedding came from. Empty means the built-in
+	// hashed bag-of-words fallback.
+	//
+	// It has to be recorded, not inferred: two models' vectors live in unrelated
+	// spaces, so a cosine similarity between them is a number with no meaning.
+	// Without this the index silently mixes schemes as soon as an operator
+	// configures an embedding provider, and search gets worse than it was under
+	// either scheme alone.
+	EmbedModel       string `json:"embed_model,omitempty"`
+	SourceTaskID     string `json:"source_task_id,omitempty"`
+	SourceInstanceID string `json:"source_instance_id,omitempty"`
 	// AboutUserID attributes a memory to a person rather than to the world, so
 	// "prefers terse answers" is kept against whoever it is true of.
 	AboutUserID string    `json:"about_user_id,omitempty"`
@@ -662,16 +683,23 @@ type Action struct {
 	// AboutUser marks a remember action as a note about the person who asked
 	// rather than about the machine or the task, so it comes back when that
 	// person turns up and not when anyone does.
-	AboutUser      bool           `json:"about_user,omitempty"`
-	SecretKey      string         `json:"secret_key,omitempty"`      // key for share_secret
-	SecretVal      string         `json:"secret_val,omitempty"`      // value for share_secret
-	SessionDomain  string         `json:"session_domain,omitempty"`  // domain for share_session
+	AboutUser bool `json:"about_user,omitempty"`
+	// MemoryScope is "bot" (default) or "fleet", for remember.
+	//
+	// Without it every memory went to the recording agent's own private
+	// namespace and the shared namespaces were never written to at all — so the
+	// fleet-wide episodic memory the docs describe held nothing, and a discovery
+	// one agent made was unreachable by every other one.
+	MemoryScope   string `json:"memory_scope,omitempty"`
+	SecretKey     string `json:"secret_key,omitempty"`     // key for share_secret
+	SecretVal     string `json:"secret_val,omitempty"`     // value for share_secret
+	SessionDomain string `json:"session_domain,omitempty"` // domain for share_session
 	// Shared work catalog. WorkName is what other agents refer to the item
 	// by, so a second publish under the same name is an edit rather than a
 	// duplicate; WorkKind is "file", "app" or "workspace".
-	WorkName      string `json:"work_name,omitempty"`
-	WorkKind      string `json:"work_kind,omitempty"`
-	WorkWorkspace string `json:"work_workspace,omitempty"`
+	WorkName       string         `json:"work_name,omitempty"`
+	WorkKind       string         `json:"work_kind,omitempty"`
+	WorkWorkspace  string         `json:"work_workspace,omitempty"`
 	SessionCookies string         `json:"session_cookies,omitempty"` // cookies JSON for share_session
 	SnapshotName   string         `json:"snapshot_name,omitempty"`   // for snapshot action
 	RollbackID     string         `json:"rollback_id,omitempty"`     // for rollback action
@@ -858,7 +886,6 @@ type User struct {
 // cannot sign in, and their API keys stop working with them.
 func (u User) Disabled() bool { return !u.DisabledAt.IsZero() }
 
-
 // APIKey is a long-lived credential for scripts and CI.
 //
 // The secret is shown once, at creation, and never stored — only a hash of it
@@ -867,9 +894,9 @@ type APIKey struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	// UserID is whose authority the key acts with.
-	UserID    string `json:"user_id"`
-	UserEmail string `json:"user_email,omitempty"`
-	CreatedBy string `json:"created_by,omitempty"`
+	UserID    string    `json:"user_id"`
+	UserEmail string    `json:"user_email,omitempty"`
+	CreatedBy string    `json:"created_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	// LastUsedAt is zero for a key that has never been used, which is how a
 	// key issued and forgotten is told apart from one in daily service.
@@ -938,7 +965,6 @@ func ValidWorkKind(kind string) bool {
 	}
 	return false
 }
-
 
 // ParamHandoff marks a task that one agent handed to another.
 //

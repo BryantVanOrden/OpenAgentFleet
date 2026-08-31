@@ -386,16 +386,35 @@ export interface MCPTool {
 export interface PipelineNode {
   id: string;
   name: string;
-  archetype_id: string;
+  /** Pins the node to one bot. Empty falls back to archetype_id. */
+  instance_id?: string;
+  archetype_id?: string;
   goal_template: string;
   params?: Record<string, string>;
 }
 
+/**
+ * An edge is a dependency, optionally conditional.
+ *
+ * The condition vocabulary is fixed and validated server-side at save:
+ * always | success | failure | contains:TEXT | not_contains:TEXT |
+ * equals:TEXT | matches:REGEX. An empty condition is a plain dependency.
+ */
 export interface PipelineEdge {
   from_node_id: string;
   to_node_id: string;
   condition?: string;
 }
+
+export const EDGE_CONDITIONS = [
+  { value: "", label: "always (plain dependency)" },
+  { value: "success", label: "only if it succeeded" },
+  { value: "failure", label: "only if it failed" },
+  { value: "contains:", label: "only if the result contains…" },
+  { value: "not_contains:", label: "only if the result does not contain…" },
+  { value: "equals:", label: "only if the result is exactly…" },
+  { value: "matches:", label: "only if the result matches the regex…" },
+] as const;
 
 export interface WorkflowPipeline {
   id: string;
@@ -403,16 +422,26 @@ export interface WorkflowPipeline {
   description?: string;
   nodes: PipelineNode[];
   edges: PipelineEdge[];
+  /** Bounds concurrent nodes. 0 or absent means the engine default (4). */
+  max_parallel?: number;
   created_at: string;
   updated_at: string;
 }
 
+export type PipelineNodeState = "waiting" | "running" | "done" | "failed" | "skipped";
+
 export interface PipelineRun {
   id: string;
   pipeline_id: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "cancelled";
+  /**
+   * The most recently started node. It cannot describe several nodes running at
+   * once, which it now regularly does; node_states is the accurate answer.
+   */
   current_node_id?: string;
   node_results?: Record<string, string>;
+  /** Per-node state. "skipped" means an edge condition was not met. */
+  node_states?: Record<string, PipelineNodeState>;
   started_at: string;
   finished_at?: string;
 }

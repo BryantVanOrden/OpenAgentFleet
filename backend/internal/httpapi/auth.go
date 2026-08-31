@@ -293,7 +293,6 @@ func EnsureBootstrapUser(ctx context.Context, db *store.Store, email, password s
 	return err == nil, err
 }
 
-
 // claimsForAPIKey resolves a presented API key to the same claims a session
 // token would have produced, so everything downstream — roles, per-bot
 // permissions, who sent a message — is identical whether a person or a script
@@ -304,8 +303,8 @@ func (s *Server) claimsForAPIKey(r *http.Request) (*claims, error) {
 		return nil, err
 	}
 	return &claims{
-		Role:  string(u.Role),
-		Email: u.Email,
+		Role:             string(u.Role),
+		Email:            u.Email,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: u.ID},
 	}, nil
 }

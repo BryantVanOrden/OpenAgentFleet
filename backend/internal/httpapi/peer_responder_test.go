@@ -43,7 +43,6 @@ func TestPlanFrom(t *testing.T) {
 	}
 }
 
-
 // A commitment counts even without the marker, and a status update never does.
 //
 // Every string here was produced by a real agent in fleet comms. Two of the

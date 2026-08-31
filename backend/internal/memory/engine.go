@@ -33,6 +33,17 @@ const hydrateLimit = 2000
 // length is from a different hashing scheme and gets recomputed on load.
 const vectorDim = 128
 
+// Embedder is the optional real-embedding backend.
+//
+// An interface here rather than a dependency on connectors: the memory package
+// is imported by the agent loop and the API, and reaching back into the provider
+// registry from it would be a cycle.
+type Embedder interface {
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	Model() string
+	Dim() int
+}
+
 // Engine manages long-term episodic memory indexing and semantic search across the fleet.
 type Engine struct {
 	mu       sync.RWMutex
@@ -44,6 +55,179 @@ type Engine struct {
 	// memory dies with the process.
 	store Store
 	log   *slog.Logger
+
+	// embedder is optional. With one attached, memories and queries are scored
+	// by real semantic similarity; without one the engine falls back to the
+	// 128-dimensional hashed bag of words, which only matches when the query
+	// reuses the memory's own words.
+	//
+	// embedModel is the model those vectors came from. A memory embedded by a
+	// different model is not comparable — the vectors live in unrelated spaces —
+	// so it is re-embedded rather than scored against nonsense.
+	embedder   Embedder
+	embedModel string
+}
+
+// SetEmbedder attaches a real embedding backend and re-embeds what is already
+// indexed.
+//
+// The re-embedding matters: without it the fleet's existing memories keep their
+// hashed vectors while new ones get real ones, and a search compares vectors
+// from two unrelated spaces, which is worse than either on its own. It runs in
+// the background because a fleet with a couple of thousand memories is a couple
+// of thousand vectors to fetch and boot should not wait for it.
+func (e *Engine) SetEmbedder(ctx context.Context, emb Embedder) {
+	e.mu.Lock()
+	e.embedder = emb
+	log := e.log
+	e.mu.Unlock()
+	if log == nil {
+		log = slog.Default()
+	}
+
+	go func() {
+		bg := context.WithoutCancel(ctx)
+		if n, err := e.reembedAll(bg, emb); err != nil {
+			log.Warn("existing memories were not re-embedded; recall mixes two vector spaces "+
+				"until they are", "err", err)
+		} else if n > 0 {
+			log.Info("memories re-embedded with the configured model",
+				"count", n, "model", emb.Model())
+		}
+	}()
+}
+
+// UsingEmbeddings reports what is scoring searches, for the API to surface.
+//
+// Reported rather than assumed: "semantic search" that has silently fallen back
+// to word overlap is the kind of thing that looks fine until someone relies on
+// it.
+func (e *Engine) UsingEmbeddings() (model string, real bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.embedder == nil {
+		return "hashed-bag-of-words-128", false
+	}
+	return e.embedder.Model(), true
+}
+
+// reembedAll recomputes every vector with emb, in batches.
+func (e *Engine) reembedAll(ctx context.Context, emb Embedder) (int, error) {
+	e.mu.RLock()
+	ids := make([]string, 0, len(e.memories))
+	for id, m := range e.memories {
+		// Skip what is already embedded by this model at this dimension.
+		if m.EmbedModel == emb.Model() && len(m.Embedding) == emb.Dim() && emb.Dim() > 0 {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	e.mu.RUnlock()
+	if len(ids) == 0 {
+		e.mu.Lock()
+		e.embedModel = emb.Model()
+		e.mu.Unlock()
+		return 0, nil
+	}
+
+	// Batched: one request per memory would be thousands of round trips, and
+	// every provider here accepts a list.
+	const batch = 64
+	done := 0
+	for start := 0; start < len(ids); start += batch {
+		end := min(start+batch, len(ids))
+		chunk := ids[start:end]
+
+		texts := make([]string, 0, len(chunk))
+		present := make([]string, 0, len(chunk))
+		e.mu.RLock()
+		for _, id := range chunk {
+			m, ok := e.memories[id]
+			if !ok {
+				continue // forgotten while this was running
+			}
+			texts = append(texts, embedText(m))
+			present = append(present, id)
+		}
+		e.mu.RUnlock()
+		if len(texts) == 0 {
+			continue
+		}
+
+		vecs, err := emb.Embed(ctx, texts)
+		if err != nil {
+			return done, err
+		}
+
+		e.mu.Lock()
+		for i, id := range present {
+			m, ok := e.memories[id]
+			if !ok || i >= len(vecs) {
+				continue
+			}
+			m.Embedding = vecs[i]
+			m.EmbedModel = emb.Model()
+			e.memories[id] = m
+			done++
+		}
+		st := e.store
+		e.mu.Unlock()
+
+		// Persisted so the next boot does not repeat the work, and pay for it,
+		// every time the orchestrator restarts.
+		if st != nil {
+			e.mu.RLock()
+			toWrite := make([]protocol.MemoryRecord, 0, len(present))
+			for _, id := range present {
+				if m, ok := e.memories[id]; ok {
+					toWrite = append(toWrite, m)
+				}
+			}
+			e.mu.RUnlock()
+			for _, m := range toWrite {
+				if err := st.UpsertMemory(ctx, m); err != nil && e.log != nil {
+					e.log.Warn("re-embedded memory not persisted", "id", m.ID, "err", err)
+				}
+			}
+		}
+	}
+
+	e.mu.Lock()
+	e.embedModel = emb.Model()
+	e.mu.Unlock()
+	return done, nil
+}
+
+// embedText is the text a memory is embedded from. One definition, so a stored
+// vector and a later recomputation cannot disagree about what was embedded.
+func embedText(m protocol.MemoryRecord) string {
+	return strings.TrimSpace(m.Title + "\n" + m.Content + "\n" + strings.Join(m.Tags, " "))
+}
+
+// vectorFor embeds text, falling back to the hashed vector.
+//
+// The fallback is not silent about which one it produced: the returned model
+// name is stored on the memory, so a search can tell a real vector from a hashed
+// one and refuse to compare them.
+func (e *Engine) vectorFor(ctx context.Context, text string) ([]float32, string) {
+	e.mu.RLock()
+	emb, log := e.embedder, e.log
+	e.mu.RUnlock()
+
+	if emb == nil {
+		return computeBagOfWordsVector(text), ""
+	}
+	vecs, err := emb.Embed(ctx, []string{text})
+	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
+		// Degraded rather than failed. An agent's remember should not fail
+		// because an embedding endpoint is briefly down, and a hashed vector is
+		// still searchable — just less well, and the mismatch is recorded.
+		if log != nil && err != nil {
+			log.Warn("embedding failed; falling back to the hashed vector", "err", err)
+		}
+		return computeBagOfWordsVector(text), ""
+	}
+	return vecs[0], emb.Model()
 }
 
 // GlobalEngine is the fleet-wide episodic memory, shared across instances so a
@@ -80,8 +264,13 @@ func (e *Engine) AttachStore(ctx context.Context, st Store, log *slog.Logger) er
 		if _, live := e.memories[m.ID]; live {
 			continue
 		}
-		if len(m.Embedding) != vectorDim {
-			m.Embedding = computeBagOfWordsVector(m.Title + " " + m.Content + " " + strings.Join(m.Tags, " "))
+		// A record with no usable vector is re-hashed so it is at least
+		// searchable. One embedded by a real model keeps its vector whatever its
+		// length: only the hashed scheme has a fixed dimension, and recomputing
+		// a 1536-dimension OpenAI vector as a 128-dimension hash would throw
+		// away the good one.
+		if m.EmbedModel == "" && len(m.Embedding) != vectorDim {
+			m.Embedding = computeBagOfWordsVector(embedText(m))
 		}
 		e.memories[m.ID] = m
 	}
@@ -108,12 +297,30 @@ func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) err
 		mem.CreatedAt = time.Now().UTC()
 	}
 
-	mem.Embedding = computeBagOfWordsVector(mem.Title + " " + mem.Content + " " + strings.Join(mem.Tags, " "))
+	// Indexed under the hashed vector first so the memory is searchable the
+	// instant this returns, then upgraded below. Embedding is a network call and
+	// cannot happen under the lock — every recall in the fleet would wait on it.
+	mem.Embedding = computeBagOfWordsVector(embedText(mem))
 	e.memories[mem.ID] = mem
-	st, log := e.store, e.log
+	st, log, emb := e.store, e.log, e.embedder
 	// Unlocked explicitly rather than by defer: the database round trip below
 	// has to happen outside the lock, or every recall in the fleet waits on it.
 	e.mu.Unlock()
+
+	if emb != nil {
+		if vec, model := e.vectorFor(ctx, embedText(mem)); model != "" {
+			mem.Embedding = vec
+			mem.EmbedModel = model
+			e.mu.Lock()
+			// Re-checked: the memory may have been forgotten while the
+			// embedding request was in flight, and reinserting it would
+			// resurrect something the operator deleted.
+			if _, still := e.memories[mem.ID]; still {
+				e.memories[mem.ID] = mem
+			}
+			e.mu.Unlock()
+		}
+	}
 
 	if st != nil {
 		if err := st.UpsertMemory(ctx, mem); err != nil {
@@ -134,9 +341,30 @@ func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) err
 // home: anything written to "fleet" or "global" is visible to everyone.
 func BotNamespace(instanceID string) string {
 	if instanceID == "" {
-		return "fleet"
+		return FleetNamespace
 	}
 	return "bot:" + instanceID
+}
+
+// FleetNamespace is the shared pool every agent can read and write.
+//
+// Named rather than spelled out at each use: recall already searched it and
+// nothing ever wrote to it, which is the kind of mismatch a string literal in
+// two places invites.
+const FleetNamespace = "fleet"
+
+// TasksNamespace holds auto-indexed task trajectories, written by AutoIndexTask.
+const TasksNamespace = "tasks"
+
+// RecallScope is the set of namespaces a recall searches.
+//
+// One definition, because it was wrong in a way that only shows up by reading
+// two files at once: AutoIndexTask wrote every completed task's summary to
+// "tasks", and recall searched the bot's namespace and "fleet" — so the entire
+// auto-indexed trajectory history was written, stored, paid for, and never read
+// by anything.
+func RecallScope(instanceID string) []string {
+	return []string{BotNamespace(instanceID), FleetNamespace, TasksNamespace}
 }
 
 // Search retrieves the top-K relevant memories matching a query in one
@@ -149,12 +377,17 @@ func (e *Engine) Search(ctx context.Context, namespace, query string, limit int)
 // recall actually wants: the agent's own memory and the shared pool ranked
 // together, so the best answer wins rather than whichever pool was asked first.
 func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query string, limit int) []protocol.MemoryRecord {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
 	if limit <= 0 {
 		limit = 5
 	}
+
+	// Embedded outside the lock: this is a network call when a real embedder is
+	// attached, and holding the read lock across it would block every remember
+	// in the fleet behind one recall.
+	qVec, qModel := e.vectorFor(ctx, query)
+
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 
 	// "global" is readable from every namespace, so an empty or global-only
 	// scope means "no restriction" exactly as it did before.
@@ -168,11 +401,14 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 		allowed[ns] = true
 	}
 
-	qVec := computeBagOfWordsVector(query)
 	type scoredMemory struct {
 		mem   protocol.MemoryRecord
 		score float64
 	}
+	// The hashed vector for the query, computed lazily: it is only needed if
+	// some memory in scope was never embedded by the current model.
+	var fallbackVec []float32
+	qLower := strings.ToLower(strings.TrimSpace(query))
 
 	var scored []scoredMemory
 	for _, m := range e.memories {
@@ -180,10 +416,37 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 			continue
 		}
 
-		score := cosineSimilarity(qVec, m.Embedding)
-		// Keyword match boost
-		qLower := strings.ToLower(query)
-		if strings.Contains(strings.ToLower(m.Title), qLower) || strings.Contains(strings.ToLower(m.Content), qLower) {
+		// Vectors are only comparable within one model's space. Scoring an
+		// OpenAI embedding against a hashed bag of words produces a number, and
+		// that number is meaningless — which is the failure mode that makes a
+		// half-migrated index worse than either scheme alone. Mismatched records
+		// are scored on the hashed vector both sides can produce.
+		var score float64
+		switch {
+		case m.EmbedModel == qModel:
+			score = cosineSimilarity(qVec, m.Embedding)
+		default:
+			if fallbackVec == nil {
+				fallbackVec = computeBagOfWordsVector(query)
+			}
+			hashed := m.Embedding
+			if m.EmbedModel != "" || len(hashed) != vectorDim {
+				// This memory's stored vector is from another space, so it
+				// cannot be used; the text is re-hashed to compare like with
+				// like. A linear scan already reads every record, so this costs
+				// no extra pass.
+				hashed = computeBagOfWordsVector(embedText(m))
+			}
+			score = cosineSimilarity(fallbackVec, hashed)
+		}
+
+		// A literal match beats any similarity score. Kept from the original
+		// implementation: an agent recalling an exact error string or a hostname
+		// wants that record, and no embedding ranks a verbatim quote reliably
+		// above a topical near-miss.
+		if qLower != "" &&
+			(strings.Contains(strings.ToLower(m.Title), qLower) ||
+				strings.Contains(strings.ToLower(m.Content), qLower)) {
 			score += 0.5
 		}
 

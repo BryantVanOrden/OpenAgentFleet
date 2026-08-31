@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
 	"github.com/BryantVanOrden/AgentFleet/backend/internal/pipeline"
@@ -79,6 +80,13 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// refuses to start a run rather than reporting invented success.
 	pipeline.GlobalEngine.SetNodeRunner(s.runPipelineNode)
 
+	// Real embeddings for episodic memory, when a provider can produce them.
+	//
+	// In the background and after the store is attached, in that order: probing
+	// a provider is a network round trip that must not delay boot, and attaching
+	// the embedder triggers a re-embed of what was just hydrated.
+	go s.attachMemoryEmbedder(ctx)
+
 	go s.RunCronScheduler(ctx)
 	// Idle agents answer messages too; without this a broadcast to a fleet
 	// with nothing running is met with silence.
@@ -90,6 +98,41 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// And says so when a job cannot start at all, rather than leaving agents
 	// waiting on work nobody was asked to make.
 	go s.watchForStalledJobs(ctx)
+}
+
+// attachMemoryEmbedder gives episodic memory real semantic search if it can.
+//
+// The index scored with a 128-dimensional hashed bag of words, which matches a
+// memory when the query reuses its words and misses it otherwise — so "how do I
+// sign in to the billing portal" never found "logged into the invoicing site
+// with the shared credential", which is the recall a fleet memory exists for.
+//
+// A deployment with no embedding-capable provider is a normal choice, not an
+// error: it keeps the hashed vectors, and /api/memories reports which scheme is
+// in use so nobody assumes semantic search they do not have.
+func (s *Server) attachMemoryEmbedder(ctx context.Context) {
+	if s.models == nil {
+		return
+	}
+	probe, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	emb, err := s.models.BestEmbedder(probe)
+	if err != nil {
+		if errors.Is(err, connectors.ErrNoEmbedder) {
+			s.logger().Info("no embedding-capable provider configured; " +
+				"episodic memory keeps its hashed keyword index")
+			return
+		}
+		s.logger().Warn("could not choose an embedding provider; "+
+			"episodic memory keeps its hashed keyword index", "err", err)
+		return
+	}
+
+	s.logger().Info("episodic memory using real embeddings", "model", emb.Model())
+	// Not bound to the probe context, which is about to be cancelled: the
+	// re-embed of the existing index runs well past this function.
+	memory.GlobalEngine.SetEmbedder(context.WithoutCancel(ctx), emb)
 }
 
 // RunCronScheduler fires due triggers once a minute until ctx is cancelled.

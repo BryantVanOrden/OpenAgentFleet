@@ -65,6 +65,17 @@ func Validate(p protocol.WorkflowPipeline) error {
 		if e.FromNodeID == e.ToNodeID {
 			return fmt.Errorf("node %q depends on itself", e.FromNodeID)
 		}
+		// Conditions are checked here so a typo is a 400 in front of whoever is
+		// drawing the graph. A misspelled condition used to be accepted and
+		// ignored, along with every correctly spelled one; now that they are
+		// evaluated, an unknown one would be a branch that silently never fires.
+		if err := ValidateCondition(e.Condition); err != nil {
+			return fmt.Errorf("the edge from %q to %q: %w", e.FromNodeID, e.ToNodeID, err)
+		}
+	}
+
+	if p.MaxParallel < 0 {
+		return errors.New("max_parallel cannot be negative; leave it at 0 for the default")
 	}
 
 	_, err := TopoOrder(p)

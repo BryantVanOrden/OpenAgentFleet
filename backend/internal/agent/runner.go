@@ -466,8 +466,22 @@ func (r *Runner) execute(
 		if a.AboutUser {
 			aboutUser = task.OwnerID
 		}
+		// Shared or private. Every memory used to go to the recording agent's own
+		// namespace and nothing ever wrote to a shared one, so the fleet-wide
+		// episodic memory the docs describe was permanently empty and one
+		// agent's discovery was unreachable by every other one.
+		//
+		// A note about a person stays private regardless: what one bot learned
+		// about a colleague is not the whole fleet's to know, and broadcasting it
+		// is a different decision from sharing a technical finding.
+		namespace := memory.BotNamespace(inst.ID)
+		shared := strings.EqualFold(strings.TrimSpace(a.MemoryScope), "fleet") && aboutUser == ""
+		if shared {
+			namespace = memory.FleetNamespace
+		}
+
 		if err := memory.GlobalEngine.StoreMemory(ctx, protocol.MemoryRecord{
-			Namespace:        memory.BotNamespace(inst.ID),
+			Namespace:        namespace,
 			AboutUserID:      aboutUser,
 			Title:            title,
 			Content:          content,
@@ -477,6 +491,9 @@ func (r *Runner) execute(
 		}); err != nil {
 			return "failed to store memory: " + err.Error(), terminalNone
 		}
+		if shared {
+			return "remembered for the whole fleet: " + clip(title, 120), terminalNone
+		}
 		return "remembered: " + clip(title, 120), terminalNone
 
 	case protocol.ActRecall:
@@ -484,8 +501,10 @@ func (r *Runner) execute(
 		if query == "" {
 			return "failed: recall needs a query", terminalNone
 		}
-		hits := memory.GlobalEngine.SearchScoped(ctx,
-			[]string{memory.BotNamespace(inst.ID), "fleet"}, query, 5)
+		// The bot's own namespace, the shared pool, and the auto-indexed task
+		// trajectories. The last one was missing: every completed task's summary
+		// was written to "tasks" and no search ever looked there.
+		hits := memory.GlobalEngine.SearchScoped(ctx, memory.RecallScope(inst.ID), query, 5)
 		if len(hits) == 0 {
 			// An explicit miss, not an error: "nothing recorded about X" is
 			// information the agent should act on rather than retry.
