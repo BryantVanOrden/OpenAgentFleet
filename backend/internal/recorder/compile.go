@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"unicode/utf8"
 )
 
 // pauseThreshold is how long the human has to stop typing before we treat the
@@ -140,14 +141,65 @@ func Compile(name string, events []protocol.RawEvent) *protocol.Skill {
 		steps[i].Index = i + 1
 	}
 
+	for i := range steps {
+		clean(&steps[i])
+	}
+
 	sk := &protocol.Skill{
-		Name:      name,
+		Name:      scrub(name),
 		Steps:     steps,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
-	sk.Markdown = Render(sk)
+	sk.Markdown = scrub(Render(sk))
 	return sk
+}
+
+// clean makes a recorded step safe to store.
+//
+// These strings come off a keyboard and out of an accessibility tree, and both
+// produce bytes that are not text: a NUL from a modifier keysym, a stray
+// control character in a widget label. Postgres rejects \u0000 in jsonb
+// outright, so a single one of them failed the whole save -- the demonstration
+// was recorded, compiled, and then thrown away with "unsupported Unicode
+// escape sequence", which says nothing about keyboards.
+func clean(s *protocol.SkillStep) {
+	s.Window = scrub(s.Window)
+	s.Role = scrub(s.Role)
+	s.Label = scrub(s.Label)
+	s.Selector = scrub(s.Selector)
+	s.Text = scrub(s.Text)
+	s.Key = scrub(s.Key)
+	s.Param = scrub(s.Param)
+	s.Assert = scrub(s.Assert)
+	for k, v := range s.Meta {
+		s.Meta[k] = scrub(v)
+	}
+}
+
+// scrub drops what cannot be stored: NUL and the other C0 controls, anything
+// that is not valid UTF-8, and the Unicode replacement character that decoding
+// junk leaves behind. Tab, newline and carriage return survive, because a
+// recording of somebody typing contains them on purpose.
+func scrub(in string) string {
+	if in == "" {
+		return in
+	}
+	var b strings.Builder
+	b.Grow(len(in))
+	for _, r := range in {
+		switch {
+		case r == '\n' || r == '\t' || r == '\r':
+			b.WriteRune(r)
+		case r == utf8.RuneError:
+			// A decoding failure, not a character somebody typed.
+		case r < 0x20 || r == 0x7F:
+			// C0 controls, NUL among them.
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // dedupe removes the redundant focus steps a real recording is full of: two

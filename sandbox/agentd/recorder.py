@@ -35,6 +35,38 @@ DOUBLE_CLICK_SLOP = 6  # pixels
 
 BUTTON_NAMES = {1: "left", 2: "middle", 3: "right"}
 
+# Keys that modify the next keystroke rather than being one.
+#
+# keysym_to_string(Shift_L) returns "\x00", not None, so without this list a
+# Shift press was recorded as a one-character keystroke: it split typing in two
+# and put a NUL in the trace that the database then refused.
+# Keysym numbers back to their names, for the keys that are not characters.
+#
+# Xlib.XK has string_to_keysym and keysym_to_string, and keysym_to_string only
+# answers for Latin-1: Return comes back as "\r" and Escape as "\x1b", which is
+# how a key step ended up named after a control character. The module's own
+# XK_* constants are the reverse map, so build it once.
+_KEYSYM_NAMES = {
+    getattr(XK, _n): _n[3:] for _n in dir(XK) if _n.startswith("XK_")
+}
+
+
+_MODIFIER_KEYSYMS = frozenset(
+    k
+    for k in (
+        XK.string_to_keysym(n)
+        for n in (
+            "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
+            "Meta_L", "Meta_R", "Super_L", "Super_R", "Hyper_L", "Hyper_R",
+            "Caps_Lock", "Num_Lock", "Scroll_Lock", "ISO_Level3_Shift",
+            "Mode_switch",
+        )
+    )
+    if k
+)
+
+
+
 
 @dataclass
 class Recording:
@@ -185,16 +217,38 @@ class Recorder:
 
     def _on_key(self, event) -> None:
         keysym = self._local_display.keycode_to_keysym(event.detail, 0)
-        name = XK.keysym_to_string(keysym)
         shift = bool(event.state & X.ShiftMask)
         ctrl = bool(event.state & X.ControlMask)
         alt = bool(event.state & X.Mod1Mask)
 
+        # Pressing Shift is not typing anything.
+        #
+        # keysym_to_string(Shift_L) returns "\x00" rather than None, which is one
+        # character long, so it used to be recorded as a keystroke: a NUL in the
+        # trace that split "file:" into "file" and ":" and then failed the whole
+        # save, because Postgres will not store \u0000. Modifiers are state on
+        # the keystroke that follows them, never events of their own.
+        if keysym in _MODIFIER_KEYSYMS:
+            return
+
+        # Shifted punctuation is a different keysym, not an uppercase one.
+        # ";" shifted is ":", and ";".upper() is ";" -- which is how a recorded
+        # file:// URL came back as "file;//".
+        name = XK.keysym_to_string(
+            self._local_display.keycode_to_keysym(event.detail, 1 if shift else 0))
+        if name is None:
+            name = XK.keysym_to_string(keysym)
         if name is None:
             name = XK.keysym_to_string(self._local_display.keycode_to_keysym(event.detail, 1)) or ""
 
+        # Whatever survived, it must be text. A control character here is a key
+        # this mapping does not understand, and naming it by keycode at least
+        # says so out loud.
+        if len(name) == 1 and (ord(name) < 0x20 or ord(name) == 0x7F):
+            name = _KEYSYM_NAMES.get(keysym) or f"keycode{event.detail}"
+
         if len(name) == 1 and not ctrl and not alt:
-            key = name.upper() if shift else name
+            key = name
         else:
             parts = []
             if ctrl:
