@@ -1456,6 +1456,9 @@ class WorkItem {
   });
 
   /// A self-contained HTML document this app can render and run.
+  /// Text: notes, code, data.
+  static const kindFile = 'file';
+
   static const kindApp = 'app';
 
   /// A group of related items several agents worked on together.

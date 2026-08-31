@@ -117,6 +117,40 @@ class ApiClient {
 
   Future<void> deleteWorkItem(String id) => _delete('/api/work/$id');
 
+  /// Create or overwrite an item. Publishing addresses an item by name and
+  /// folder, so saving an edit means sending the same pair back.
+  Future<WorkItem> putWorkItem({
+    required String name,
+    required String kind,
+    String content = '',
+    String description = '',
+    String parentId = '',
+    String mime = '',
+  }) async {
+    final data = await _post('/api/work', {
+      'name': name,
+      'kind': kind,
+      'content': content,
+      'description': description,
+      if (parentId.isNotEmpty) 'parent_id': parentId,
+      if (mime.isNotEmpty) 'mime': mime,
+    });
+    return WorkItem.fromJson((data as Map).cast<String, dynamic>());
+  }
+
+  /// Rename an item, move it to another folder, or both.
+  ///
+  /// [parentId] is deliberately nullable: null leaves the item where it is,
+  /// and an empty string moves it to the top level. Without that distinction
+  /// every rename would drag the item out of its folder.
+  Future<WorkItem> moveWorkItem(String id, {String? name, String? parentId}) async {
+    final data = await _patch('/api/work/$id', {
+      if (name != null) 'name': name,
+      if (parentId != null) 'parent_id': parentId,
+    });
+    return WorkItem.fromJson((data as Map).cast<String, dynamic>());
+  }
+
   // --------------------------------------------------- administration ---
 
   Future<List<AdminUser>> adminUsers() async {

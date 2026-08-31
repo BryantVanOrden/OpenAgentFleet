@@ -29,7 +29,7 @@ type Server struct {
 	models *connectors.Registry
 	// relay tracks which agents are collaborating on which request, so
 	// finishing a part can wake whoever the next part belongs to.
-	relay *relay
+	relay  *relay
 	runner *agent.Runner
 	bus    *bus.Bus
 	vault  *vault.Vault
@@ -246,6 +246,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/work", auth(roleAny, s.handleListWork))
 	mux.Handle("GET /api/work/{id}", auth(roleAny, s.handleGetWork))
 	mux.Handle("POST /api/work", auth(roleOperator, s.handlePutWork))
+	mux.Handle("PATCH /api/work/{id}", auth(roleOperator, s.handleMoveWork))
 	mux.Handle("DELETE /api/work/{id}", auth(roleOperator, s.handleDeleteWork))
 
 	// Long-lived access keys for scripts and CI.

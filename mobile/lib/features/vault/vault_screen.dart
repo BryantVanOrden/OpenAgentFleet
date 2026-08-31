@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import 'mini_app_screen.dart';
+import 'work_editor_screen.dart';
 
 class VaultScreen extends ConsumerStatefulWidget {
   const VaultScreen({super.key});
@@ -20,6 +21,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
   List<SharedSecret> _secrets = [];
   List<SharedSession> _sessions = [];
   List<WorkItem> _work = [];
+
+  /// The folder being looked at; empty is the top level.
+  String _cwd = '';
   bool _loading = false;
   String? _error;
 
@@ -256,163 +260,437 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
     );
   }
 
-  /// What the agents have made, for each other and for you.
+  /// The catalog, as a file system.
   ///
-  /// Workspaces come first with their contents nested under them, because a
-  /// flat list of thirty files from four bots tells you nothing about which
-  /// of them belong to the same piece of work.
+  /// It used to be one flat list with workspaces as headings, which was fine
+  /// while the agents had published a dozen things and unreadable by fifty.
+  /// This walks folders one level at a time, the way a person expects, and
+  /// every item can be renamed, moved, edited or deleted -- including the
+  /// runnable ones, which need a long press because a tap plays them.
   Widget _buildWorkTab() {
-    if (_work.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Text(
-            'Nothing published yet.\n\nAgents put work here for each other — '
-            'files to build on, and mini-apps you can run from this tab.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Fleet.ink400, height: 1.5),
+    final here = _work.where((w) => w.parentId == _cwd).toList()
+      ..sort((a, b) {
+        if (a.isWorkspace != b.isWorkspace) return a.isWorkspace ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+    return Column(
+      children: [
+        _breadcrumb(),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: here.isEmpty
+                ? ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 60, 16, 32),
+                    children: [
+                      Text(
+                        _cwd.isEmpty
+                            ? 'Nothing published yet.\n\nAgents put work here for '
+                                'each other — files to build on, and mini-apps you '
+                                'can run from this tab.'
+                            : 'This folder is empty.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Fleet.ink400, height: 1.5),
+                      ),
+                    ],
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    children: [for (final item in here) _workTile(item)],
+                  ),
           ),
         ),
-      );
-    }
+      ],
+    );
+  }
 
-    final workspaces = _work.where((w) => w.isWorkspace).toList();
-    final loose = _work
-        .where((w) => !w.isWorkspace && w.parentId.isEmpty)
-        .toList();
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: [
-          for (final ws in workspaces) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 6, left: 4),
-              child: Row(
-                children: [
-                  Icon(Icons.folder_outlined, size: 16, color: Fleet.ink400),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      ws.name,
-                      style: TextStyle(
-                          color: Fleet.ink300,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700),
+  /// Where you are, and the way back out.
+  Widget _breadcrumb() {
+    final path = _pathTo(_cwd);
+    return Material(
+      color: Fleet.ink900,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+        child: Row(
+          children: [
+            if (_cwd.isNotEmpty)
+              IconButton(
+                tooltip: 'Up',
+                icon: const Icon(Icons.arrow_upward, size: 18),
+                onPressed: () => setState(() =>
+                    _cwd = path.length > 1 ? path[path.length - 2].id : ''),
+              ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                child: Row(
+                  children: [
+                    InkWell(
+                      onTap: () => setState(() => _cwd = ''),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 6),
+                        child: Row(children: [
+                          Icon(Icons.inventory_2_outlined,
+                              size: 14, color: Fleet.ink400),
+                          const SizedBox(width: 5),
+                          Text('Shared work',
+                              style: TextStyle(
+                                  color: _cwd.isEmpty
+                                      ? Fleet.ink200
+                                      : Fleet.ink400,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
                     ),
-                  ),
-                ],
+                    for (final crumb in path) ...[
+                      Icon(Icons.chevron_right, size: 14, color: Fleet.ink400),
+                      InkWell(
+                        onTap: () => setState(() => _cwd = crumb.id),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 6),
+                          child: Text(crumb.name,
+                              style: TextStyle(
+                                  color: crumb.id == _cwd
+                                      ? Fleet.ink200
+                                      : Fleet.ink400,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-            for (final item in _work.where((w) => w.parentId == ws.id))
-              _workTile(item),
+            IconButton(
+              tooltip: 'New folder',
+              icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+              onPressed: _createFolder,
+            ),
+            IconButton(
+              tooltip: 'New file',
+              icon: const Icon(Icons.note_add_outlined, size: 20),
+              onPressed: _createFile,
+            ),
           ],
-          if (loose.isNotEmpty) ...[
-            if (workspaces.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 6, left: 4),
-                child: Text('LOOSE ITEMS',
-                    style: TextStyle(
-                        color: Fleet.ink400,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6)),
-              ),
-            for (final item in loose) _workTile(item),
-          ],
-        ],
+        ),
       ),
     );
   }
 
+  /// The chain of folders from the root down to [id].
+  List<WorkItem> _pathTo(String id) {
+    final out = <WorkItem>[];
+    var at = id;
+    // Bounded: a cycle here would hang the tab, and the server refuses to
+    // create one, but a listing can still arrive mid-move.
+    for (var hops = 0; at.isNotEmpty && hops < 64; hops++) {
+      final match = _work.where((w) => w.id == at);
+      if (match.isEmpty) break;
+      out.insert(0, match.first);
+      at = match.first.parentId;
+    }
+    return out;
+  }
+
   Widget _workTile(WorkItem item) {
     final runnable = item.runnable;
+    final folder = item.isWorkspace;
+    final childCount =
+        folder ? _work.where((w) => w.parentId == item.id).length : 0;
+
     return Card(
       color: Fleet.ink850,
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: Icon(
-          runnable ? Icons.videogame_asset_outlined : Icons.description_outlined,
-          color: runnable ? Fleet.live : Fleet.ink300,
+          folder
+              ? Icons.folder_rounded
+              : runnable
+                  ? Icons.videogame_asset_outlined
+                  : Icons.description_outlined,
+          color: folder
+              ? Fleet.cool
+              : runnable
+                  ? Fleet.live
+                  : Fleet.ink300,
           size: 20,
         ),
         title: Text(item.name, style: const TextStyle(fontSize: 14)),
         subtitle: Text(
-          [
-            if (item.createdByName.isNotEmpty) 'by ${item.createdByName}',
-            'v${item.version}',
-            if (item.description.isNotEmpty) item.description,
-          ].join(' · '),
+          folder
+              ? '$childCount item${childCount == 1 ? '' : 's'}'
+              : [
+                  if (item.createdByName.isNotEmpty) 'by ${item.createdByName}',
+                  'v${item.version}',
+                  if (item.description.isNotEmpty) item.description,
+                ].join(' · '),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: Fleet.ink400, fontSize: 11),
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (runnable)
-              TextButton.icon(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => MiniAppScreen(item: item),
-                )),
-                icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                label: const Text('Play'),
+        trailing: folder
+            ? Icon(Icons.chevron_right, size: 18, color: Fleet.ink400)
+            : IconButton(
+                tooltip: 'More',
+                icon: Icon(Icons.more_vert, size: 18, color: Fleet.ink400),
+                onPressed: () => _itemMenu(item),
               ),
-            IconButton(
-              tooltip: 'Delete',
-              icon: Icon(Icons.delete_outline, size: 18, color: Fleet.bad),
-              onPressed: () => _deleteWork(item),
-            ),
-          ],
-        ),
-        onTap: runnable
-            ? () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => MiniAppScreen(item: item),
-                ))
-            : () => _showWork(item),
+        onTap: () => _openItem(item),
+        // A tap on a game plays it, so everything else lives behind a hold.
+        onLongPress: () => _itemMenu(item),
       ),
     );
   }
 
-  Future<void> _showWork(WorkItem item) => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Fleet.ink900,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-        ),
-        builder: (_) => DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.7,
-          builder: (_, scroll) => Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(item.name,
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text('by ${item.createdByName} · v${item.version}',
-                    style: TextStyle(color: Fleet.ink400, fontSize: 11)),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: scroll,
-                    child: SelectableText(
-                      item.content,
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 11, height: 1.4),
-                    ),
+  void _openItem(WorkItem item) {
+    if (item.isWorkspace) {
+      setState(() => _cwd = item.id);
+      return;
+    }
+    if (item.runnable) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MiniAppScreen(item: item),
+      ));
+      return;
+    }
+    _editItem(item);
+  }
+
+  Future<void> _editItem(WorkItem item) async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => WorkEditorScreen(api: ref.read(apiProvider), item: item),
+    ));
+    if (saved == true) await _load();
+  }
+
+  /// Everything you can do to one item.
+  Future<void> _itemMenu(WorkItem item) async {
+    final runnable = item.runnable;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Fleet.ink900,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    item.isWorkspace
+                        ? Icons.folder_rounded
+                        : runnable
+                            ? Icons.videogame_asset_outlined
+                            : Icons.description_outlined,
+                    size: 18,
+                    color: Fleet.ink300,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(item.name,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
             ),
-          ),
+            if (runnable)
+              ListTile(
+                leading: const Icon(Icons.play_arrow_rounded),
+                title: const Text('Play'),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => MiniAppScreen(item: item),
+                  ));
+                },
+              ),
+            if (!item.isWorkspace)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                // The point of a hold on a game: its source is still a file.
+                title: Text(runnable ? 'Edit source' : 'Edit'),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  _editItem(item);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: const Text('Rename'),
+              onTap: () {
+                Navigator.pop(sheet);
+                _renameWork(item);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: const Text('Move to folder'),
+              onTap: () {
+                Navigator.pop(sheet);
+                _moveWork(item);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: Fleet.bad),
+              title: Text('Delete', style: TextStyle(color: Fleet.bad)),
+              onTap: () {
+                Navigator.pop(sheet);
+                _deleteWork(item);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
+      ),
+    );
+  }
+
+  Future<String?> _askName(String title, {String initial = ''}) {
+    final controller = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Fleet.ink850,
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createFolder() async {
+    final name = await _askName('New folder');
+    if (name == null || name.isEmpty) return;
+    await _guard(() async {
+      await ref.read(apiProvider).putWorkItem(
+            name: name,
+            kind: WorkItem.kindWorkspace,
+            parentId: _cwd,
+          );
+    });
+  }
+
+  Future<void> _createFile() async {
+    final name = await _askName('New file');
+    if (name == null || name.isEmpty) return;
+    await _guard(() async {
+      final created = await ref.read(apiProvider).putWorkItem(
+            name: name,
+            kind: WorkItem.kindFile,
+            content: '',
+            parentId: _cwd,
+          );
+      if (mounted) await _editItem(created);
+    });
+  }
+
+  Future<void> _renameWork(WorkItem item) async {
+    final name = await _askName('Rename', initial: item.name);
+    if (name == null || name.isEmpty || name == item.name) return;
+    await _guard(() async {
+      await ref.read(apiProvider).moveWorkItem(item.id, name: name);
+    });
+  }
+
+  /// Move [item] into another folder, or back out to the top level.
+  Future<void> _moveWork(WorkItem item) async {
+    // A folder cannot go inside itself or anything it contains. The server
+    // refuses either way; leaving them out of the list means never offering a
+    // choice that will only be rejected.
+    bool insideItem(WorkItem candidate) {
+      var at = candidate.id;
+      for (var hops = 0; at.isNotEmpty && hops < 64; hops++) {
+        if (at == item.id) return true;
+        final match = _work.where((w) => w.id == at);
+        if (match.isEmpty) return false;
+        at = match.first.parentId;
+      }
+      return false;
+    }
+
+    final folders = _work
+        .where((w) => w.isWorkspace && w.id != item.id && !insideItem(w))
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final target = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Fleet.ink900,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('Move "${item.name}" to',
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('Top level'),
+              enabled: item.parentId.isNotEmpty,
+              onTap: () => Navigator.pop(sheet, ''),
+            ),
+            for (final f in folders)
+              ListTile(
+                leading: const Icon(Icons.folder_rounded),
+                title: Text(f.name),
+                enabled: f.id != item.parentId,
+                onTap: () => Navigator.pop(sheet, f.id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (target == null) return;
+    await _guard(() async {
+      await ref.read(apiProvider).moveWorkItem(item.id, parentId: target);
+    });
+  }
+
+  /// Run a catalog change, then reload — and put the reason on screen when the
+  /// server refuses, because it refuses for reasons worth reading.
+  Future<void> _guard(Future<void> Function() action) async {
+    try {
+      await action();
+      await _load();
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(backgroundColor: Fleet.bad, content: Text('$err')),
       );
+    }
+  }
 
   Future<void> _deleteWork(WorkItem item) async {
+    final childCount = _work.where((w) => w.parentId == item.id).length;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -420,7 +698,10 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
         title: Text('Delete "${item.name}"?'),
         content: Text(
           item.isWorkspace
-              ? 'Everything inside this workspace goes with it.'
+              ? (childCount == 0
+                  ? 'The folder is empty.'
+                  : 'The $childCount item${childCount == 1 ? '' : 's'} inside '
+                      'go with it.')
               : 'The agents lose what they published here.',
           style: TextStyle(color: Fleet.ink300),
         ),
@@ -437,13 +718,14 @@ class _VaultScreenState extends ConsumerState<VaultScreen> with SingleTickerProv
       ),
     );
     if (ok != true) return;
-    try {
+    await _guard(() async {
       await ref.read(apiProvider).deleteWorkItem(item.id);
-      await _load();
-    } catch (err) {
-      if (mounted) setState(() => _error = '$err');
-    }
+      // Standing inside something that no longer exists shows an empty folder
+      // with a breadcrumb to nowhere.
+      if (item.id == _cwd) setState(() => _cwd = item.parentId);
+    });
   }
+
 
   Widget _buildSessionsTab() {
     if (_sessions.isEmpty) {

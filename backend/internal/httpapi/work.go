@@ -122,6 +122,60 @@ func (s *Server) handlePutWork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, req)
 }
 
+// handleMoveWork renames an item, moves it, or both.
+//
+// Separate from publishing because publishing addresses an item by name: a
+// rename that way leaves the old name behind and a move makes a second copy.
+func (s *Server) handleMoveWork(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string  `json:"name"`
+		ParentID *string `json:"parent_id"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := s.db.WorkItem(r.Context(), r.PathValue("id"))
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	acc := accessFrom(r.Context())
+	if !canSeeWork(acc, *item, s.workAuthorOrgs(r.Context())) {
+		fail(w, http.StatusNotFound, "no such work item")
+		return
+	}
+	if item.OrgID != "" && !acc.CanInOrg(protocol.PermEdit, item.OrgID) {
+		fail(w, http.StatusForbidden, "you cannot change work in that department")
+		return
+	}
+	// A missing parent_id means "leave it where it is"; an explicit empty one
+	// means the top level. Without the distinction every rename would drag the
+	// item out of its folder.
+	parent := item.ParentID
+	if req.ParentID != nil {
+		parent = *req.ParentID
+	}
+	if parent != "" {
+		dest, err := s.db.WorkItem(r.Context(), parent)
+		if err != nil {
+			fail(w, http.StatusBadRequest, "no such folder")
+			return
+		}
+		if !canSeeWork(acc, *dest, s.workAuthorOrgs(r.Context())) {
+			fail(w, http.StatusNotFound, "no such folder")
+			return
+		}
+	}
+	moved, err := s.db.MoveWorkItem(r.Context(), item.ID, req.Name, parent)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.bus.Emit("work", "", "", *moved)
+	writeJSON(w, http.StatusOK, moved)
+}
+
 func (s *Server) handleDeleteWork(w http.ResponseWriter, r *http.Request) {
 	item, err := s.db.WorkItem(r.Context(), r.PathValue("id"))
 	if err != nil {

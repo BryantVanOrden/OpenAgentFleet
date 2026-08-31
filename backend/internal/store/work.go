@@ -135,7 +135,11 @@ func (s *Store) PutWorkItem(ctx context.Context, w *protocol.WorkItem) error {
 	// level: a fleet that had worked on eight small apps showed one flat list
 	// of fifty-odd entries, an app beside nine files about it, sorted
 	// alphabetically with nothing to say they were the same work.
-	if w.ParentID == "" {
+	//
+	// Only for agents. A person using the browser puts things where they mean
+	// to, and having the catalog quietly move them somewhere else is the kind
+	// of help nobody asks for twice.
+	if w.ParentID == "" && w.CreatedBy != "" && w.Kind != protocol.WorkWorkspace {
 		if folder, ok := s.folderFor(ctx, w.Name, w.OrgID); ok {
 			w.ParentID = folder
 		}
@@ -342,4 +346,81 @@ func belongsIn(name, folder string) bool {
 		return true
 	}
 	return false
+}
+
+// MoveWorkItem renames an item, moves it between folders, or both.
+//
+// Publishing addresses an item by name, which is right for agents handing work
+// to each other and useless for a browser: renaming by publishing would leave
+// the old name behind, and moving would make a second copy in the new folder.
+// This addresses the row itself.
+func (s *Store) MoveWorkItem(ctx context.Context, id, name, parentID string) (*protocol.WorkItem, error) {
+	item, err := s.WorkItem(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = item.Name
+	}
+	if parentID != "" {
+		parent, err := s.WorkItem(ctx, parentID)
+		if err != nil {
+			return nil, fmt.Errorf("no such folder")
+		}
+		if parent.Kind != protocol.WorkWorkspace {
+			return nil, fmt.Errorf("%q is not a folder", parent.Name)
+		}
+		// A folder cannot be moved inside itself, directly or at any depth.
+		// The parent_id foreign key would happily accept it and the item would
+		// vanish from every listing, since nothing walking down from the root
+		// would ever reach it.
+		if parentID == id {
+			return nil, fmt.Errorf("a folder cannot contain itself")
+		}
+		if under, err := s.isDescendantOf(ctx, parentID, id); err != nil {
+			return nil, err
+		} else if under {
+			return nil, fmt.Errorf("cannot move %q inside itself", item.Name)
+		}
+	}
+
+	var clash string
+	err = s.pool.QueryRow(ctx,
+		`SELECT id FROM work_items
+		  WHERE name=$1 AND COALESCE(parent_id,'')=$2 AND id<>$3`,
+		name, parentID, id).Scan(&clash)
+	if err == nil {
+		return nil, fmt.Errorf("something called %q is already there", name)
+	}
+
+	var parent any
+	if parentID != "" {
+		parent = parentID
+	}
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE work_items SET name=$1, parent_id=$2, updated_at=now() WHERE id=$3`,
+		name, parent, id); err != nil {
+		return nil, norm(err)
+	}
+	return s.WorkItem(ctx, id)
+}
+
+// isDescendantOf reports whether candidate sits anywhere under ancestor.
+func (s *Store) isDescendantOf(ctx context.Context, candidate, ancestor string) (bool, error) {
+	seen := 0
+	for at := candidate; at != ""; {
+		item, err := s.WorkItem(ctx, at)
+		if err != nil {
+			return false, nil // a broken chain is not a cycle
+		}
+		if item.ParentID == ancestor {
+			return true, nil
+		}
+		at = item.ParentID
+		if seen++; seen > 64 {
+			return true, fmt.Errorf("folder nesting is too deep to check")
+		}
+	}
+	return false, nil
 }
