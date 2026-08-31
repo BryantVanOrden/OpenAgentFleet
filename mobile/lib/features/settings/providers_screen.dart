@@ -69,8 +69,12 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
   }
 
   Future<void> _reorder(int oldIndex, int newIndex) async {
-    // onReorderItem already accounts for the removed item, so newIndex is used
-    // as given.
+    // ReorderableListView reports newIndex against the list as it was BEFORE
+    // the dragged item was taken out, so dragging downwards lands one place
+    // short without this. The previous comment here claimed the callback had
+    // already accounted for it, which is not how the widget behaves.
+    if (newIndex > oldIndex) newIndex -= 1;
+
     final next = [..._providers];
     next.insert(newIndex, next.removeAt(oldIndex));
     // Optimistic: the list must not snap back under the finger while the
@@ -244,7 +248,7 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
           child: ReorderableListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             itemCount: _providers.length,
-            onReorderItem: _reorder,
+            onReorder: _reorder,
             itemBuilder: (_, i) => _tile(_providers[i], i),
           ),
         ),

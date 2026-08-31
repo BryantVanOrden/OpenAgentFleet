@@ -108,6 +108,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/swarms", auth(roleOperator, s.handleCreateSwarm))
 	mux.Handle("GET /api/swarms/{id}", auth(roleAny, s.handleGetSwarm))
 	mux.Handle("POST /api/swarms/{id}/messages", auth(roleOperator, s.handlePostSwarmMessage))
+	mux.Handle("DELETE /api/swarms/{id}", auth(roleAdmin, s.handleDeleteSwarm))
+	mux.Handle("POST /api/swarms/{id}/artifacts", auth(roleOperator, s.handlePublishArtifact))
+	mux.Handle("POST /api/swarms/{id}/artifacts/{artifactId}/review", auth(roleOperator, s.handleReviewArtifact))
 
 	// Event-Driven Webhooks & 24/7 Cron Triggers
 	mux.Handle("GET /api/webhooks", auth(roleAdmin, s.handleListWebhooks))

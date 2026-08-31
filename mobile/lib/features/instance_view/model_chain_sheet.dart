@@ -197,8 +197,14 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _chain.length,
-              onReorderItem: (o, n) => setState(() {
-                _chain.insert(n, _chain.removeAt(o));
+              // ReorderableListView reports the new index against the list as
+              // it was before the dragged item was removed, so dragging
+              // downwards lands one place short without the adjustment. This
+              // is the bot's model fallback order, where one place short means
+              // a different model answers.
+              onReorder: (oldIndex, newIndex) => setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                _chain.insert(newIndex, _chain.removeAt(oldIndex));
               }),
               itemBuilder: (_, i) {
                 final d = _describe(_chain[i]);

@@ -261,10 +261,15 @@ const del = <T,>(path: string) => request<T>(path, { method: "DELETE" });
 
 export interface SwarmMember {
   instance_id: string;
-  instance_name: string;
   role: string;
-  archetype_id: string;
-  status: string;
+  /**
+   * Filled in by the server from the instance itself, so these are optional on
+   * create. The fleet's own name for a bot wins over whatever the caller typed —
+   * two names for one bot makes a blackboard unreadable.
+   */
+  instance_name?: string;
+  archetype_id?: string;
+  status?: string;
 }
 
 export interface SwarmMessage {
@@ -575,6 +580,17 @@ export const api = {
     id: string,
     body: { from_bot: string; to_bot: string; phase: string; content: string; artifacts?: string[] },
   ) => post<SwarmMessage>(`/api/swarms/${id}/messages`, body),
+  deleteSwarm: (id: string) => del<void>(`/api/swarms/${id}`),
+  /** Publishing sends the artifact out for review by every other member. */
+  publishSwarmArtifact: (
+    id: string,
+    body: { title: string; author: string; category?: string; content: string },
+  ) => post<SwarmArtifact>(`/api/swarms/${id}/artifacts`, body),
+  reviewSwarmArtifact: (
+    id: string,
+    artifactId: string,
+    body: { reviewer: string; approved: boolean; notes?: string },
+  ) => post<SwarmArtifact>(`/api/swarms/${id}/artifacts/${artifactId}/review`, body),
 
   // Shared Fleet Vault & Inter-Agent Comms
   sharedSecrets: () => get<SharedSecret[]>("/api/vault/secrets"),

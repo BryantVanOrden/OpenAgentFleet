@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type SwarmTeam } from "../lib/api";
+import { api, type Instance, type SwarmTeam } from "../lib/api";
 import { Button, ErrorNote, Field, Modal, cx, inputClass } from "../components/ui";
 
 export default function MissionControl() {
@@ -11,6 +11,11 @@ export default function MissionControl() {
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [instances, setInstances] = useState<Instance[]>([]);
+  // instance id -> role on this mission. Presence in the map is the selection,
+  // so a picked bot always has a role and an unpicked one cannot carry a stale
+  // one from an earlier draft.
+  const [roles, setRoles] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -33,6 +38,15 @@ export default function MissionControl() {
     return () => clearInterval(interval);
   }, [load]);
 
+  // The bots a mission can be staffed with. Fetched once rather than on the
+  // poll: the picker only matters while the create modal is open.
+  useEffect(() => {
+    void api
+      .instances()
+      .then(setInstances)
+      .catch(() => setInstances([]));
+  }, []);
+
   const handleCreate = async () => {
     if (!missionName.trim() || !missionGoal.trim()) return;
     setLoading(true);
@@ -41,16 +55,42 @@ export default function MissionControl() {
       const sw = await api.createSwarm({
         name: missionName.trim(),
         mission: missionGoal.trim(),
+        members: Object.entries(roles).map(([instance_id, role]) => ({
+          instance_id,
+          role: role.trim() || "Contributor",
+        })),
       });
       setCreating(false);
       setMissionName("");
       setMissionGoal("");
+      setRoles({});
       setSelectedSwarm(sw);
       void load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * The operator's own verdict on an artifact.
+   *
+   * Recorded as "operator" rather than as a bot: a person signing off is a
+   * different fact from a peer bot signing off, and attributing it to a member
+   * would make the roster's approval count wrong.
+   */
+  const handleReview = async (artifactId: string, approved: boolean) => {
+    if (!selectedSwarm) return;
+    try {
+      await api.reviewSwarmArtifact(selectedSwarm.id, artifactId, {
+        reviewer: "operator",
+        approved,
+        notes: approved ? "approved in the console" : "rejected in the console",
+      });
+      void load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -153,7 +193,46 @@ export default function MissionControl() {
                         <span className="font-semibold text-xs text-ink-100">{art.title}</span>
                         <span className="font-mono text-[10px] text-ink-400">{art.category}</span>
                       </div>
-                      <p className="text-xs text-ink-400 mt-1">{art.content}</p>
+                      <p className="text-xs text-ink-400 mt-1 line-clamp-4">{art.content}</p>
+
+                      {/*
+                        Who has signed off. ApprovedBy existed on the struct with
+                        nothing able to fill it in, so "verified deliverable"
+                        meant nothing had verified it. Publishing now starts a
+                        review task on every other member and their verdicts land
+                        here.
+                      */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-ink-800 pt-2">
+                        <span className="font-mono text-[10px] text-ink-500">
+                          by {art.author} ·
+                        </span>
+                        {(art.approved_by?.length ?? 0) === 0 ? (
+                          <span className="rounded bg-warn-500/15 px-1.5 font-mono text-[10px] text-warn-500">
+                            awaiting review
+                          </span>
+                        ) : (
+                          art.approved_by!.map((who) => (
+                            <span
+                              key={who}
+                              className="rounded bg-good-500/15 px-1.5 font-mono text-[10px] text-good-500"
+                            >
+                              ✓ {who}
+                            </span>
+                          ))
+                        )}
+                        <span className="ml-auto flex gap-1">
+                          <Button
+                            size="sm"
+                            onClick={() => void handleReview(art.id, true)}
+                            title="Record your own approval as the operator"
+                          >
+                            Approve
+                          </Button>
+                          <Button size="sm" onClick={() => void handleReview(art.id, false)}>
+                            Reject
+                          </Button>
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -234,19 +313,88 @@ export default function MissionControl() {
             />
           </Field>
 
-          <div className="rounded-lg bg-ink-950 p-3 border border-ink-800 text-xs text-ink-300">
-            <div className="font-semibold text-ink-100 mb-1">Default Swarm Composition:</div>
-            <ul className="list-disc pl-4 space-y-1 text-ink-400">
-              <li>💻 <strong>Full-Stack Bot</strong>: Lead Architecture & Implementation</li>
-              <li>🎨 <strong>QA/UX Bot</strong>: Automated E2E & Accessibility Regression</li>
-              <li>🛡️ <strong>CyberSec Bot</strong>: Automated Vulnerability & PenTesting Audit</li>
-            </ul>
-          </div>
+          {/*
+            The team, picked from bots that actually exist.
+
+            This was a static list describing a "Default Swarm Composition" of
+            three bots — Full-Stack, QA/UX, CyberSec — which the API then
+            fabricated as instance ids "inst-lead", "inst-qa" and "inst-sec".
+            None of them existed on any fleet, so the panel below showed a
+            running mission staffed entirely by fiction and no work was ever
+            dispatched to any of them.
+          */}
+          <Field label="Team">
+            {instances.length === 0 ? (
+              <p className="text-xs text-ink-400">
+                No bots on this fleet yet. A swarm runs on real instances, so create
+                one first.
+              </p>
+            ) : (
+              <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-ink-800 bg-ink-950 p-2">
+                {instances.map((inst) => {
+                  const picked = roles[inst.id] !== undefined;
+                  return (
+                    <div key={inst.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`member-${inst.id}`}
+                        checked={picked}
+                        onChange={(e) =>
+                          setRoles((prev) => {
+                            const next = { ...prev };
+                            if (e.target.checked) {
+                              // Seeded from the archetype, because that is
+                              // usually what the bot is for; still editable.
+                              next[inst.id] = inst.archetype_id ?? "Contributor";
+                            } else {
+                              delete next[inst.id];
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                      <label
+                        htmlFor={`member-${inst.id}`}
+                        className="min-w-0 flex-1 truncate text-xs text-ink-200"
+                      >
+                        {inst.name}{" "}
+                        <span className="font-mono text-[10px] text-ink-500">{inst.state}</span>
+                      </label>
+                      {picked && (
+                        <input
+                          type="text"
+                          placeholder="role on this mission"
+                          value={roles[inst.id]}
+                          onChange={(e) =>
+                            setRoles((prev) => ({ ...prev, [inst.id]: e.target.value }))
+                          }
+                          className={cx(inputClass, "w-48 py-1 text-xs")}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="mt-1 text-xs text-ink-400">
+              Each member is given the mission, its own role, and the names of its
+              teammates, then starts a real task straight away.
+            </p>
+          </Field>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-ink-800">
             <Button onClick={() => setCreating(false)}>Cancel</Button>
-            <Button variant="primary" disabled={loading} onClick={handleCreate}>
-              {loading ? "Provisioning Swarm…" : "🚀 Launch Collaborative Team"}
+            <Button
+              variant="primary"
+              disabled={
+                loading ||
+                !missionName.trim() ||
+                !missionGoal.trim() ||
+                Object.keys(roles).length === 0
+              }
+              onClick={handleCreate}
+            >
+              {loading ? "Starting the team…" : "🚀 Launch Collaborative Team"}
             </Button>
           </div>
         </div>

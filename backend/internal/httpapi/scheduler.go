@@ -75,7 +75,15 @@ func (s *Server) StartBackground(ctx context.Context) {
 		if err := mcp.GlobalMCP.AttachStore(ctx, s.db, s.logger()); err != nil {
 			s.logger().Error("MCP registrations not loaded; the hub starts empty", "err", err)
 		}
+		if err := globalSwarmCoordinator.AttachStore(ctx, s.db); err != nil {
+			s.logger().Error("swarm missions not loaded; the blackboard starts empty", "err", err)
+		}
 	}
+
+	// Gives the swarm coordinator a way to start real work. Without it,
+	// creating a swarm is refused rather than recording a mission nothing will
+	// ever act on.
+	s.wireSwarms()
 	// Gives the pipeline engine a way to actually run a node. Without this it
 	// refuses to start a run rather than reporting invented success.
 	pipeline.GlobalEngine.SetNodeRunner(s.runPipelineNode)
