@@ -506,53 +506,119 @@ def cmd_financials(args: argparse.Namespace) -> None:
 
 
 def cmd_hub_export(args: argparse.Namespace) -> None:
+    """Export an archetype as a portable package.
+
+    The manifest comes from the orchestrator's exporter rather than being
+    assembled here from the template catalogue. That is the difference between a
+    package and a description: the fleet's recorded skills and its registered
+    MCP servers are what make an archetype worth moving between installations,
+    and the SDK cannot know either of them. Both used to be hardcoded to [].
+    """
     from agentfleet.hub import ArchetypeManifest
 
     client = _get_client(args)
-    tmpl = None
-    try:
-        tmpl = client._get(f"/api/templates/{args.archetype}")
-    except Exception:
-        pass
+    path = f"/api/archetypes/{args.archetype}/export"
+    if args.skills:
+        path += f"?skills={args.skills}"
 
-    if not tmpl:
-        tmpl = {"id": args.archetype, "name": args.archetype, "recommended_tier": "standard"}
-    
     try:
-        manifest = ArchetypeManifest(
-            version="1.0.0",
-            id=tmpl.get("id", args.archetype),
-            name=tmpl.get("name", args.archetype),
-            tagline=tmpl.get("tagline", ""),
-            category=tmpl.get("category", "General"),
-            recommended_tier=tmpl.get("recommended_tier", "standard"),
-            vcpu=float(tmpl.get("vcpu", 4)),
-            memory_mb=int(tmpl.get("memory_mb", 8192)),
-            disk_gb=int(tmpl.get("disk_gb", 30)),
-            gpu=bool(tmpl.get("gpu", False)),
-            preinstalled_tools=tmpl.get("preinstalled_tools", []),
-            system_prompt=tmpl.get("specialized_prompt", ""),
-            default_environment=tmpl.get("default_environment", {}),
-            mcp_servers=[],
-            recorded_skills=[],
-        )
-        out_path = Path(args.output or f"{args.archetype}.agentfleet.json")
-        manifest.save(out_path)
-        print(f"📦 Archetype '{args.archetype}' exported to {out_path}")
+        data = client._get(path)
     except Exception as e:
         print(f"❌ Export failed: {e}")
+        return
+
+    try:
+        manifest = ArchetypeManifest.from_dict(data)
+        # .yaml by default, which is what this module and the docs have always
+        # been named after. save() honours the extension, so `-o x.json` still
+        # writes JSON.
+        out_path = Path(args.output or f"{args.archetype}.agentfleet.yaml")
+        manifest.save(out_path)
+    except Exception as e:
+        print(f"❌ Export failed: {e}")
+        return
+
+    print(f"📦 Archetype '{manifest.id}' exported to {out_path}")
+    print(f"   {manifest.name} · {manifest.category} · tier {manifest.recommended_tier}")
+    print(f"   Tools: {', '.join(manifest.preinstalled_tools) or 'none'}")
+    print(f"   Recorded skills: {len(manifest.recorded_skills)}")
+    print(f"   MCP servers: {len(manifest.mcp_servers)}")
+    # Said out loud, because an operator who mails this file to a colleague
+    # should know the colleague will have to supply the keys themselves.
+    needs = [
+        f"{s.get('name')}.{k}"
+        for s in manifest.mcp_servers
+        for k in (s.get("env_keys") or [])
+    ]
+    if needs:
+        print(f"   ⚠️  Credentials NOT included (by design): {', '.join(needs)}")
 
 
 def cmd_hub_import(args: argparse.Namespace) -> None:
+    """Install an archetype package onto this fleet.
+
+    This used to load the file, print three lines about it, and return, so
+    importing an archetype left the fleet exactly as it was. It now posts the
+    manifest to the orchestrator, which creates the skills, registers the MCP
+    servers and -- with --create-instance -- provisions a bot from it.
+    """
     from agentfleet.hub import ArchetypeManifest
 
     try:
         manifest = ArchetypeManifest.load(args.file)
-        print(f"✅ Loaded archetype package: {manifest.name} ({manifest.id})")
-        print(f"   Category: {manifest.category} · Hardware: {manifest.recommended_tier}")
-        print(f"   Tools: {', '.join(manifest.preinstalled_tools)}")
     except Exception as e:
         print(f"❌ Import failed: {e}")
+        return
+
+    print(f"📦 {manifest.name} ({manifest.id})")
+    print(f"   Category: {manifest.category} · Hardware: {manifest.recommended_tier}")
+    print(f"   Tools: {', '.join(manifest.preinstalled_tools) or 'none'}")
+    print(f"   Recorded skills: {len(manifest.recorded_skills)}")
+    print(f"   MCP servers: {len(manifest.mcp_servers)}")
+
+    if args.dry_run:
+        print("\n(--dry-run: nothing was installed)")
+        return
+
+    client = _get_client(args)
+    try:
+        res = client._post(
+            "/api/archetypes/import",
+            {
+                "manifest": manifest.to_dict(),
+                "overwrite": bool(args.overwrite),
+                "create_instance": bool(args.create_instance),
+                "instance_name": args.instance_name or "",
+            },
+        )
+    except Exception as e:
+        print(f"❌ Import failed: {e}")
+        return
+
+    print()
+    created = res.get("skills_created") or []
+    skipped = res.get("skills_skipped") or []
+    if created:
+        print(f"✅ Skills created: {', '.join(created)}")
+    if skipped:
+        # Named rather than counted: a skill that was skipped because it already
+        # exists is the one the operator most needs to know about.
+        print(f"⏭️  Skills skipped (already present; use --overwrite): {', '.join(skipped)}")
+    if res.get("mcp_registered"):
+        print(f"✅ MCP servers registered: {', '.join(res['mcp_registered'])}")
+    for failure in res.get("mcp_failed") or []:
+        print(f"⚠️  MCP server not registered: {failure}")
+    for secret in res.get("needs_secrets") or []:
+        print(f"🔑 Needs a credential before it will work: {secret}")
+
+    if res.get("instance_id"):
+        print(f"✅ Bot provisioned: {res['instance_name']} ({res['instance_id']}) "
+              f"— {res.get('instance_status')}")
+    elif res.get("instance_status"):
+        print(f"⚠️  Bot not provisioned: {res['instance_status']}")
+
+    if not created and not res.get("mcp_registered") and not res.get("instance_id"):
+        print("Nothing was installed: everything in the package was already present.")
 
 
 # ---------------------------------------------------------------------- Main ---
@@ -667,12 +733,38 @@ def main() -> None:
     # hub
     p_hub = subparsers.add_parser("hub", help="Export and import portable bot archetypes")
     hub_subs = p_hub.add_subparsers(dest="hub_action", required=True)
-    p_hub_exp = hub_subs.add_parser("export", help="Export archetype to .agentfleet.json")
+    p_hub_exp = hub_subs.add_parser(
+        "export", help="Export an archetype, its skills and its MCP servers to a package"
+    )
     p_hub_exp.add_argument("archetype", help="Archetype ID")
-    p_hub_exp.add_argument("-o", "--output", help="Output file path")
+    p_hub_exp.add_argument(
+        "-o", "--output", help="Output file path (default: <id>.agentfleet.yaml; .json also works)"
+    )
+    p_hub_exp.add_argument(
+        "--skills",
+        help="Comma-separated skill ids or names to include (default: all of them)",
+    )
     p_hub_exp.set_defaults(func=cmd_hub_export)
-    p_hub_imp = hub_subs.add_parser("import", help="Import archetype from package file")
-    p_hub_imp.add_argument("file", help="File path to .agentfleet.json")
+
+    p_hub_imp = hub_subs.add_parser(
+        "import", help="Install an archetype package onto this fleet"
+    )
+    p_hub_imp.add_argument("file", help="Path to a .agentfleet.yaml or .agentfleet.json package")
+    p_hub_imp.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace skills that already exist (off by default, so an import "
+        "cannot quietly overwrite a skill this fleet has been refining)",
+    )
+    p_hub_imp.add_argument(
+        "--create-instance",
+        action="store_true",
+        help="Also provision a bot from the manifest",
+    )
+    p_hub_imp.add_argument("--instance-name", help="Name for the provisioned bot")
+    p_hub_imp.add_argument(
+        "--dry-run", action="store_true", help="Show what the package contains and install nothing"
+    )
     p_hub_imp.set_defaults(func=cmd_hub_import)
 
     # voice

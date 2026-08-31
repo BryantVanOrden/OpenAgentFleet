@@ -155,6 +155,11 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/mcp/servers", auth(roleAdmin, s.handleRegisterMCPServer))
 	mux.Handle("DELETE /api/mcp/servers/{id}", auth(roleAdmin, s.handleDeleteMCPServer))
 	mux.Handle("GET /api/mcp/tools", auth(roleAny, s.handleListMCPTools))
+	// Archetype packaging. Export is readable by anyone who can see the fleet;
+	// import creates skills, registers MCP servers and can provision a bot, so
+	// it is an admin action.
+	mux.Handle("GET /api/archetypes/{id}/export", auth(roleAny, s.handleExportArchetype))
+	mux.Handle("POST /api/archetypes/import", auth(roleAdmin, s.handleImportArchetype))
 	mux.Handle("POST /api/mcp/servers/{id}/refresh", auth(roleAdmin, s.handleRefreshMCPTools))
 	mux.Handle("POST /api/mcp/call", auth(roleOperator, s.handleCallMCPTool))
 

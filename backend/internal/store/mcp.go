@@ -35,10 +35,14 @@ func (s *Store) UpsertMCPServer(ctx context.Context, srv protocol.MCPServer) err
 	}
 	srv.UpdatedAt = time.Now().UTC()
 
+	// args_json/env_json, the column names the table has actually had since
+	// migration 0007. They are TEXT holding JSON rather than JSONB: the store
+	// never queries inside them, and both are handed straight to a process spawn
+	// or a header map.
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO mcp_servers(id,name,transport,command,args,env,url,tools_count,active,created_at,updated_at)
+		`INSERT INTO mcp_servers(id,name,transport,command,args_json,env_json,url,tools_count,active,created_at,updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         ON CONFLICT (id) DO UPDATE SET name=$2,transport=$3,command=$4,args=$5,env=$6,
+         ON CONFLICT (id) DO UPDATE SET name=$2,transport=$3,command=$4,args_json=$5,env_json=$6,
              url=$7,tools_count=$8,active=$9,updated_at=$11`,
 		srv.ID, srv.Name, srv.Transport, srv.Command, string(args), string(env),
 		srv.URL, srv.ToolsCount, srv.Active, srv.CreatedAt, srv.UpdatedAt)
@@ -46,8 +50,11 @@ func (s *Store) UpsertMCPServer(ctx context.Context, srv protocol.MCPServer) err
 }
 
 func (s *Store) ListMCPServers(ctx context.Context) ([]protocol.MCPServer, error) {
+	// url is nullable in the 0007 schema, so it is coalesced rather than scanned
+	// into a string — a stdio server has no URL, which is every stdio row.
 	rows, err := s.pool.Query(ctx,
-		`SELECT id,name,transport,command,args,env,url,tools_count,active,created_at,updated_at
+		`SELECT id,name,transport,command,COALESCE(args_json,'[]'),COALESCE(env_json,'{}'),
+                COALESCE(url,''),tools_count,active,created_at,updated_at
            FROM mcp_servers ORDER BY created_at`)
 	if err != nil {
 		return nil, norm(err)

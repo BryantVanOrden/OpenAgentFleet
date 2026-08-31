@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type User } from "../lib/api";
+import { api, type BotTemplate, type User } from "../lib/api";
+import ArchetypePackages from "../components/ArchetypePackages";
 import { Button, Card, ErrorNote, Field, Empty, cx, inputClass, relative } from "../components/ui";
 
 type SecretRef = { ref: string; note: string; updated_at: string };
@@ -8,6 +9,7 @@ export default function Settings({ role }: { role: string }) {
   const [users, setUsers] = useState<User[]>([]);
   const [secrets, setSecrets] = useState<SecretRef[]>([]);
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
+  const [templates, setTemplates] = useState<BotTemplate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = role === "admin";
 
@@ -17,6 +19,7 @@ export default function Settings({ role }: { role: string }) {
       if (isAdmin) {
         setUsers(await api.users());
         setSecrets(await api.secrets());
+        setTemplates(await api.templates());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -46,6 +49,10 @@ export default function Settings({ role }: { role: string }) {
       </header>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+      <Card title="Archetype packages">
+        <ArchetypePackages templates={templates} />
+      </Card>
 
       <Card title="Platform">
         {health ? (

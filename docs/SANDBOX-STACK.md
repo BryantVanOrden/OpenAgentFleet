@@ -104,6 +104,24 @@ must dismiss or dead weight in a headless container.
 
 ## 3. `-dev` image (`developer-heavy` tier)
 
+**Built.** `sandbox/Dockerfile.dev`, via `make sandbox-dev`, which tags it
+`agentfleet/sandbox:latest-dev` — the tag `fleet.DefaultTiers` derives for this
+tier by appending `-dev` to the configured image. Nothing produced that tag
+before, so selecting the tier gave an instance stuck on an image that did not
+exist anywhere; the pull-failure message now names `make sandbox-dev` rather
+than `make sandbox`, which would have rebuilt the base and left the needed tag
+still missing.
+
+It is a layer on top of the base image rather than a fork, so agentd, the
+accessibility bus and the egress policy cannot drift from it. The build verifies
+gcc, clang, rustc and go can each compile and run a trivial program, because a
+dev image whose compilers are present but broken is the failure this exists to
+avoid.
+
+The sketch below is what was planned; the file is close to it, with clang and
+lld added alongside gcc (real projects pin one or the other) and ccache wired in
+front of both.
+
 ```dockerfile
 FROM agentfleet/sandbox:base
 RUN apt-get update && apt-get install -y --no-install-recommends \

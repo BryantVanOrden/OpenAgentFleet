@@ -4,6 +4,172 @@ Notable changes to AgentFleet. Dates are release dates; the format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 
+## [Unreleased]
+
+This one is narrow and unglamorous: the README carried a section called *What is
+partly built*, nine items long, and every item is now built. Several of them were
+stubs behind working-looking screens, which is worse than a missing feature — the
+screen says the thing works.
+
+### MCP is a real client
+
+It spoke no protocol at all. Registering a server invented one tool named
+`<server>_query`, `CallTool` returned a formatted string claiming it had executed
+something, and the transport, command, URL and env fields were stored and never
+read once. Registrations died with the process. No agent could reach any of it,
+because `call_mcp` was not in the parser's accepted action set — a model told
+about the fleet's MCP tools got "unknown action" back and lost a step.
+
+Now: JSON-RPC 2.0 over a child process on stdin/stdout, or Streamable HTTP with
+either a JSON or an SSE response body; the `initialize`/`initialized` handshake,
+which several servers require before they will answer `tools/list` at all;
+paginated tool discovery; one connection per server for the whole fleet, lazily
+reconnected when one dies. Registrations persist. Agents call tools with
+`call_mcp`, and the system prompt lists what they can call — an action with no
+discoverable catalogue is one a model will never use.
+
+Registering connects before storing, so a typo is a 400 the operator reads rather
+than a server that lists an invented tool and fails at call time. A tool that
+runs and reports failure is distinguished from a transport error; only the second
+retires the session.
+
+Found while testing it: `ListServers` serialised the env map, which holds bearer
+tokens and API keys, and `/api/mcp/servers` is open to every authenticated role.
+
+### Swarms do something
+
+The coordinator was a CRUD store over a message list. Creating a swarm appended
+one "Swarm mission initialized" message and did nothing else — no tasks, no
+instances started — and with no members specified the API fabricated three bots
+that exist on no fleet, so Mission Control showed a running mission staffed
+entirely by fiction.
+
+Members are now resolved against real instances before anything is stored, and
+creating a swarm starts a real task per member, each told the mission, its own
+role, and the names of its teammates. Publishing an artifact starts a review task
+on every other member; `SwarmArtifact.ApprovedBy` existed with nothing able to
+fill it in, so "verified deliverable" meant nothing had verified it. A reviewer
+cannot approve twice to stand in for two reviewers, a rejection retracts an
+earlier approval, and a one-bot swarm says there is nobody to review rather than
+treating the artifact as approved.
+
+### Pipelines fan out, and edges mean something
+
+The engine ran nodes one at a time and ignored every `condition` on every edge —
+so a graph drawn with a success branch and a failure branch ran both, and a
+pipeline built to have three bots review something in parallel took three times
+as long as it needed to.
+
+Independent stages now run concurrently, bounded per pipeline because every stage
+starts a real task on a real desktop. Conditions are evaluated and validated at
+save, so a misspelled one is a 400 rather than a branch that silently never
+fires. A stage whose condition is not met is skipped rather than failed, and
+skipping propagates — a failure branch must not fire under a stage that never
+ran. A failure with an explicit failure branch does not fail the run.
+
+There was also no graph builder: the console's create button posted a hardcoded
+three-node pipeline and every other screen was a viewer, so an existing pipeline
+could not be edited at all.
+
+### Voice reaches the speaker
+
+The agent's `speak` action went to agentd, which synthesised a sine wave
+modulated by the text's letter frequencies, base64'd it into a response field
+nothing read, and returned success — in a container with no audio device and no
+path to the operator. It now synthesises against the same sidecar the console
+uses, stores the audio as a task artifact, and emits `agent.speech` on the event
+bus, which is the path the sandbox never had.
+
+The sidecar's own default voice was `echo` while every document and picker said
+`shadow`. The console's "Pocket TTS voice co-pilot" was `window.speechSynthesis`
+and never contacted the sidecar at all.
+
+### Memory is embeddings, and is shared
+
+It scored with a 128-dimension hashed bag of words, which finds a memory when the
+query reuses its words and misses it otherwise: "how do I sign in to the billing
+portal" never matched "logged into the invoicing site with the shared
+credential". Real embeddings now come from whichever provider can produce them,
+with the hashed vector as a fallback the API reports honestly rather than
+presenting as semantic search.
+
+Vectors from different models are never compared — a cosine similarity between
+two unrelated spaces is a number with no meaning, and that is what makes a
+half-migrated index worse than either scheme alone.
+
+And it was per-bot: `remember` always wrote to the recording agent's private
+namespace and nothing ever wrote to a shared one, so the fleet-wide memory the
+docs describe held nothing. Agents can now mark a finding as fleet-wide. Notes
+about a person stay private regardless.
+
+Separately: `AutoIndexTask` wrote every completed task's summary to a namespace
+that `recall` did not search, so the whole auto-indexed trajectory history was
+written, stored and read by nothing.
+
+### Webhooks understand their senders
+
+GitHub happens to match the generic HMAC scheme but puts the event name in a
+header, so every push, review comment and failed CI run arrived as an
+indistinguishable blob of JSON. Stripe does not match it at all — it signs
+`<timestamp>.<body>` and sends the result in `Stripe-Signature` — so a Stripe
+webhook pointed at this endpoint was rejected on 100% of deliveries.
+
+Both are implemented properly, Stripe's replay window and rotation-era multiple
+signatures included, and each sender gets a summariser so an agent is told what
+happened rather than handed raw JSON. Amounts are converted from minor units, so
+1999 reads as 19.99 rather than telling an agent someone was charged nineteen
+hundred dollars.
+
+The console could not create a webhook at all: the backend requires a signing
+secret, correctly, and the form never sent one.
+
+### Cost accounting counts
+
+Cached tokens were summed from a field nothing populated, so the column read zero
+forever — and on an agent loop resending the same system prompt every turn, cache
+reads are most of the input spend. All three providers report it under different
+names, and Anthropic reports cache reads *outside* `input_tokens`, so the prompt
+total had to be reassembled. Cache reads are priced at the discounted rate.
+
+While there: the `token_telemetry` table has existed since migration 0007 with
+nothing ever writing to it, so the whole cost dashboard reset to $0.00 on every
+deploy.
+
+### Archetype packages install
+
+`fleetctl hub export` built a manifest with tools and recorded skills hardcoded
+empty, wrote it as `.agentfleet.json` while the docs and the module docstring
+both said `.agentfleet.yaml`, and `hub import` read the file back and printed a
+summary. It created nothing, and there was no endpoint behind it.
+
+Export now comes from the orchestrator, which knows the things the SDK cannot —
+the fleet's recorded skills and its MCP registrations. Import creates the skills,
+registers the servers, and optionally provisions a bot. Credentials are
+deliberately excluded from a package: the MCP env map is exported as key names
+only, and the importer names what has to be supplied. Skills that already exist
+are skipped rather than overwritten unless asked.
+
+### `developer-heavy` has an image
+
+The tier asked for `agentfleet/sandbox:latest-dev` and nothing built that tag, so
+choosing it produced an instance stuck on a missing image.
+`sandbox/Dockerfile.dev` and `make sandbox-dev` build it — compilers, Rust, Go,
+ccache and the GPU loader hints, layered on the base image so agentd cannot drift
+from it, with a build-time check that each toolchain can actually compile and run
+something.
+
+### Also
+
+- The Flutter app did not compile. Two `ReorderableListView` call sites passed
+  `onReorderItem`, which is not a parameter the widget has, and a comment claimed
+  the callback already accounted for the removed item — it does not, so dragging
+  downwards landed one place short. That list is a bot's model fallback order,
+  where one place short means a different model answers.
+- `renderGoal` decided whether to append the raw payload by checking the template
+  for `{{` *after* substitution, so a goal that had already used the payload got
+  the whole thing appended underneath it.
+
+
 ## [1.2.0] — 2026-08-30
 
 Seventy-two commits since the 1.1.0 notes were written. Where v1.1.0 was about

@@ -366,6 +366,30 @@ important thing to understand about deploying this:
   public internet without a reverse proxy, TLS, and a hard look at who has an
   account.
 
+## MCP servers over stdio
+
+Registering a stdio MCP server asks the orchestrator to **execute a command**,
+inside the orchestrator container — not inside a sandbox. That is what the
+transport is rather than a flaw in the implementation, and it is the loudest thing
+in the MCP bridge:
+
+- The registration endpoint is admin-only, and an admin already holds the Docker
+  socket above, so this grants nothing they did not already have.
+- Every stdio registration is logged with its command at warning level.
+- `MCP_DISABLE_STDIO=true` refuses the transport entirely, leaving only HTTP
+  servers. Worth setting on any deployment where more than one person has admin,
+  or where MCP servers are expected to be remote anyway.
+
+An MCP server also sees whatever an agent passes to its tools, and returns content
+that goes straight into the agent's next prompt. Tool results are treated as
+untrusted data for the same reason screen content is — a compromised or hostile
+MCP server is a prompt-injection vector with a very direct path.
+
+The `env` map on an MCP server row holds credentials in the general case (an API
+key for a hosted server, a bearer token for an HTTP one). It is stored in the
+database, never returned by the API — `GET /api/mcp/servers` reports the key names
+only — and is excluded from exported archetype packages.
+
 ## Agent-authored apps
 
 The shared work catalog lets an agent publish an *app* — one HTML document —
@@ -439,6 +463,24 @@ finding from the security review that has not been fixed yet.
   What remains: anyone holding the URL and the secret can start a task, which
   is what a webhook is for. Treat both as credentials. Webhooks and cron
   triggers still have no owner scoping, so any admin sees all of them.
+
+  Since the review, the signature scheme is per-sender rather than one generic
+  HMAC. Two things worth noting about that. A webhook declared `github` accepts
+  a signature **only** in `X-Hub-Signature-256` — accepting the house header too
+  would let anyone who learns the URL sign with the header of their choosing. And
+  `stripe` enforces a five-minute window on the timestamp inside the signed
+  payload, without which a captured delivery stays replayable forever; that is
+  not bookkeeping when a replay starts an autonomous agent.
+- **Payload summaries put attacker-controlled text at the top of a prompt.** A
+  GitHub pull request title, a Stripe customer email, a CRM form's message field:
+  all of these are now extracted into a one-line "What happened" that leads the
+  agent's goal. That is the point — it is what stops a small model spending two
+  turns parsing JSON — but it means someone who can open a pull request against a
+  watched repository can choose text that an agent reads first. The
+  untrusted-external-data fence still wraps the payload, and the summary is
+  labelled as coming from it; the injection boundary is the model's instruction
+  to treat all of it as data, which is exactly as strong as it is everywhere else
+  in this system.
 - **`deep_search` is an unfiltered fetch.** Any `http(s)` URL, no private-range
   check, no response size cap, and the body lands in the model's prompt with no
   untrusted-content fence. With no egress policy on the instance, that reaches

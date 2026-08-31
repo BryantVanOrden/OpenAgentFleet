@@ -1,29 +1,26 @@
--- MCP server registrations, which previously lived only in process memory.
+-- MCP server registrations.
 --
--- An operator configured a server, it worked until the next deploy, and then the
--- MCP Hub screen was empty with no explanation. The transport, command, args,
--- env and url columns are all read now -- the in-memory version stored the same
--- fields and never looked at any of them.
+-- The table itself has existed since 0007 and nothing ever wrote a row to it:
+-- the manager kept registrations in a map, so an operator configured a server,
+-- it worked until the next deploy, and then the MCP Hub screen was empty with no
+-- explanation. This migration adds only what was missing for the store to use it
+-- (an index, and the note about what the env column holds); the columns were
+-- already there, unread.
+--
+-- Written as ADD COLUMN IF NOT EXISTS rather than CREATE TABLE, because a
+-- CREATE TABLE IF NOT EXISTS against the 0007 table is a silent no-op and
+-- everything after it in the same file then refers to columns that do not exist.
+-- That is exactly how the first version of this migration failed.
 
-CREATE TABLE IF NOT EXISTS mcp_servers (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    transport   TEXT NOT NULL DEFAULT 'stdio',
-    command     TEXT NOT NULL DEFAULT '',
-    -- JSON arrays/objects rather than native arrays: args is ordered and env is
-    -- a map, and both are handed straight to the process spawn without the
-    -- store needing to understand either.
-    args        JSONB NOT NULL DEFAULT '[]'::jsonb,
-    env         JSONB NOT NULL DEFAULT '{}'::jsonb,
-    url         TEXT NOT NULL DEFAULT '',
-    tools_count INTEGER NOT NULL DEFAULT 0,
-    active      BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
+ALTER TABLE mcp_servers
+    ADD COLUMN IF NOT EXISTS args_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE mcp_servers
+    ADD COLUMN IF NOT EXISTS env_json TEXT NOT NULL DEFAULT '{}';
 
--- The env column can hold credentials -- an API key for a hosted MCP server, a
--- bearer token as an HTTP header. Noted here so it is obvious this table is
--- sensitive; the API projection redacts it on the way out.
-COMMENT ON COLUMN mcp_servers.env IS
-    'Process environment or HTTP headers. May contain credentials; redacted by the API.';
+-- env_json can hold credentials -- an API key for a hosted MCP server, a bearer
+-- token sent as an HTTP header. Noted here so it is obvious this table is
+-- sensitive; the API projection reports the key names only.
+COMMENT ON COLUMN mcp_servers.env_json IS
+    'Process environment (stdio) or HTTP headers. May contain credentials; the API returns key names only.';
+
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_created ON mcp_servers(created_at);

@@ -115,56 +115,75 @@
   message, so an agent knows who is speaking rather than reading an
   undifferentiated stream. A bot can propose a plan and wait for approval instead
   of acting immediately.
-- **Pipelines.** Multi-bot DAG workflows, executed in topological order and
-  resumable after an orchestrator restart. See the note below on what the engine
-  does not yet do.
-- **Triggers.** Webhook ingress on a per-webhook token with optional HMAC, and a
-  cron scheduler. Both persist across restarts.
-- **Cost telemetry.** Prompt and completion tokens, latency and a dollar estimate
-  per call, from a hand-maintained price table.
+- **Pipelines.** Multi-bot DAG workflows. Independent stages run in parallel
+  (bounded per pipeline), and each dependency can be conditional on how the stage
+  before it ended — `success`, `failure`, or a match against its result — so a
+  graph can have an error branch that only fires on an error. A stage whose
+  condition is not met is skipped rather than failed, and skipping propagates.
+  Built and edited in the console.
+- **Swarms.** A mission, the bots assigned to it, and a shared blackboard.
+  Creating one starts a real task per member, each told the mission, its own role
+  and its teammates. Publishing an artifact sends it out for peer review by every
+  other member, and the mission completes when they have all signed off.
+- **MCP.** A real client: JSON-RPC 2.0 over stdio (a child process) or
+  Streamable HTTP (JSON or SSE responses), with the `initialize` handshake and
+  paginated `tools/list`. Agents call these tools with `call_mcp`, and the tools
+  available are listed in the system prompt. Registrations persist.
+- **Triggers.** Webhook ingress on a per-webhook token, with the signature scheme
+  the named sender actually uses — GitHub's `X-Hub-Signature-256`, Stripe's
+  timestamped `Stripe-Signature` with a replay window — and a payload summary so
+  an agent is told what happened rather than handed raw JSON. Plus a cron
+  scheduler. Both persist across restarts.
+- **Cost telemetry.** Prompt, completion and cached tokens, latency and a dollar
+  estimate per call, from a hand-maintained price table. Cache reads are priced
+  at the discounted rate. Durable, so the totals survive a deploy.
+- **Archetype packages.** Export an archetype — persona, hardware profile,
+  recorded skills, MCP registrations — as a portable `.agentfleet.yaml`, and
+  install one someone sent you, optionally provisioning a bot from it.
+  Credentials are never included in a package.
 - **A phone app.** Flutter, on Android, iOS, macOS, Linux and Windows, with push
   alerts and interactive takeover on all five.
 
 ### What is partly built
 
-Stated here rather than left to be discovered. None of the following is finished,
-and some of it is a stub behind a working-looking screen.
+Stated here rather than left to be discovered. Everything in the previous version
+of this list has since been built; what remains is the smaller set below.
 
-- **MCP bridge.** `backend/internal/mcp` registers servers and lists tools, but it
-  speaks no MCP: there is no JSON-RPC, no stdio or SSE transport, and `CallTool`
-  returns a canned response without executing anything. The transport, command
-  and URL fields are stored and never read, registrations do not survive a
-  restart, and agents cannot reach it at all — the `call_mcp` action is not in the
-  parser's accepted set. Treat the MCP Hub screen as a placeholder.
-- **Swarms.** The coordinator is an in-memory CRUD store with a shared message
-  list. Creating a swarm does not create tasks, start instances or run anything,
-  and with no members specified it fabricates three bots that do not exist. There
-  is no peer review and no route to publish an artifact.
-- **Pipeline execution.** The engine runs nodes one at a time, in topological
-  order. It does not run independent nodes in parallel, and it does not evaluate
-  edge conditions — a `condition` on an edge is stored and displayed and nothing
-  acts on it. There is also no graph builder: the console's create button posts a
-  fixed three-node pipeline, and everything else is a viewer.
-- **Archetype export/import.** The SDK writes an `.agentfleet.json` manifest
-  (not `.agentfleet.yaml`), with tools and recorded skills left empty. `hub
-  import` reads the file and prints a summary; it does not create anything. There
-  is no endpoint and no UI.
-- **Voice.** The Pocket TTS sidecar is real and serves speech over
-  `/api/voice/speak`. But the agent's own `speak` action does not reach it — it
-  falls through to a tone generator in the sandbox whose output is discarded —
-  and the console's voice co-pilot uses the browser's own speech synthesis. The
-  default voice is `echo`, not `shadow`.
-- **Memory.** Persistent and useful, but it is a bag-of-words index scanned
-  linearly, not embeddings, and it is per-bot: nothing ever writes to the shared
-  namespace, so one agent's discovery is not retrievable by another.
-- **Cached-token accounting.** The column exists and is summed; nothing ever
-  populates it, so it is always zero.
-- **Webhooks are generic.** One token endpoint that renders a goal template. There
-  is no GitHub, Stripe or CRM specific parsing; Stripe's signature scheme in
-  particular is not understood.
-- **`developer-heavy` needs an image that is not built here.** The tier asks for
-  `agentfleet/sandbox:latest-dev`, and no Dockerfile or make target produces that
-  tag. Build it yourself or override the image per instance.
+- **MCP resources and prompts.** The bridge speaks JSON-RPC over stdio and
+  Streamable HTTP, completes the handshake, and calls tools — but only tools. MCP
+  also defines `resources/*` and `prompts/*`, and neither is implemented, so a
+  server whose value is a resource collection has nothing to offer here. Server
+  notifications (`notifications/tools/list_changed`) are received and discarded;
+  refreshing a catalogue is a manual button.
+- **Swarm phases are not enforced.** A swarm starts every member at once and
+  reviews artifacts as they are published. The `phase` field on a message
+  ("planning", "execution", "qa", "handoff") is recorded and displayed, and
+  nothing gates on it — there is no barrier that holds execution until planning
+  is agreed.
+- **Pipeline runs do not survive a restart.** Pipelines persist; a run in flight
+  does not. The orchestrator restarting mid-run leaves the run recorded as
+  `running` forever, because the executor's state is in memory. Node results that
+  had already landed are lost with it.
+- **Embeddings need a provider that has them.** Episodic memory uses real
+  embeddings when a configured provider can produce them — Ollama, OpenAI, or
+  Gemini — and falls back to a 128-dimension hashed bag of words otherwise, which
+  only matches when the query reuses the memory's own words. `/api/memory/fleet`
+  reports which one is in use. A fleet on Anthropic alone gets the fallback,
+  because Anthropic has no embedding API. Search is a linear scan over the
+  working set (2,000 records); that is deliberate and fine at this size, but
+  there is no ANN index behind it.
+- **The price table is hand-maintained.** Cost telemetry is priced by substring
+  match against a table in `telemetry/tracker.go`, including the cache-read
+  discount. It is list prices, approximate, and goes stale when vendors change
+  them. Nothing fetches current pricing.
+- **`developer-heavy` is still a container.** `make sandbox-dev` builds the image
+  the tier asks for, with compilers, Rust, Go and the GPU loader hints. It is
+  still a shared-kernel container, not a VM — the QEMU driver is unimplemented,
+  and the GPU hints are inert unless the host has the NVIDIA container runtime.
+- **CRM webhook parsing is heuristic.** GitHub and Stripe are parsed properly,
+  signatures included. "CRM" is a field-name search over the payload covering
+  what HubSpot, Salesforce and common form backends happen to send. There is no
+  vendor-specific schema behind it, and an unusual payload gets a thin summary.
 
 ## Bot archetypes
 

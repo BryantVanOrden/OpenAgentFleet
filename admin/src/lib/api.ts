@@ -23,6 +23,50 @@ export interface TierProfile {
   shm_mb: number;
 }
 
+/** A portable archetype package. Mirrors the SDK's dataclass. */
+export interface ArchetypeManifest {
+  version: string;
+  id: string;
+  name: string;
+  tagline: string;
+  category: string;
+  icon?: string;
+  recommended_tier: string;
+  vcpu: number;
+  memory_mb: number;
+  disk_gb: number;
+  gpu: boolean;
+  preinstalled_tools: string[];
+  preinstalled_repos?: string[];
+  system_prompt: string;
+  default_voice?: string;
+  default_shell_access?: boolean;
+  default_environment: Record<string, string>;
+  /** Credentials are never included; only the key names that must be supplied. */
+  mcp_servers: {
+    name: string;
+    transport: string;
+    command?: string;
+    args?: string[];
+    url?: string;
+    env_keys?: string[];
+  }[];
+  recorded_skills: { id: string; name: string; description?: string }[];
+}
+
+/** What an import actually did, itemised. */
+export interface ImportArchetypeResult {
+  archetype: string;
+  skills_created: string[];
+  skills_skipped: string[];
+  mcp_registered: string[];
+  mcp_failed: string[];
+  needs_secrets?: string[];
+  instance_id?: string;
+  instance_name?: string;
+  instance_status?: string;
+}
+
 export interface BotTemplate {
   id: string;
   name: string;
@@ -521,6 +565,24 @@ export const api = {
   tiers: () => get<TierProfile[]>("/api/tiers"),
   templates: () => get<BotTemplate[]>("/api/templates"),
   template: (id: string) => get<BotTemplate>(`/api/templates/${id}`),
+
+  /**
+   * A portable archetype package: the persona, the hardware profile, the
+   * fleet's recorded skills and its MCP registrations.
+   *
+   * Credentials are deliberately excluded — a manifest is a file people mail
+   * each other, so the MCP env map comes across as key names only.
+   */
+  exportArchetype: (id: string, skills?: string[]) =>
+    get<ArchetypeManifest>(
+      `/api/archetypes/${id}/export${skills?.length ? `?skills=${skills.join(",")}` : ""}`,
+    ),
+  importArchetype: (body: {
+    manifest: ArchetypeManifest;
+    overwrite?: boolean;
+    create_instance?: boolean;
+    instance_name?: string;
+  }) => post<ImportArchetypeResult>("/api/archetypes/import", body),
   instances: () => get<Instance[]>("/api/instances"),
   instance: (id: string) => get<Instance>(`/api/instances/${id}`),
   createInstance: (body: {

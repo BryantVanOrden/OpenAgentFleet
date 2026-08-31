@@ -255,13 +255,42 @@ is not using the model you thought it was. It answers per role.
 
 | Method | Path | Role | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/mcp/servers` | any | Registered tool servers. |
-| `POST` | `/api/mcp/servers` | admin | Register one. |
-| `DELETE` | `/api/mcp/servers/{id}` | admin | Remove one. |
+| `GET` | `/api/mcp/servers` | any | Registered tool servers, each with `connected` and `last_error`. |
+| `POST` | `/api/mcp/servers` | admin | Register one. Connects and discovers tools before storing. |
+| `DELETE` | `/api/mcp/servers/{id}` | admin | Remove one, closing its connection. |
 | `GET` | `/api/mcp/tools` | any | Tools discovered across all registered servers. |
-| `POST` | `/api/mcp/call` | operator | Invoke a tool. |
+| `POST` | `/api/mcp/servers/{id}/refresh` | admin | Re-ask a server what tools it has. |
+| `POST` | `/api/mcp/call` | operator | Invoke a tool. `server_id` is optional. |
 
 There is no `/api/tools` prefix; MCP is the whole surface.
+
+`transport` is `"stdio"` or `"http"` (`"sse"` is accepted as the older name for
+the same thing). A stdio server needs `command` and optional `args`; an HTTP one
+needs `url`. `env` is process environment for stdio and extra request headers for
+HTTP.
+
+Registering **connects** — completing the MCP handshake and listing tools — before
+storing anything, so a server that is unreachable or misconfigured is a `400` you
+can act on rather than a row that looks configured and fails at call time. A
+stdio registration asks the orchestrator to execute a command, which is what the
+transport is; it is admin-only, logged, and can be disabled entirely with
+`MCP_DISABLE_STDIO=true`.
+
+`env` is never returned. `GET /api/mcp/servers` reports `env_keys` — the names
+only — because that endpoint is open to every authenticated role and the values
+are usually API keys.
+
+`POST /api/mcp/call` returns `200` with `is_error: true` when a tool ran and
+reported a failure: the call succeeded and the tool has an answer. A transport
+failure is a `502`.
+
+Agents reach these tools with the `call_mcp` action, naming `mcp_tool_name` and
+`mcp_params`; the server is resolved from the tool name if omitted. The tools
+available are listed in each agent's system prompt.
+
+**Not implemented:** `resources/*` and `prompts/*`. Server-sent
+`notifications/tools/list_changed` is received and discarded — use the refresh
+endpoint.
 
 ---
 
@@ -310,16 +339,76 @@ nothing acts on it. The only branching is that an error aborts the run.
 Note the asymmetry: saving and running a pipeline needs `operator`, deleting one
 needs `admin`.
 
+Posting with an existing `id` replaces that pipeline in place, which is how the
+console's editor saves changes.
+
+A node names an `instance_id` or an `archetype_id`, and a `goal_template`. An
+edge is `{"from_node_id": ..., "to_node_id": ..., "condition": ...}`, where the
+condition is one of:
+
+| Condition | Meaning |
+| :--- | :--- |
+| *(empty)* / `always` | A plain dependency: runs however the upstream stage ended. |
+| `success` | Only if the upstream stage succeeded. |
+| `failure` | Only if it failed. |
+| `contains:TEXT` | Succeeded, and its result contains TEXT. |
+| `not_contains:TEXT` | Succeeded, and its result does not contain TEXT. |
+| `equals:TEXT` | Succeeded, and its result is exactly TEXT. |
+| `matches:REGEX` | Succeeded, and its result matches REGEX. |
+
+Text comparisons ignore case and surrounding whitespace, because the "result" is
+a model's summary of what it did. An unknown condition is rejected at save, since
+an evaluated-but-misspelled one would be a branch that silently never fires.
+
+Stages whose dependencies have all settled run **concurrently**, up to
+`max_parallel` (default 4 — every stage starts a real task on a real desktop). A
+stage whose incoming conditions are not all met is `skipped`, and skipping
+propagates downstream. A failure that has an explicit `failure` branch does not
+fail the run.
+
+A run reports `node_states` — `waiting`, `running`, `done`, `failed`, `skipped` —
+which is the accurate picture now that several stages run at once.
+`current_node_id` is kept for older clients and means "most recently started".
+
+**Not implemented:** a run in flight does not survive an orchestrator restart.
+Pipelines persist; the executor's state is in memory, so a restart leaves the run
+recorded as `running` indefinitely.
+
 ---
 
 ## 12. Swarms
 
 | Method | Path | Role | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/swarms` | any | List swarms. |
-| `POST` | `/api/swarms` | operator | Create a swarm. |
+| `GET` | `/api/swarms` | any | List swarms, newest first. |
+| `POST` | `/api/swarms` | operator | Create a swarm and start a task per member. |
 | `GET` | `/api/swarms/{id}` | any | One swarm and its blackboard. |
+| `DELETE` | `/api/swarms/{id}` | admin | Forget a mission. |
 | `POST` | `/api/swarms/{id}/messages` | operator | Post to the shared blackboard. |
+| `POST` | `/api/swarms/{id}/artifacts` | operator | Publish a deliverable and send it for peer review. |
+| `POST` | `/api/swarms/{id}/artifacts/{artifactId}/review` | operator | Record a verdict. |
+
+`members` is required and every entry needs an `instance_id` that names a real
+bot on this fleet — creating a swarm starts real work on real desktops, so a
+member list that does not correspond to the fleet is refused rather than
+invented. `instance_name` and `archetype_id` are filled in from the instance;
+whatever the caller sends for them is ignored.
+
+Each member is started with a goal carrying the mission, its own `role`, and its
+teammates' names, so it can reach them with `message_peer` and `delegate_task`. A
+member that cannot start (already busy, for instance) is recorded on the
+blackboard and marked `error` in the roster rather than failing the mission; a
+swarm where *nothing* started reports `failed` and a `400`.
+
+Publishing an artifact starts a review task on every member except its author and
+moves the swarm to `reviewing`. A review is
+`{"reviewer": "...", "approved": true, "notes": "..."}`; approvals are recorded
+once per reviewer, a rejection retracts that reviewer's earlier approval, and the
+swarm reaches `completed` when every non-author member has approved.
+
+**Not implemented:** the `phase` on a message is recorded and displayed but does
+not gate anything — there is no barrier holding execution until planning is
+agreed.
 
 ---
 
@@ -366,10 +455,28 @@ seeing an undifferentiated stream.
 
 | Method | Path | Role | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/instances/{id}/memories` | any | What this bot has remembered. |
+| `GET` | `/api/instances/{id}/memories` | any | What this bot has remembered privately. Returns a bare array. |
 | `DELETE` | `/api/instances/{id}/memories/{memoryId}` | operator | Forget one. |
+| `GET` | `/api/memory/fleet` | any | The shared pool, auto-indexed task history, and how search is scored. |
 
 Memories are written by the agent's `remember` action and read back by `recall`.
+
+`remember` writes to the bot's own private namespace by default. An agent can
+mark a finding as fleet-wide with `"memory_scope": "fleet"`, which is the pool
+every other bot's `recall` also searches. A note flagged `about_user` stays
+private regardless: what one bot learned about a colleague is not the whole
+fleet's to know.
+
+`recall` searches the bot's namespace, the shared pool, and the auto-indexed task
+trajectories.
+
+`/api/memory/fleet` reports `search: {semantic, model}`. When an
+embedding-capable provider is configured (Ollama, OpenAI or Gemini), search uses
+real embeddings and `model` names the model; otherwise `semantic` is `false` and
+search falls back to a 128-dimension hashed bag of words, which only matches when
+the query reuses the memory's own words. That is reported rather than hidden,
+because "semantic search" that has quietly degraded to keyword overlap is the
+kind of thing a workflow gets built on. Override the model with `EMBED_MODEL`.
 
 ---
 
@@ -475,6 +582,38 @@ authenticated data, so a sealed value cannot be moved to a different ref.
 
 Both are persisted and survive a restart.
 
+A webhook has a `kind`, which selects the signature scheme and the payload
+summariser:
+
+| `kind` | Signature | Notes |
+| :--- | :--- | :--- |
+| `generic` (default) | HMAC-SHA256 of the raw body, in `X-Hub-Signature-256` or `X-AgentFleet-Signature`. | Unchanged behaviour. |
+| `github` | The same HMAC, but **only** in `X-Hub-Signature-256`. | Event name read from `X-GitHub-Event`. |
+| `stripe` | `Stripe-Signature`: `t=<unix>,v1=<hmac>` over `<t>.<body>`. | Five-minute replay window; multiple `v1` accepted for secret rotation. |
+| `crm` | As generic. | Contact/deal field extraction over a bare JSON document. |
+
+The kind is stored, not sniffed from the request headers: choosing the verifier by
+looking at which header arrived would let the caller pick its own scheme, and the
+point of the signature is that it cannot. An unknown kind is rejected at create —
+a webhook filed as `githib` would verify with the wrong scheme and reject every
+delivery, which reads as a broken integration rather than a typo.
+
+A signing secret is **required**. This endpoint takes no other authentication and
+starts autonomous agents, so an unsigned webhook is refused, and rows predating
+the requirement stop dispatching rather than staying open.
+
+For `github`, `stripe` and `crm`, the extracted fields are available to the goal
+template alongside the payload's own keys — `{{repo}}`, `{{pr_number}}`,
+`{{amount}}`, `{{email}}` and so on — and `{{summary}}` is a one-sentence
+description of what happened. A template that uses no placeholders still gets the
+payload appended, labelled as untrusted external data; that labelling matters
+here, because a pull request title is attacker-controlled text going into an
+agent's prompt.
+
+**Partly built:** the CRM parser is a field-name search over what HubSpot,
+Salesforce and common form backends happen to send. There is no vendor-specific
+schema behind it.
+
 ---
 
 ## 19. Alerts
@@ -502,8 +641,21 @@ There is no Prometheus `/metrics` endpoint.
 
 | Method | Path | Role | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/voice/voices` | any | Available voices. |
+| `GET` | `/api/voice/voices` | any | Available voices, fetched from the sidecar. |
 | `POST` | `/api/voice/speak` | any | Synthesise speech. `{"text": "...", "voice": "..."}` |
+
+`/api/voice/voices` returns `{available, default, voices}` and reports
+`available: false` with a reason when no text-to-speech sidecar is deployed, which
+is a normal configuration rather than a fault. The default voice is `shadow`.
+
+`/api/voice/speak` streams audio back (`audio/wav`), not JSON. It answers `503`
+when the sidecar is unreachable.
+
+The agent's own `speak` action goes through the same sidecar: the orchestrator
+synthesises, stores the result as a task artifact, and emits `agent.speech` on the
+event bus with the artifact URL, which is how the console and the phone play it.
+An agent on a fleet with no sidecar is told plainly that speech is unavailable and
+to report in writing instead, rather than being left to narrate into nothing.
 
 ---
 
@@ -533,6 +685,26 @@ The only multi-segment wildcard in the API; the key contains slashes, e.g.
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/templates` | any | The bot archetypes. |
 | `GET` | `/api/templates/{id}` | any | One archetype, with its tool list and playbook. |
+| `GET` | `/api/archetypes/{id}/export` | any | A portable package: persona, hardware, this fleet's recorded skills and MCP registrations. |
+| `POST` | `/api/archetypes/import` | admin | Install a package. |
+
+Export takes an optional `?skills=id,id` to narrow which recorded skills are
+included; the default is all of them. The manifest is the shape the Python SDK's
+`ArchetypeManifest` reads, so `fleetctl hub export`/`import` and this endpoint
+interoperate. `.agentfleet.yaml` and `.agentfleet.json` are both accepted on
+import.
+
+**Credentials are never exported.** An MCP server's `env` becomes `env_keys` —
+the names only — because a manifest is a file people mail each other and commit
+to repositories. Import reports those keys under `needs_secrets` and does not
+register a server it cannot authenticate, rather than storing one that will fail.
+
+Import is itemised in its response (`skills_created`, `skills_skipped`,
+`mcp_registered`, `mcp_failed`), because "imported successfully" is what the CLI
+used to print while creating nothing. Skills that already exist are skipped unless
+`overwrite` is set: an import must not quietly replace a skill a fleet has been
+refining. With `create_instance`, a bot is provisioned from the manifest —
+`sudo_access` is never taken from a package.
 
 ---
 
