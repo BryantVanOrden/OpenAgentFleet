@@ -258,6 +258,37 @@ func (c *DockerClient) Ping(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/_ping", nil, nil)
 }
 
+// HostCapacity is what the engine says the host actually has.
+type HostCapacity struct {
+	// NCPU is the number of CPUs Docker will admit. Asking for more is a hard
+	// 400 from the engine, not a best-effort scheduling hint.
+	NCPU int `json:"NCPU"`
+	// MemTotal is host RAM in bytes.
+	MemTotal int64 `json:"MemTotal"`
+	// Runtimes is the engine's configured OCI runtimes. An "nvidia" entry means
+	// the NVIDIA container toolkit is installed; without it, asking for a GPU
+	// fails the container at start with a prestart-hook error rather than
+	// falling back to CPU.
+	Runtimes map[string]struct {
+		Path string `json:"path"`
+	} `json:"Runtimes"`
+}
+
+// HasNVIDIARuntime reports whether a GPU request can possibly succeed.
+func (h HostCapacity) HasNVIDIARuntime() bool {
+	_, ok := h.Runtimes["nvidia"]
+	return ok
+}
+
+// Info reports the host's capacity, for clamping a tier to what can actually run.
+func (c *DockerClient) Info(ctx context.Context) (HostCapacity, error) {
+	var out HostCapacity
+	if err := c.do(ctx, http.MethodGet, "/info", nil, &out); err != nil {
+		return HostCapacity{}, err
+	}
+	return out, nil
+}
+
 func (c *DockerClient) CreateContainer(ctx context.Context, name string, spec containerCreate) (string, error) {
 	var out createResponse
 	err := c.do(ctx, http.MethodPost, "/containers/create?name="+name, spec, &out)

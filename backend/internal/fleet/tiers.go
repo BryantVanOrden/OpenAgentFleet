@@ -18,7 +18,10 @@ const (
 
 // DefaultTiers are the shipped hardware profiles. They are advisory: the admin
 // panel can override any field per instance, and Manager clamps the result to
-// what the host can actually admit.
+// what the host can actually admit — see clamp.go, which is where that finally
+// became true. This comment described the behaviour for a long time before
+// anything implemented it, so `developer-heavy` (8 vCPU) could not start on any
+// host with fewer cores.
 func DefaultTiers(image string) []protocol.TierProfile {
 	return []protocol.TierProfile{
 		{

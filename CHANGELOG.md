@@ -149,7 +149,7 @@ deliberately excluded from a package: the MCP env map is exported as key names
 only, and the importer names what has to be supplied. Skills that already exist
 are skipped rather than overwritten unless asked.
 
-### `developer-heavy` has an image
+### `developer-heavy` starts
 
 The tier asked for `agentfleet/sandbox:latest-dev` and nothing built that tag, so
 choosing it produced an instance stuck on a missing image.
@@ -157,6 +157,34 @@ choosing it produced an instance stuck on a missing image.
 ccache and the GPU loader hints, layered on the base image so agentd cannot drift
 from it, with a build-time check that each toolchain can actually compile and run
 something.
+
+Building the image was not enough, which only became apparent from provisioning
+one. `tiers.go` had said for a long time that the profiles were advisory and that
+"Manager clamps the result to what the host can actually admit"; nothing clamped
+anything. The tier's 8 vCPU went straight to Docker, and asking for more CPUs
+than the host has is a hard 400 — arriving after the image had been pulled. So on
+any machine with fewer than 8 cores the tier could not start at all, whether or
+not its image existed.
+
+vCPU is now clamped to the host's core count, memory to 80% of host RAM (a
+sandbox that can only reach its limit by pushing the host into swap takes the
+orchestrator with it), and shm to half the memory limit. The reductions are
+logged and the instance's stored profile shows what it actually got — a panel
+reading "8 vCPU" over a container limited to 4 is the same species of lie as a
+screen fronting a feature that does nothing.
+
+The GPU needed a different approach. It cannot be detected in advance: Docker
+Desktop registers the `nvidia` runtime whether or not an adapter exists, so the
+runtime list says yes and the prestart hook says no — and the failure lands as a
+generic 500 from `/start` with the hook's stderr embedded. Starting the container
+is the only authoritative test, so a start failure that names the NVIDIA tooling
+retries once without the GPU and labels the instance `gpu_unavailable`. The match
+is deliberately narrow; silently dropping a capability for an unrelated start
+failure would hide a real problem behind a working-looking sandbox.
+
+Verified by provisioning one on a 4-core, no-GPU host: it reaches `running` with
+a profile reporting 4 vCPU and `gpu: false`, and C, Rust and Go all compile and
+run inside it.
 
 ### A test for the class of bug this was
 

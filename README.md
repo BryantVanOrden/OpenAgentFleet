@@ -271,12 +271,30 @@ AgentFleet ships with four pre-configured hardware tiers:
 | `developer-heavy` | 8.0 | 16 GB | 150 GB | Requested | Compiling large codebases, game engines, SWE-bench tasks |
 
 These are the values in [`backend/internal/fleet/tiers.go`](backend/internal/fleet/tiers.go); every field can be
-overridden per instance. Two caveats worth stating rather than discovering:
+overridden per instance. They are what the tier *asks for*, and the orchestrator
+reduces them to what the host can actually provide rather than failing. Four
+caveats worth stating rather than discovering:
 
-- **GPU is "requested", not guaranteed.** `developer-heavy` asks Docker for an
-  NVIDIA device. On a host without the container toolkit — including Docker
-  Desktop on macOS and Windows — the request is ignored and you get a CPU-only
-  sandbox.
+- **A tier larger than your host is clamped, not refused.** Asking Docker for
+  more CPUs than the machine has is a hard error, so `developer-heavy` (8 vCPU)
+  could not start at all on a 4-core laptop — after pulling the image. vCPU is
+  now clamped to the host's core count and memory to 80% of host RAM, the
+  reduction is logged, and the instance's stored profile shows what it actually
+  got rather than what the tier wanted. A developer-heavy bot on a small machine
+  is slower than intended and otherwise exactly what was asked for.
+- **GPU is requested, and dropped if the host cannot provide one.**
+  `developer-heavy` asks Docker for an NVIDIA device. This cannot be detected in
+  advance — Docker Desktop registers the `nvidia` runtime whether or not any
+  adapter exists, so the runtime list says yes and the prestart hook says no.
+  The container is started, and if it fails specifically on the NVIDIA tooling
+  the orchestrator retries once without the GPU and labels the instance
+  `gpu_unavailable`. You get a CPU-only sandbox, which is what the tier is on a
+  machine without a GPU anyway — its compilers do not need one.
+- **`developer-heavy` uses a different image.** It runs
+  `agentfleet/sandbox:latest-dev`, built by `make sandbox-dev`: the base desktop
+  plus gcc, clang, Rust, Go, a JDK, ccache and the GPU loader hints. Build it
+  before selecting the tier, or the instance stops on a missing image naming the
+  command that fixes it.
 - **Disk limits need overlay2 on XFS with pquota.** Anywhere else Docker rejects
   the quota and the orchestrator provisions without it, logging that it did.
 

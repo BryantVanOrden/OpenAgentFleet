@@ -191,6 +191,18 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 }
 
 func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.TierProfile) error {
+	// Reduce the tier to something this host will admit. DefaultTiers has always
+	// said the profiles are advisory and that this happens; until now nothing
+	// did it, so asking for more CPUs than the host has was a hard 400 from the
+	// engine after the image had already been pulled. See clamp.go.
+	//
+	// The instance's stored profile is updated to match, so the fleet view shows
+	// what the container actually got rather than what the tier asked for. A
+	// panel reading "8 vCPU" over a container limited to 4 is the same species of
+	// lie as a screen fronting a feature that does nothing.
+	p = m.applyHostLimits(ctx, p)
+	inst.Profile = p
+
 	if !m.docker.ImageExists(ctx, p.Image) {
 		m.log.Info("pulling sandbox image", "image", p.Image)
 		if err := m.docker.PullImage(ctx, p.Image); err != nil {
@@ -283,7 +295,43 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	inst.Runtime = cid
 
 	if err := m.docker.StartContainer(ctx, cid); err != nil {
-		return fmt.Errorf("start container: %w", err)
+		// A GPU that the host cannot actually provide fails here, not at create:
+		// the nvidia prestart hook runs during container init, so the request is
+		// accepted, the image is pulled, the container is made, and only then
+		// does it fail with something like
+		//
+		//   nvidia-container-cli: initialization error: WSL environment detected
+		//   but no adapters were found
+		//
+		// This cannot be predicted from /info. Docker Desktop registers the
+		// nvidia runtime whether or not any adapter is present, so the runtime
+		// list says yes and the hook says no. Starting the container is the only
+		// authoritative test, which makes retrying without the GPU the honest
+		// implementation rather than a workaround.
+		//
+		// The result is a working CPU sandbox instead of a dead instance, which
+		// for developer-heavy is what the tier is on a machine with no GPU
+		// anyway — its compilers do not need one.
+		if len(spec.HostConfig.DeviceRequests) > 0 && isGPUUnavailable(err) {
+			m.log.Warn("this host cannot provide a GPU; retrying without one",
+				"instance", inst.ID, "err", err)
+			_ = m.docker.RemoveContainer(ctx, cid)
+
+			spec.HostConfig.DeviceRequests = nil
+			inst.Profile.GPU = false
+			inst.Labels = withLabel(inst.Labels, "gpu_unavailable", "true")
+
+			cid, err = m.docker.CreateContainer(ctx, containerName, spec)
+			if err != nil {
+				return fmt.Errorf("create container without GPU: %w", err)
+			}
+			inst.Runtime = cid
+			if err := m.docker.StartContainer(ctx, cid); err != nil {
+				return fmt.Errorf("start container: %w", err)
+			}
+		} else {
+			return fmt.Errorf("start container: %w", err)
+		}
 	}
 
 	ci, err := m.docker.InspectContainer(ctx, cid)
