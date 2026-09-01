@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=OpenAgentFleet
+Name=Open Agent Fleet
 Comment=Watch, talk to, and take over your agents
 # Flutter's Linux bundle is relocatable, so Exec is rewritten by install.sh to
 # wherever the bundle actually landed rather than hardcoded here.

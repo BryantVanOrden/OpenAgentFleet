@@ -150,7 +150,7 @@ class _OpenAgentFleetAppState extends ConsumerState<OpenAgentFleetApp> {
     final choice = ref.watch(themeControllerProvider);
 
     return MaterialApp(
-      title: 'OpenAgentFleet',
+      title: 'Open Agent Fleet',
       navigatorKey: _navigator,
       debugShowCheckedModeBanner: false,
       themeMode: choice.mode,

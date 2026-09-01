@@ -311,11 +311,10 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.dns_outlined, size: 48, color: Fleet.ink600),
             SizedBox(height: 16),
-            Text('No instances yet', style: TextStyle(fontSize: 16)),
+            Text('Oaf is all alone here', style: TextStyle(fontSize: 16)),
             SizedBox(height: 6),
             Text(
-              'Provision one from the web console. This app is for watching and '
-              'unblocking them once they are running.',
+              'No agents yet. Tap New agent to give Oaf some company.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Fleet.ink400, fontSize: 13),
             ),

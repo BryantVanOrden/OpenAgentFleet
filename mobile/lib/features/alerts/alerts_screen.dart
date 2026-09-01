@@ -53,10 +53,10 @@ class AlertsScreen extends ConsumerWidget {
                     Icon(Icons.check_circle_outline,
                         size: 44, color: Fleet.good),
                     SizedBox(height: 14),
-                    Text('Nothing needs you'),
+                    Text('Oaf has nothing for you'),
                     SizedBox(height: 4),
                     Text(
-                      'Agents are working or idle.',
+                      'Agents are working or idle. Oaf is keeping an eye on them.',
                       style: TextStyle(color: Fleet.ink400, fontSize: 13),
                     ),
                   ],

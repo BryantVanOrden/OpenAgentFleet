@@ -14,17 +14,18 @@ import { Ago, Button, Empty, ErrorNote, StateBadge, cx, inputClass } from "../co
  */
 export default function Alerts({ onChange }: { onChange: () => void }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [showResolved, setShowResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [replies, setReplies] = useState<Record<string, string>>({});
 
+  // Everything, always: the split into "waiting on you" and history happens
+  // here, so resolved alerts are context rather than a mode you switch into.
   const load = useCallback(async () => {
     try {
-      setAlerts(await api.alerts(!showResolved));
+      setAlerts(await api.alerts(false));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [showResolved]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -34,9 +35,11 @@ export default function Alerts({ onChange }: { onChange: () => void }) {
     if (e.type === "alert" || e.type === "alert.resolved") void load();
   });
 
-  const reply = async (alert: Alert) => {
+  // Acknowledging sends an EMPTY reply on purpose: it unblocks the agent
+  // without pretending whatever was drafted in the box was an instruction.
+  const reply = async (alert: Alert, text: string) => {
     try {
-      await api.replyAlert(alert.id, replies[alert.id] ?? "");
+      await api.replyAlert(alert.id, text);
       setReplies((r) => ({ ...r, [alert.id]: "" }));
       await load();
       onChange();
@@ -57,14 +60,6 @@ export default function Alerts({ onChange }: { onChange: () => void }) {
             Agents waiting on you, and anything that finished or failed while you were away.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-ink-300">
-          <input
-            type="checkbox"
-            checked={showResolved}
-            onChange={(e) => setShowResolved(e.target.checked)}
-          />
-          include resolved
-        </label>
       </header>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
@@ -80,7 +75,7 @@ export default function Alerts({ onChange }: { onChange: () => void }) {
               alert={a}
               draft={replies[a.id] ?? ""}
               onDraft={(v) => setReplies((r) => ({ ...r, [a.id]: v }))}
-              onReply={() => reply(a)}
+              onReply={(text) => reply(a, text)}
             />
           ))}
         </section>
@@ -111,7 +106,7 @@ function AlertCard({
   alert: Alert;
   draft?: string;
   onDraft?: (v: string) => void;
-  onReply?: () => void;
+  onReply?: (text: string) => void;
 }) {
   const open = alert.needs_reply && !alert.resolved_at;
   return (
@@ -170,11 +165,11 @@ function AlertCard({
                 onChange={(e) => onDraft?.(e.target.value)}
               />
               <div className="flex gap-2">
-                <Button variant="primary" size="sm" onClick={onReply}>
+                <Button variant="primary" size="sm" onClick={() => onReply(draft ?? "")}>
                   Send and resume
                 </Button>
-                <Button size="sm" onClick={onReply}>
-                  Acknowledge without instructions
+                <Button size="sm" onClick={() => onReply("")}>
+                  Acknowledge
                 </Button>
               </div>
             </div>

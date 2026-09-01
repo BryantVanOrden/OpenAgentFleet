@@ -3,10 +3,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   COMBO_ROLE_SHORT,
   DEFAULT_CHAT_ID,
+  GRANT_PERMS_PER_BOT,
+  GRANT_PERM_LABELS,
   api,
   artifactUrl,
   voice as voiceApi,
   vncUrl,
+  type BotGrant,
   type BotMemory,
   type ChatMessage,
   type ChatSession,
@@ -17,6 +20,7 @@ import {
   type StepRecord,
   type Task,
   type TtsCatalogue,
+  type User,
 } from "../lib/api";
 import { useEvents } from "../lib/events";
 import { toast } from "../components/Toasts";
@@ -240,7 +244,9 @@ function ControlsMenu({
   const navigate = useNavigate();
   const isAdmin = role === "admin";
   const readOnly = role === "auditor";
-  const [modal, setModal] = useState<null | "voice" | "persona" | "models" | "memory">(null);
+  const [modal, setModal] = useState<null | "voice" | "persona" | "models" | "memory" | "access">(
+    null,
+  );
   const [confirmSudo, setConfirmSudo] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -285,6 +291,11 @@ function ControlsMenu({
               },
             ]
           : []),
+        {
+          label: "Access",
+          hint: "Who may see and drive this bot",
+          onClick: () => setModal("access"),
+        },
         { label: "Memory", hint: "What this bot has kept", onClick: () => setModal("memory") },
         {
           label: instance.shell_access ? "Revoke shell access" : "Allow shell access",
@@ -376,7 +387,156 @@ function ControlsMenu({
       {modal === "memory" && (
         <MemoryModal instance={instance} readOnly={readOnly} onClose={() => setModal(null)} />
       )}
+      {modal === "access" && <AccessModal instance={instance} onClose={() => setModal(null)} />}
     </>
+  );
+}
+
+/**
+ * Per-bot access exceptions: who may see and drive this one machine, on top
+ * of whatever their department role says. An empty permission list is the
+ * "hide this bot from them" spelling; removing the grant restores the
+ * department default. Mirrors the phone app's access sheet.
+ */
+function AccessModal({ instance, onClose }: { instance: Instance; onClose: () => void }) {
+  const [grants, setGrants] = useState<BotGrant[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ userId: string; perms: Set<string> } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setGrants(await api.botGrants(instance.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+    // A department owner who is not a deployment admin may not be allowed to
+    // list users; the grants they can already see still render.
+    try {
+      setUsers(await api.users());
+    } catch {
+      /* degraded: add/edit needs the user list, viewing does not */
+    }
+  }, [instance.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const emailOf = (id: string) => users.find((u) => u.id === id)?.email ?? id;
+  const summaryOf = (g: BotGrant) =>
+    g.permissions.length === 0
+      ? "No access — this bot is hidden from them"
+      : GRANT_PERMS_PER_BOT.filter((p) => g.permissions.includes(p))
+          .map((p) => GRANT_PERM_LABELS[p])
+          .join(" · ");
+
+  const save = async (userId: string, perms: string[] | null) => {
+    setBusy(true);
+    try {
+      await api.setBotGrant(instance.id, userId, perms);
+      setEditing(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const candidates = users.filter((u) => !grants.some((g) => g.user_id === u.id));
+
+  return (
+    <Modal open title="Who may see and drive this bot" onClose={onClose}>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+      {grants.length === 0 && !editing && (
+        <p className="mb-3 text-sm text-ink-400">
+          No exceptions — everyone sees this bot at whatever their department role allows.
+        </p>
+      )}
+
+      <ul className="mb-4 divide-y divide-ink-800">
+        {grants.map((g) => (
+          <li key={g.user_id} className="py-2.5">
+            <button
+              className="w-full text-left"
+              onClick={() => setEditing({ userId: g.user_id, perms: new Set(g.permissions) })}
+            >
+              <div className="text-sm">{emailOf(g.user_id)}</div>
+              <div className="text-xs text-ink-500">{summaryOf(g)}</div>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {editing ? (
+        <div className="rounded border border-ink-700 p-3">
+          <div className="mb-2 text-sm font-medium">{emailOf(editing.userId)}</div>
+          <div className="space-y-1.5">
+            {GRANT_PERMS_PER_BOT.map((p) => (
+              <label key={p} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={editing.perms.has(p)}
+                  onChange={(e) => {
+                    const next = new Set(editing.perms);
+                    if (e.target.checked) {
+                      next.add(p);
+                      // Anything at all implies being able to see the bot.
+                      next.add("view");
+                    } else {
+                      next.delete(p);
+                    }
+                    setEditing({ ...editing, perms: next });
+                  }}
+                />
+                {GRANT_PERM_LABELS[p]}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-ink-500">
+            Leaving everything unticked hides the bot from them entirely.
+          </p>
+          <div className="mt-3 flex justify-between gap-2">
+            <Button size="sm" disabled={busy} onClick={() => void save(editing.userId, null)}>
+              Use department default
+            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy}
+                onClick={() => void save(editing.userId, [...editing.perms])}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : candidates.length > 0 ? (
+        <Field label="Add an exception for">
+          <select
+            className={inputClass}
+            value=""
+            onChange={(e) => {
+              if (e.target.value) setEditing({ userId: e.target.value, perms: new Set(["view"]) });
+            }}
+          >
+            <option value="">Choose a person…</option>
+            {candidates.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.email}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+    </Modal>
   );
 }
 

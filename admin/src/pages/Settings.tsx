@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type BotTemplate, type User } from "../lib/api";
+import { api, type ApiKeyRecord, type BotTemplate, type User } from "../lib/api";
 import ArchetypePackages from "../components/ArchetypePackages";
-import { Button, Card, ErrorNote, Field, Empty, cx, inputClass, relative } from "../components/ui";
+import DepartmentsCard from "../components/DepartmentsCard";
+import HostCard from "../components/HostCard";
+import {
+  Button,
+  Card,
+  Confirm,
+  ErrorNote,
+  Field,
+  Empty,
+  Modal,
+  PromptModal,
+  cx,
+  inputClass,
+  relative,
+} from "../components/ui";
 
 type SecretRef = { ref: string; note: string; updated_at: string };
 
@@ -79,9 +93,133 @@ export default function Settings({ role }: { role: string }) {
         </p>
       </Card>
 
+      <HostCard />
       <UsersCard users={users} onChange={load} onError={setError} />
+      <DepartmentsCard users={users} />
+      <ApiKeysCard onError={setError} />
       <SecretsCard secrets={secrets} onChange={load} onError={setError} />
     </div>
+  );
+}
+
+function ApiKeysCard({ onError }: { onError: (m: string) => void }) {
+  const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
+  const [naming, setNaming] = useState(false);
+  const [created, setCreated] = useState<ApiKeyRecord | null>(null);
+  const [revoking, setRevoking] = useState<ApiKeyRecord | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setKeys(await api.apiKeys());
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <Card
+      title="API keys"
+      action={
+        <Button size="sm" variant="primary" onClick={() => setNaming(true)}>
+          New key
+        </Button>
+      }
+    >
+      <p className="mb-3 text-xs text-ink-400">
+        A key acts with its owner's role — a leaked admin key is a leaked admin account.
+      </p>
+      {keys.length === 0 ? (
+        <p className="text-xs text-ink-500">No keys yet.</p>
+      ) : (
+        <ul className="divide-y divide-ink-800">
+          {keys.map((k) => (
+            <li key={k.id} className="flex items-center justify-between gap-3 py-2.5">
+              <div className="min-w-0">
+                <div className={cx("truncate text-sm", k.revoked_at && "text-ink-500 line-through")}>
+                  {k.name}
+                </div>
+                <div className="text-xs text-ink-500">
+                  {k.user_email ?? "unknown owner"} ·{" "}
+                  {k.last_used_at ? `used ${relative(k.last_used_at)}` : "never used"}
+                </div>
+              </div>
+              {!k.revoked_at && (
+                <Button size="sm" variant="danger" onClick={() => setRevoking(k)}>
+                  Revoke
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <PromptModal
+        open={naming}
+        title="What is the key for?"
+        placeholder="deploy pipeline, home dashboard…"
+        submitLabel="Create key"
+        onCancel={() => setNaming(false)}
+        onSubmit={async (name) => {
+          setNaming(false);
+          try {
+            setCreated(await api.createApiKey(name.trim() || "unnamed key"));
+            await load();
+          } catch (err) {
+            onError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
+
+      {/* Show-once: the secret exists only on the create response, so this modal
+          is deliberately not dismissible by backdrop/Escape — Done is the only
+          way out, after the human has had the chance to copy it. */}
+      {created && (
+        <Modal open title="Copy this now" onClose={() => {}}>
+          <p className="mb-3 text-sm text-ink-300">
+            This is the only time the key is shown. There is no second copy to fetch later.
+          </p>
+          <div className="mb-4 rounded border border-ink-700 bg-ink-950 p-3 font-mono text-sm break-all select-all">
+            {created.secret}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => {
+                void navigator.clipboard.writeText(created.secret ?? "");
+              }}
+            >
+              Copy
+            </Button>
+            <Button variant="primary" onClick={() => setCreated(null)}>
+              Done
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      <Confirm
+        open={revoking !== null}
+        title={`Revoke "${revoking?.name}"?`}
+        body="Anything using it stops authenticating immediately. This cannot be undone."
+        confirmLabel="Revoke"
+        danger
+        onCancel={() => setRevoking(null)}
+        onConfirm={async () => {
+          const k = revoking;
+          setRevoking(null);
+          if (!k) return;
+          try {
+            await api.revokeApiKey(k.id);
+            await load();
+          } catch (err) {
+            onError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
+    </Card>
   );
 }
 
@@ -97,32 +235,115 @@ function UsersCard({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newRole, setNewRole] = useState("operator");
+  const [me, setMe] = useState<string | null>(null);
+  const [pwFor, setPwFor] = useState<User | null>(null);
+  const [disabling, setDisabling] = useState<User | null>(null);
+
+  useEffect(() => {
+    api
+      .me()
+      .then((m) => setMe(m.email))
+      .catch(() => {});
+  }, []);
 
   return (
     <Card title="Users and roles">
       <ul className="mb-4 divide-y divide-ink-800">
-        {users.map((u) => (
-          <li key={u.id} className="flex items-center justify-between py-2.5">
-            <span className="truncate text-sm">{u.email}</span>
-            <select
-              className={cx(inputClass, "w-36 py-1 text-xs")}
-              value={u.role}
-              onChange={async (e) => {
-                try {
-                  await api.setRole(u.id, e.target.value);
-                  onChange();
-                } catch (err) {
-                  onError(err instanceof Error ? err.message : String(err));
-                }
-              }}
-            >
-              <option value="auditor">auditor</option>
-              <option value="operator">operator</option>
-              <option value="admin">admin</option>
-            </select>
-          </li>
-        ))}
+        {users.map((u) => {
+          const disabled = Boolean(u.disabled_at);
+          const self = me !== null && u.email === me;
+          return (
+            <li key={u.id} className="flex items-center justify-between gap-2 py-2.5">
+              <span className={cx("truncate text-sm", disabled && "text-ink-500 line-through")}>
+                {u.email}
+                {self && <span className="ml-1 text-xs text-ink-500">(you)</span>}
+              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <select
+                  className={cx(inputClass, "w-32 py-1 text-xs")}
+                  value={u.role}
+                  onChange={async (e) => {
+                    try {
+                      await api.setRole(u.id, e.target.value);
+                      onChange();
+                    } catch (err) {
+                      onError(err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                >
+                  <option value="auditor">auditor</option>
+                  <option value="operator">operator</option>
+                  <option value="admin">admin</option>
+                </select>
+                <Button size="sm" onClick={() => setPwFor(u)}>
+                  Set password
+                </Button>
+                {/* Disabling rather than deleting is deliberate (audit trail keeps
+                    its author), and you cannot disable yourself — someone else
+                    has to make that call. */}
+                {!self &&
+                  (disabled ? (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.setUserDisabled(u.id, false);
+                          onChange();
+                        } catch (err) {
+                          onError(err instanceof Error ? err.message : String(err));
+                        }
+                      }}
+                    >
+                      Re-enable
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="danger" onClick={() => setDisabling(u)}>
+                      Disable
+                    </Button>
+                  ))}
+              </div>
+            </li>
+          );
+        })}
       </ul>
+
+      <PromptModal
+        open={pwFor !== null}
+        title={`New password for ${pwFor?.email}`}
+        placeholder="At least 12 characters"
+        submitLabel="Set password"
+        onCancel={() => setPwFor(null)}
+        onSubmit={async (value) => {
+          const u = pwFor;
+          setPwFor(null);
+          if (!u) return;
+          try {
+            await api.setUserPassword(u.id, value);
+          } catch (err) {
+            onError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
+
+      <Confirm
+        open={disabling !== null}
+        title={`Disable ${disabling?.email}?`}
+        body="They are signed out everywhere and cannot sign back in until re-enabled. Their history stays."
+        confirmLabel="Disable"
+        danger
+        onCancel={() => setDisabling(null)}
+        onConfirm={async () => {
+          const u = disabling;
+          setDisabling(null);
+          if (!u) return;
+          try {
+            await api.setUserDisabled(u.id, true);
+            onChange();
+          } catch (err) {
+            onError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
 
       <form
         className="grid gap-3 sm:grid-cols-4"

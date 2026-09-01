@@ -11,7 +11,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
 
     expect(find.byType(Image), findsOneWidget);
-    expect(find.text('OpenAgentFleet'), findsOneWidget);
+    expect(find.text('Open Agent Fleet'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
@@ -33,7 +33,7 @@ void main() {
       ),
     );
 
-    expect(find.text('OpenAgentFleet could not start'), findsOneWidget);
+    expect(find.text('Oaf tripped over the doorstep'), findsOneWidget);
     expect(find.text('prefs unavailable'), findsOneWidget);
 
     await tester.tap(find.text('Try again'));

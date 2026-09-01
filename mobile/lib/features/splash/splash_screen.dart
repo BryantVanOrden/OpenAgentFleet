@@ -32,7 +32,7 @@ class SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const Text(
-              'OpenAgentFleet',
+              'Open Agent Fleet',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 26,
@@ -41,7 +41,7 @@ class SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              message ?? 'Watch, talk to, and take over your agents.',
+              message ?? 'Oaf is rounding up your agents.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.55),
@@ -90,7 +90,7 @@ class SplashError extends StatelessWidget {
                   color: Color(0xFFF87171), size: 40),
               const SizedBox(height: 16),
               const Text(
-                'OpenAgentFleet could not start',
+                'Oaf tripped over the doorstep',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,

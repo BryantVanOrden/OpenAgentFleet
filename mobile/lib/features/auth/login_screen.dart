@@ -111,7 +111,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Text(
                     _firstRun
                         ? 'Create the first administrator.'
-                        : 'Watch, talk to, and take over your agents.',
+                        : 'Oaf watches your agents so you can look away.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Fleet.ink400),
                   ),

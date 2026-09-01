@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   WEBHOOK_KINDS,
+  type BotTemplate,
   type CronTriggerRecord,
   type WebhookKind,
   type WebhookRecord,
 } from "../lib/api";
-import { Button, ErrorNote, Field, Modal, cx, inputClass } from "../components/ui";
+import { Button, ErrorNote, Field, Modal, cx, inputClass, relative } from "../components/ui";
 
 export default function Triggers() {
   const [webhooks, setWebhooks] = useState<WebhookRecord[]>([]);
@@ -20,6 +21,9 @@ export default function Triggers() {
   const [whName, setWhName] = useState("");
   const [whToken, setWhToken] = useState("");
   const [whArchetype, setWhArchetype] = useState("fullstack_dev");
+  // The real archetype catalogue. Hardcoding five names here once meant a
+  // webhook could not target any archetype added after this file was written.
+  const [templates, setTemplates] = useState<BotTemplate[]>([]);
   const [whGoal, setWhGoal] = useState("");
   const [whKind, setWhKind] = useState<WebhookKind>("generic");
   // The ingress endpoint takes no other authentication, so the backend refuses
@@ -36,9 +40,14 @@ export default function Triggers() {
 
   const load = useCallback(async () => {
     try {
-      const [whList, cronList] = await Promise.all([api.webhooks(), api.cronTriggers()]);
+      const [whList, cronList, tpls] = await Promise.all([
+        api.webhooks(),
+        api.cronTriggers(),
+        api.templates(),
+      ]);
       setWebhooks(whList);
       setCronTriggers(cronList);
+      setTemplates(tpls);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -174,8 +183,13 @@ export default function Triggers() {
                     )}
                   </div>
                 </div>
-                <span className="rounded bg-live-500/15 text-live-400 px-2 py-0.5 font-mono text-[10px]">
-                  {wh.active ? "Active" : "Inactive"}
+                <span
+                  className={cx(
+                    "rounded px-2 py-0.5 font-mono text-[10px]",
+                    wh.active ? "bg-live-500/15 text-live-400" : "bg-ink-800 text-ink-400",
+                  )}
+                >
+                  {wh.active ? "Active" : "Paused"}
                 </span>
               </div>
 
@@ -187,7 +201,12 @@ export default function Triggers() {
               <p className="text-xs text-ink-400">🎯 {wh.goal_template}</p>
 
               <div className="pt-2 border-t border-ink-800 flex justify-between items-center text-[10px] font-mono text-ink-500">
-                <span>Created {new Date(wh.created_at).toLocaleDateString()}</span>
+                <span>
+                  {wh.last_triggered_at
+                    ? `Last run ${relative(wh.last_triggered_at)}`
+                    : "Never run yet"}{" "}
+                  · created {new Date(wh.created_at).toLocaleDateString()}
+                </span>
                 <Button size="sm" variant="danger" onClick={() => api.deleteWebhook(wh.id).then(load)}>
                   Delete
                 </Button>
@@ -206,15 +225,28 @@ export default function Triggers() {
                     target: {cr.target_archetype}
                   </span>
                 </div>
-                <span className="rounded bg-live-500/15 text-live-400 px-2 py-0.5 font-mono text-[10px]">
-                  {cr.schedule_cron}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="rounded bg-live-500/15 text-live-400 px-2 py-0.5 font-mono text-[10px]">
+                    {cr.schedule_cron}
+                  </span>
+                  <span
+                    className={cx(
+                      "rounded px-2 py-0.5 font-mono text-[10px]",
+                      cr.active ? "bg-live-500/15 text-live-400" : "bg-ink-800 text-ink-400",
+                    )}
+                  >
+                    {cr.active ? "Active" : "Paused"}
+                  </span>
+                </div>
               </div>
 
               <p className="text-xs text-ink-400">🎯 {cr.goal_template}</p>
 
               <div className="pt-2 border-t border-ink-800 flex justify-between items-center text-[10px] font-mono text-ink-500">
-                <span>Created {new Date(cr.created_at).toLocaleDateString()}</span>
+                <span>
+                  {cr.last_run_at ? `Last run ${relative(cr.last_run_at)}` : "Never run yet"} ·
+                  created {new Date(cr.created_at).toLocaleDateString()}
+                </span>
                 <Button size="sm" variant="danger" onClick={() => api.deleteCronTrigger(cr.id).then(load)}>
                   Delete
                 </Button>
@@ -287,11 +319,11 @@ export default function Triggers() {
               onChange={(e) => setWhArchetype(e.target.value)}
               className={inputClass}
             >
-              <option value="fullstack_dev">Full-Stack Architect</option>
-              <option value="qa_ui_ux">QA & UI/UX Auditor</option>
-              <option value="cyber_ops">CyberSec PenTester</option>
-              <option value="agentic_crm">Agentic CRM (Comp AI)</option>
-              <option value="data_quant">Data Scientist & Quant</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Autonomous Goal Template">
@@ -342,11 +374,11 @@ export default function Triggers() {
               onChange={(e) => setCronArchetype(e.target.value)}
               className={inputClass}
             >
-              <option value="cyber_ops">CyberSec PenTester</option>
-              <option value="fullstack_dev">Full-Stack Architect</option>
-              <option value="qa_ui_ux">QA & UI/UX Auditor</option>
-              <option value="data_quant">Data Scientist & Quant</option>
-              <option value="growth_media">Social Media & Growth</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Autonomous Goal Template">

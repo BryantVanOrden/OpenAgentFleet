@@ -10,7 +10,7 @@
          commonly reached over plain http:// on a private network (and 10.0.2.2 from
          the emulator). Deliberate trade-off, not an oversight. -->
     <application
-        android:label="OpenAgentFleet"
+        android:label="Open Agent Fleet"
         android:usesCleartextTraffic="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

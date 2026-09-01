@@ -51,7 +51,7 @@ class _VoicePickerState extends ConsumerState<VoicePicker> {
     _selected = widget.instance.voice;
   }
 
-  Future<void> _save(String voiceId, {bool close = true}) async {
+  Future<void> _save(String voiceId, {bool close = true, double? speedOverride}) async {
     setState(() {
       _selected = voiceId;
       _busy = true;
@@ -61,7 +61,10 @@ class _VoicePickerState extends ConsumerState<VoicePicker> {
       await ref.read(apiProvider).setInstanceVoice(
             widget.instance.id,
             voiceId,
-            speed: _speedSet ? _speed : null,
+            // 0 is the server's spelling of "back to the app default". The
+            // access route is a partial update, so OMITTING the field keeps
+            // the old speed — a reset that sends nothing resets nothing.
+            speed: speedOverride ?? (_speedSet ? _speed : null),
           );
       ref.invalidate(instancesProvider);
       if (mounted && close) Navigator.pop(context, true);
@@ -234,7 +237,7 @@ class _VoicePickerState extends ConsumerState<VoicePicker> {
                         _speed = 1.0;
                         _speedSet = false;
                       });
-                      _save(_selected ?? '', close: false);
+                      _save(_selected ?? '', close: false, speedOverride: 0);
                     },
               child: const Text('Reset to default'),
             ),

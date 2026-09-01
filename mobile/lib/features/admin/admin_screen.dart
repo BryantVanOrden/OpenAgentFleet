@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../archetypes/archetype_packages_screen.dart';
 import '../financials/financials_screen.dart';
+import '../mcp/mcp_hub_screen.dart';
 import '../settings/providers_screen.dart';
 import 'api_keys_screen.dart';
+import 'credentials_screen.dart';
 import 'orgs_screen.dart';
 import 'users_screen.dart';
 
@@ -85,6 +88,27 @@ class AdminScreen extends ConsumerWidget {
             title: 'Financials',
             subtitle: 'Token spend, cost per turn and model latency',
             open: () => const FinancialsScreen(),
+          ),
+          _card(
+            context,
+            icon: Icons.extension_outlined,
+            title: 'MCP servers',
+            subtitle: 'Model Context Protocol tools the agents can call',
+            open: () => const McpHubScreen(),
+          ),
+          _card(
+            context,
+            icon: Icons.lock_outline,
+            title: 'Credentials',
+            subtitle: 'Sealed secret references tasks can use without seeing',
+            open: () => const CredentialsScreen(),
+          ),
+          _card(
+            context,
+            icon: Icons.inventory_2_outlined,
+            title: 'Archetype packages',
+            subtitle: 'Export a bot as a portable manifest, or install one',
+            open: () => const ArchetypePackagesScreen(),
           ),
         ],
       ),

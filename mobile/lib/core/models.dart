@@ -1654,7 +1654,7 @@ class WebhookTrigger {
   final String targetArchetype;
   final String targetInstanceId;
 
-  /// The path segment external senders call: POST /api/webhooks/<token>.
+  /// The path segment external senders call: POST /api/webhooks/{token}.
   final String token;
   final String kind;
 
@@ -1759,7 +1759,7 @@ class AdminUser {
 
   bool get disabled => disabledAt != null;
 
-  static const roles = ['admin', 'operator', 'auditor', 'viewer'];
+  static const roles = ['admin', 'operator', 'auditor'];
 
   factory AdminUser.fromJson(Map<String, dynamic> j) => AdminUser(
         id: j['id'] as String? ?? '',
