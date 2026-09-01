@@ -13,7 +13,7 @@ from agentfleet.models import InstanceInfo, SwarmTeamInfo, TaskInfo
 from agentfleet.swarm import Swarm
 from agentfleet.task import Task
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __all__ = [
     "FleetClient",
     "Bot",
