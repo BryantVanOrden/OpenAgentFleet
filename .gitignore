@@ -46,3 +46,4 @@ deploy/*.p8
 admin/tsconfig.tsbuildinfo
 **/__pycache__/
 *.pyc
+*.egg-info/
