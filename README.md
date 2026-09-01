@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Flutter-3.24+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/License-NonCommercial_1.0-orange?style=for-the-badge" alt="License" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
 </p>
 
 <p align="center">
@@ -494,10 +494,8 @@ make screenshots      # Recapture the documentation screenshots
 
 ## License
 
-AgentFleet is distributed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
-
-* **Non-Commercial Use**: Free for personal, research, academic, and non-commercial evaluation use.
-* **Commercial & Enterprise Use**: For commercial deployments, SaaS integration, or commercial redistributions, a commercial license is required. Contact **Bryant VanOrden** (`supermanismebvo123@gmail.com`) for enterprise terms.
+AgentFleet is open source under the **[MIT License](LICENSE)**. Use it, fork it,
+ship it — personally or commercially — with attribution.
 
 ---
 

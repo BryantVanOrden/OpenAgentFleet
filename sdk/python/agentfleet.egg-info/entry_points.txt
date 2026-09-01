@@ -1,0 +1,2 @@
+[console_scripts]
+fleetctl = agentfleet.cli:main

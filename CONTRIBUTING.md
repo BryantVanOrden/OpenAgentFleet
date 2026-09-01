@@ -78,4 +78,4 @@ Follow standard [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Licensing notice
 
-By contributing to AgentFleet, you agree that your contributions will be licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
+By contributing to AgentFleet, you agree that your contributions will be licensed under the **[MIT License](LICENSE)**.

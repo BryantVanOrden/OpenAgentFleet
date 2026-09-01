@@ -6,6 +6,21 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Relicensed to MIT
+
+The project moves from PolyForm Noncommercial 1.0.0 to the MIT License —
+commercial use, redistribution and SaaS deployment are all permitted with
+attribution. Every declaration now agrees: the LICENSE file, the README badge and
+license section, `sdk/python/pyproject.toml` (field and classifier),
+`admin/package.json`, CONTRIBUTING's grant, and the pull-request template. All
+code to date is the copyright holder's own work plus AI-generated contributions,
+so no outside contributor consent was required.
+
+The README's *What is partly built* list was also re-verified against the code,
+claim by claim — the two newest entries (swarm phases recorded but never gated
+on; CRM webhook parsing being a field-name heuristic, not vendor schemas) were
+confirmed true as written before shipping them.
+
 This one is narrow and unglamorous: the README carried a section called *What is
 partly built*, nine items long, and every item is now built. Several of them were
 stubs behind working-looking screens, which is worse than a missing feature — the

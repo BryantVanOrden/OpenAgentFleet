@@ -27,4 +27,4 @@
 - [ ] My code adheres to the style guidelines of this project.
 - [ ] I have added/updated relevant unit tests and documentation.
 - [ ] My commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
-- [ ] I agree that my contributions are licensed under the [PolyForm Noncommercial License 1.0.0](https://github.com/BryantVanOrden/AgentFleet/blob/master/LICENSE).
+- [ ] I agree that my contributions are licensed under the [MIT License](https://github.com/BryantVanOrden/AgentFleet/blob/master/LICENSE).
