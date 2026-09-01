@@ -8,7 +8,7 @@
 
 ## 🛡️ Security Declaration
 <!-- Check the box below to confirm no unpatched security vulnerabilities are being disclosed publicly. -->
-- [ ] **I confirm this PR does NOT disclose or introduce an unpatched security vulnerability or sandbox breakout.** *(Security vulnerabilities must be reported privately via [SECURITY.md](https://github.com/BryantVanOrden/AgentFleet/blob/master/SECURITY.md)).*
+- [ ] **I confirm this PR does NOT disclose or introduce an unpatched security vulnerability or sandbox breakout.** *(Security vulnerabilities must be reported privately via [SECURITY.md](https://github.com/BryantVanOrden/OpenAgentFleet/blob/master/SECURITY.md)).*
 
 ## 🧪 Verification & Testing
 <!-- Describe how you verified these changes. Include commands and test outputs. -->
@@ -27,4 +27,4 @@
 - [ ] My code adheres to the style guidelines of this project.
 - [ ] I have added/updated relevant unit tests and documentation.
 - [ ] My commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
-- [ ] I agree that my contributions are licensed under the [MIT License](https://github.com/BryantVanOrden/AgentFleet/blob/master/LICENSE).
+- [ ] I agree that my contributions are licensed under the [MIT License](https://github.com/BryantVanOrden/OpenAgentFleet/blob/master/LICENSE).

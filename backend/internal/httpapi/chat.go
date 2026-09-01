@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/agent"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/agent"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/memory"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 func (s *Server) handleChatHistory(w http.ResponseWriter, r *http.Request) {

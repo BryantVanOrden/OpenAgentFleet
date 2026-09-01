@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Who answers first, and in what order.

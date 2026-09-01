@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentfleet"
+name = "open-agent-fleet"
 version = "1.0.0"
 description = "Official Python SDK and fleetctl CLI for AgentFleet — self-hosted autonomous computer-use agents, each with its own Linux desktop"
 readme = "README.md"
@@ -29,11 +29,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/BryantVanOrden/AgentFleet"
-Repository = "https://github.com/BryantVanOrden/AgentFleet"
-Documentation = "https://github.com/BryantVanOrden/AgentFleet/tree/main/docs"
-Changelog = "https://github.com/BryantVanOrden/AgentFleet/blob/main/CHANGELOG.md"
-Issues = "https://github.com/BryantVanOrden/AgentFleet/issues"
+Homepage = "https://github.com/BryantVanOrden/OpenAgentFleet"
+Repository = "https://github.com/BryantVanOrden/OpenAgentFleet"
+Documentation = "https://github.com/BryantVanOrden/OpenAgentFleet/tree/main/docs"
+Changelog = "https://github.com/BryantVanOrden/OpenAgentFleet/blob/main/CHANGELOG.md"
+Issues = "https://github.com/BryantVanOrden/OpenAgentFleet/issues"
 
 [project.scripts]
 fleetctl = "agentfleet.cli:main"

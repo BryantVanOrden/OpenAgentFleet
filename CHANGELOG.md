@@ -1044,4 +1044,4 @@ model providers; teaching by demonstration compiled into `SKILL.md`; escalation
 to a human on a stalled screen; an AES-256-GCM credential vault; a React admin
 console and a Flutter companion app.
 
-[1.0.0]: https://github.com/BryantVanOrden/AgentFleet/releases/tag/v1.0.0
+[1.0.0]: https://github.com/BryantVanOrden/OpenAgentFleet/releases/tag/v1.0.0

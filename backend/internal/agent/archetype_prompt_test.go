@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 func TestArchetypePromptInjection(t *testing.T) {

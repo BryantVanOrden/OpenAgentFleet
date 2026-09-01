@@ -13,10 +13,10 @@ each release after that.
 ---
 
 ### 2. Make the repository public
-1. Go to **GitHub Repository Settings**: `https://github.com/BryantVanOrden/AgentFleet/settings`
+1. Go to **GitHub Repository Settings**: `https://github.com/BryantVanOrden/OpenAgentFleet/settings`
 2. Scroll to the **Danger Zone** at the bottom.
 3. Click **Change repository visibility** ➔ Select **Make public**.
-4. Confirm by typing `BryantVanOrden/AgentFleet`.
+4. Confirm by typing `BryantVanOrden/OpenAgentFleet`.
 
 ---
 
@@ -28,9 +28,9 @@ anywhere. `.github/workflows/publish-pypi.yml` builds the sdist and wheel, runs
 publishes via OIDC. It fires when a GitHub release is published (or manually
 from the Actions tab).
 
-One-time setup on pypi.org (already done if `agentfleet` shows a pending
+One-time setup on pypi.org (already done if `open-agent-fleet` shows a pending
 publisher): **Your account → Publishing → Add a pending publisher** with
-project `agentfleet`, owner `BryantVanOrden`, repository `AgentFleet`,
+project `open-agent-fleet`, owner `BryantVanOrden`, repository `AgentFleet`,
 workflow `publish-pypi.yml`, environment `pypi`. Until the SDK is on PyPI, the
 README and quickstart scripts install it from the repo with
 `pip install -e ./sdk/python`.

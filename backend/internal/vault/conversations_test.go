@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The thread between two agents must be one thread regardless of who opened it

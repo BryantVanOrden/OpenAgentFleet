@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // resources/* and prompts/* — the two thirds of MCP the bridge did not speak.

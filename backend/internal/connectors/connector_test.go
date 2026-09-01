@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // ----------------------------------------------------------------- harness ---

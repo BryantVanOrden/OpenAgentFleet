@@ -58,10 +58,10 @@ most want filed.
 ## Getting started
 
 ```bash
-git clone https://github.com/BryantVanOrden/AgentFleet.git
-cd AgentFleet
+git clone https://github.com/BryantVanOrden/OpenAgentFleet.git
+cd OpenAgentFleet
 make up
 ```
 
 Console on `:8081`, create your admin on the first-run screen, and point an
-engine at your Ollama. The [README](https://github.com/BryantVanOrden/AgentFleet#readme) covers the rest.
+engine at your Ollama. The [README](https://github.com/BryantVanOrden/OpenAgentFleet#readme) covers the rest.

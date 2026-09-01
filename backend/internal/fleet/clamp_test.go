@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // DefaultTiers has always described its profiles as advisory, with the Manager

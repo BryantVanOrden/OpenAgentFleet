@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
 )
 
 // Signing in without leaving the app.

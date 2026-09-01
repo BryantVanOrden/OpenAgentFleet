@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // ProviderSource is the subset of the store the registry needs.

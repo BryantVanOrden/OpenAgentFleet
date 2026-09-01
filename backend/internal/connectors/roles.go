@@ -3,7 +3,7 @@ package connectors
 import (
 	"context"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Resolving a chain for one role.

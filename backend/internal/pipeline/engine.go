@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // NodeRunner runs one node to completion and returns what it produced.

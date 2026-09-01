@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Managing the chats you have with one bot.

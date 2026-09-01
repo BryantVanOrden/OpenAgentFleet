@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
 )
 
 // Signing in to a provider with a Google account.

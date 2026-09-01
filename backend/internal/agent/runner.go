@@ -9,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/artifacts"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/bus"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/telemetry"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/artifacts"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/bus"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/config"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/memory"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/telemetry"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Notifier delivers an alert to the operator's phone.

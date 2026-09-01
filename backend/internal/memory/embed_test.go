@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The README said episodic memory was "a bag-of-words index scanned linearly,

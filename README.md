@@ -24,7 +24,7 @@
 <p align="center"><em>A real run, recorded uncut from the console and played at 8× speed: the goal is typed, a <strong>local</strong> vision model<br>
 (qwen3.8-27b over Ollama — no cloud, no API key) opens Firefox on its own desktop with <strong>shell access disabled</strong>,<br>
 navigates to Hacker News, reads the #1 story, and reports it. Sixteen GUI actions, zero cuts —<br>
-the real-time recording is attached to <a href="https://github.com/BryantVanOrden/AgentFleet/releases/tag/v1.0.0">the release</a>.</em></p>
+the real-time recording is attached to <a href="https://github.com/BryantVanOrden/OpenAgentFleet/releases/tag/v1.0.0">the release</a>.</em></p>
 
 <p align="center">
   <img src="docs/images/desktop-live-dark.png" alt="An agent's own desktop, streaming live into the console: Firefox open on its sandboxed XFCE desktop, with the task panel and teach-by-demonstration controls beside it" width="920">
@@ -268,10 +268,10 @@ revisions of this table carried its own numbers, and they were wrong.
 ## Python SDK and the `fleetctl` CLI
 
 A Python client and command-line utility, published on PyPI as
-[`agentfleet`](https://pypi.org/project/agentfleet/):
+[`open-agent-fleet`](https://pypi.org/project/open-agent-fleet/):
 
 ```bash
-pip install agentfleet
+pip install open-agent-fleet
 ```
 
 Or from a checkout, `pip install -e ./sdk/python`.
@@ -428,8 +428,8 @@ More in the [interface gallery](docs/UI.md).
 You need Docker with Compose v2, and `make`. Everything else runs in containers.
 
 ```bash
-git clone https://github.com/BryantVanOrden/AgentFleet.git
-cd AgentFleet
+git clone https://github.com/BryantVanOrden/OpenAgentFleet.git
+cd OpenAgentFleet
 
 make doctor   # Docker, RAM, ports, model endpoints
 make env      # writes .env with fresh JWT_SECRET and MASTER_KEY, and your docker GID

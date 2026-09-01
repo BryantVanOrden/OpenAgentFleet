@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/schedule"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/schedule"
 )
 
 // The trigger maps are package globals hydrated at boot, so each test seeds and

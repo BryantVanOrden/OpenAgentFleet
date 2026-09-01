@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {

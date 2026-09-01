@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Generated IDs used to be time.Now().Format("20060102150405") — second

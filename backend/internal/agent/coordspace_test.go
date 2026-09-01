@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // obs builds an observation for a 1920x1200 desktop captured down to a

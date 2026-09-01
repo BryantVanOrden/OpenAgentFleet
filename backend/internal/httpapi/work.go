@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The shared work catalog: where agents publish what they have made, for each

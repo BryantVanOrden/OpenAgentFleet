@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/fleet"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/fleet"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/mcp"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Archetype export and import.

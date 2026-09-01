@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // subscriberCounts models the realistic range: one operator watching a single

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The shared fleet vault handlers work off the vault.GlobalBus package global,

@@ -10,8 +10,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/config"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // DeviceSource supplies the tokens to push to.

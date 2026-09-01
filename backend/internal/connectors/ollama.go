@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // ollama uses the native /api/chat endpoint rather than the OpenAI shim: it

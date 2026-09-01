@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/agent"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/fleet"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/agent"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/fleet"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 func (s *Server) handleTiers(w http.ResponseWriter, r *http.Request) {

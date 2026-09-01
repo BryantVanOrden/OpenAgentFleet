@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // kinds is a readable summary of a compiled step list, so a failing table row

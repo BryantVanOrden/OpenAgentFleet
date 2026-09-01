@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/bus"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/recorder"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/bus"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/recorder"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Refiner implements the continual harness self-improvement loop inspired by Prime Agent.

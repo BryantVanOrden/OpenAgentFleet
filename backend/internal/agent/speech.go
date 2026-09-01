@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/voice"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/voice"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The `speak` action, made audible.

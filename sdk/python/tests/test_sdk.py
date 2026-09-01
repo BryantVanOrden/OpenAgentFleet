@@ -522,13 +522,17 @@ class TestDocumentedSurface(unittest.TestCase):
 
         self.assertTrue(callable(main))
 
-    def test_distribution_name_is_agentfleet(self):
+    def test_distribution_name_is_open_agent_fleet(self):
+        # The pip name and the import name deliberately differ: `agentfleet`
+        # on PyPI belongs to an unrelated project, so the distribution is
+        # `open-agent-fleet` while the module everyone imports (and the
+        # `fleetctl` entry point) stay `agentfleet`.
         import pathlib
         import re
 
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertRegex(text, r'name\s*=\s*"agentfleet"')
+        self.assertRegex(text, r'name\s*=\s*"open-agent-fleet"')
         self.assertRegex(text, r'fleetctl\s*=\s*"agentfleet\.cli:main"')
 
     def test_all_exports_actually_exist(self):

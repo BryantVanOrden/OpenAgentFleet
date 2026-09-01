@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/mcp"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The `call_mcp` action.

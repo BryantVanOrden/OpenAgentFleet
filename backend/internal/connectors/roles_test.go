@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 func combo(id string, roles map[string]string) protocol.ModelCombo {

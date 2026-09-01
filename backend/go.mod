@@ -1,4 +1,4 @@
-module github.com/BryantVanOrden/AgentFleet/backend
+module github.com/BryantVanOrden/OpenAgentFleet/backend
 
 go 1.25.0
 

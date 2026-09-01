@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The QEMU driver's contract, pinned where a unit test can reach it. The full

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/mcp"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // systemPrompt is deliberately blunt about the injection boundary: everything on

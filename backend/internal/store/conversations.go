@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Conversations are the persistent side of fleet comms threads. The bus keeps

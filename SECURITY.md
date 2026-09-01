@@ -20,7 +20,7 @@ host. Please report one privately.
 If you discover a security vulnerability, sandbox escape, privilege escalation, authentication bypass, or credential exposure:
 
 1. **Option A: GitHub Private Security Advisory (Recommended)**
-   - Navigate to the **Security** tab of this repository: `https://github.com/BryantVanOrden/AgentFleet/security/advisories`
+   - Navigate to the **Security** tab of this repository: `https://github.com/BryantVanOrden/OpenAgentFleet/security/advisories`
    - Click **"Report a vulnerability"** to open a private disclosure thread directly with the maintainers.
 
 2. **Option B: Encrypted / Direct Maintainer Email**

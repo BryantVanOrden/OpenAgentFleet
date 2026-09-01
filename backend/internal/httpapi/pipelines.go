@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/pipeline"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/telemetry"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/mcp"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/pipeline"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/telemetry"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // ----------------------------------------------------------------- MCP Servers ---

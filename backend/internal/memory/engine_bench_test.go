@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // These benchmarks are the evidence behind hydrateLimit. The working set is a

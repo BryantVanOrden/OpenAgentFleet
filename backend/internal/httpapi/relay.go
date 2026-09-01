@@ -8,9 +8,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Handing work on when an agent finishes it.

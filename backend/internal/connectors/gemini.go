@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // gemini uses generateContent. Roles are "user" and "model", the system prompt

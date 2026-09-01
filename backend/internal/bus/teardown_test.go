@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // waitOrFail runs fn and fails the test if it has not returned in time. The

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // ------------------------------------------------------------- Shared Secrets ---

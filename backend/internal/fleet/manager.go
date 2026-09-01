@@ -13,9 +13,9 @@ import (
 
 	"encoding/base64"
 	"errors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/config"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 	"path/filepath"
 )
 

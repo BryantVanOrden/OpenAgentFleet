@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // A pending approval is the normal state for most of this flow and must be

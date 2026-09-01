@@ -11,7 +11,7 @@ import (
 	"image/png"
 	"math"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
 )
 
 // Coordinate conventions a vision model can answer in.

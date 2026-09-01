@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/swarm"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/swarm"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 var globalSwarmCoordinator = swarm.NewCoordinator()

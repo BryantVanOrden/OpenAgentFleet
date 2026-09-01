@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Shared secrets and browser sessions, persisted.

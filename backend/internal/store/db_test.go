@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // These exercise the SQL itself, which is the half of persistence a fake store

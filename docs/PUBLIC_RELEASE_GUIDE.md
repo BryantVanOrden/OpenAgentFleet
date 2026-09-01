@@ -18,10 +18,10 @@ Before toggling repository visibility to Public:
 
 When you are ready to make the repository public:
 
-1. Navigate to: **[https://github.com/BryantVanOrden/AgentFleet/settings](https://github.com/BryantVanOrden/AgentFleet/settings)**
+1. Navigate to: **[https://github.com/BryantVanOrden/OpenAgentFleet/settings](https://github.com/BryantVanOrden/OpenAgentFleet/settings)**
 2. Scroll to the bottom to the **Danger Zone** section.
 3. Click **Change repository visibility** $\rightarrow$ select **Make public**.
-4. Confirm by entering `BryantVanOrden/AgentFleet`.
+4. Confirm by entering `BryantVanOrden/OpenAgentFleet`.
 
 ---
 
@@ -38,13 +38,13 @@ publisher** with exactly:
 
 | Field | Value |
 |---|---|
-| PyPI project name | `agentfleet` |
+| PyPI project name | `open-agent-fleet` |
 | Owner | `BryantVanOrden` |
 | Repository name | `AgentFleet` |
 | Workflow name | `publish-pypi.yml` |
 | Environment name | `pypi` |
 
-This *claims* the `agentfleet` name: the first publish from that workflow
+This *claims* the `open-agent-fleet` name: the first publish from that workflow
 creates the project and you become its owner.
 
 ### Step 2: Create the GitHub environment (one time)
@@ -60,7 +60,7 @@ It can also be run by hand from the **Actions** tab (workflow_dispatch).
 
 Once uploaded, users worldwide can install with:
 ```bash
-pip install agentfleet
+pip install open-agent-fleet
 ```
 And immediately run:
 ```bash

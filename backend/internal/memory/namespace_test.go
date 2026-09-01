@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // One agent's private memories must not surface in another agent's recall,

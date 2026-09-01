@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/schedule"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/schedule"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 )
 
 // WebhookRecord and CronTriggerRecord are the persisted rows. They are aliases

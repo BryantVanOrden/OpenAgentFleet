@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // One live MCP connection: the handshake, the tool catalogue and tool calls.

@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Catalogue work happens over the API and never touches the desktop. Judging

@@ -8,7 +8,7 @@ assignees: ''
 
 > [!CAUTION]
 > **Is this a security vulnerability or sandbox breakout?**
-> **DO NOT** use this public form. Report security issues privately per our [Security Policy](https://github.com/BryantVanOrden/AgentFleet/blob/master/SECURITY.md) to `supermanismebvo123@gmail.com`.
+> **DO NOT** use this public form. Report security issues privately per our [Security Policy](https://github.com/BryantVanOrden/OpenAgentFleet/blob/master/SECURITY.md) to `supermanismebvo123@gmail.com`.
 
 ### 📌 Describe the Bug
 A clear and concise description of what the bug is.

@@ -6,11 +6,11 @@ import (
 
 	"encoding/base64"
 	"fmt"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/agent"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/recorder"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/agent"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/recorder"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 	"strings"
 	"time"
 )

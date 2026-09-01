@@ -3,7 +3,7 @@ package fleet
 import (
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Ports exposed by every sandbox image.

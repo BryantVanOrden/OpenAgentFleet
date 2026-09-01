@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 	"os"
 	"strings"
 )

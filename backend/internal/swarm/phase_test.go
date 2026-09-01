@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // The phase field on swarm messages was recorded and displayed and nothing

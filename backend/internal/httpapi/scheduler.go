@@ -5,14 +5,14 @@ import (
 	"errors"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/mcp"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/memory"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/pipeline"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/telemetry"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/mcp"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/memory"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/pipeline"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/telemetry"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // telemetryStore adapts *store.Store to telemetry.Store.

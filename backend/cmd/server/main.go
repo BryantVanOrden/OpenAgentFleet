@@ -13,17 +13,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/agent"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/artifacts"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/bus"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/fleet"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/httpapi"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/notify"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/store"
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/vault"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/agent"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/artifacts"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/bus"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/config"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/fleet"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/httpapi"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/notify"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 func main() {

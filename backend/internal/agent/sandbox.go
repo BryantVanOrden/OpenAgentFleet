@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // SandboxClient talks to agentd inside one sandbox. Everything the agent can

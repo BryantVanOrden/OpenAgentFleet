@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/internal/config"
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/config"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 	"github.com/golang-jwt/jwt/v5"
 )
 

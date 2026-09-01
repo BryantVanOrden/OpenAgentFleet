@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 // Managing organisations, their members, and per-bot exceptions.
