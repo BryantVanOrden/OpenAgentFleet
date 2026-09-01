@@ -87,6 +87,13 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// Gives the pipeline engine a way to actually run a node. Without this it
 	// refuses to start a run rather than reporting invented success.
 	pipeline.GlobalEngine.SetNodeRunner(s.runPipelineNode)
+	// And only now — with both the store and the runner attached — resume any
+	// runs the previous process died under. Before this existed, a restart left
+	// every in-flight run recorded as `running` forever and its settled node
+	// results lost with the process.
+	if n := pipeline.GlobalEngine.ResumeInterrupted(ctx); n > 0 {
+		s.logger().Info("resuming pipeline runs interrupted by the last shutdown", "count", n)
+	}
 
 	// Real embeddings for episodic memory, when a provider can produce them.
 	//
@@ -94,6 +101,10 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// a provider is a network round trip that must not delay boot, and attaching
 	// the embedder triggers a re-embed of what was just hydrated.
 	go s.attachMemoryEmbedder(ctx)
+
+	// Live model pricing, refreshed daily. Off with PRICING_REFRESH=off; the
+	// built-in list-price table remains the fallback either way.
+	go telemetry.StartPriceRefresher(ctx, s.logger())
 
 	go s.RunCronScheduler(ctx)
 	// Idle agents answer messages too; without this a broadcast to a fleet

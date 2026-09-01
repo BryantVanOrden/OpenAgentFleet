@@ -258,6 +258,23 @@ func (s *session) CallTool(ctx context.Context, name string, args map[string]any
 	return out, nil
 }
 
+// setNotificationHandler routes server-initiated notifications to the manager.
+//
+// Only the list_changed family acts today — the notification means "re-ask
+// me" — and everything else is logged-by-omission rather than crashed on:
+// progress and logging notifications are legal and carry nothing this client
+// consumes yet.
+func (s *session) setNotificationHandler(serverID string, onListChanged func(serverID, method string)) {
+	s.transport.SetOnNotification(func(method string) {
+		switch method {
+		case "notifications/tools/list_changed",
+			"notifications/resources/list_changed",
+			"notifications/prompts/list_changed":
+			onListChanged(serverID, method)
+		}
+	})
+}
+
 func (s *session) Info() (name, version, negotiated string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

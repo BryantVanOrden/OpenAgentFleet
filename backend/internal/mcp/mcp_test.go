@@ -406,17 +406,33 @@ func TestEnvIsNeverReturnedByListServers(t *testing.T) {
 // Skipped on Windows, where there is no /bin/sh to run it.
 const stdioServerScript = `
 while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"shell-mcp","version":"1"},"capabilities":{"tools":{}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"shell-mcp","version":"1"},"capabilities":{"tools":{}}}}\n' "$id"
       ;;
     *'notifications/initialized'*)
       ;;
     *'"method":"tools/list"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"ping","description":"Answers pong","inputSchema":{"type":"object"}}]}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"ping","description":"Answers pong","inputSchema":{"type":"object"}}]}}\n' "$id"
       ;;
     *'"method":"tools/call"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"pong from a real subprocess"}]}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"pong from a real subprocess"}]}}\n' "$id"
+      ;;
+    *'"method":"resources/list"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"resources":[{"uri":"doc://readme","name":"README","mimeType":"text/plain"}]}}\n' "$id"
+      ;;
+    *'"method":"resources/read"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"contents":[{"uri":"doc://readme","mimeType":"text/plain","text":"resource body from a real subprocess"}]}}\n' "$id"
+      ;;
+    *'"method":"prompts/list"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"prompts":[{"name":"triage","description":"Triage a bug","arguments":[{"name":"severity","required":true}]}]}}\n' "$id"
+      ;;
+    *'"method":"prompts/get"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"description":"Triage a bug","messages":[{"role":"user","content":{"type":"text","text":"Triage this severity-high bug."}}]}}\n' "$id"
+      ;;
+    *'"method":'*)
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"method not found"}}\n' "$id"
       ;;
   esac
 done
@@ -449,6 +465,80 @@ func TestStdioTransportTalksToARealSubprocess(t *testing.T) {
 	}
 	if text, _ := res["text"].(string); !strings.Contains(text, "pong from a real subprocess") {
 		t.Errorf("result %q did not come from the child process", text)
+	}
+
+	// The other two capability groups, discovered at registration and readable
+	// through the same connection. These were the unimplemented two-thirds of
+	// MCP: a server whose value was its resources had nothing to offer here.
+	resources := m.ListResources(context.Background(), reg.ID)
+	if len(resources) != 1 || resources[0].URI != "doc://readme" {
+		t.Fatalf("resources = %+v, want the child's doc://readme", resources)
+	}
+	body, err := m.ReadResource(context.Background(), "", "doc://readme") // server resolved from the URI
+	if err != nil {
+		t.Fatalf("read resource: %v", err)
+	}
+	if text, _ := body["text"].(string); !strings.Contains(text, "resource body from a real subprocess") {
+		t.Errorf("resource read %q did not come from the child process", text)
+	}
+
+	prompts := m.ListPrompts(context.Background(), reg.ID)
+	if len(prompts) != 1 || prompts[0].Name != "triage" {
+		t.Fatalf("prompts = %+v, want the child's triage prompt", prompts)
+	}
+	if len(prompts[0].Arguments) != 1 || !prompts[0].Arguments[0].Required {
+		t.Errorf("the prompt's required argument was lost: %+v", prompts[0].Arguments)
+	}
+	rendered, err := m.GetPrompt(context.Background(), "", "triage", map[string]string{"severity": "high"})
+	if err != nil {
+		t.Fatalf("get prompt: %v", err)
+	}
+	if text, _ := rendered["text"].(string); !strings.Contains(text, "user: Triage this severity-high bug.") {
+		t.Errorf("prompt rendered as %q, want the role-tagged message", text)
+	}
+}
+
+func TestAToolsOnlyServerRegistersWithEmptyOptionalGroups(t *testing.T) {
+	// The -32601 the catch-all answers for resources/list and prompts/list must
+	// read as "this server has none", not as a broken registration — the
+	// capability groups are optional by spec, and most real tool servers
+	// implement only tools.
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh on this platform")
+	}
+	m := NewClientManager()
+	defer m.Close()
+
+	// A server that knows initialize and tools/list and answers -32601 to
+	// everything else — which is exactly what the shared script's catch-all
+	// does for the groups it has no cases for; reuse it with the resource and
+	// prompt cases stripped by pointing at the same script and asserting the
+	// empty result is not an error.
+	reg, err := m.RegisterServer(context.Background(), protocol.MCPServer{
+		Name:      "tools-only",
+		Transport: "stdio",
+		Command:   "/bin/sh",
+		Args: []string{"-c", `while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"tools-only","version":"1"},"capabilities":{"tools":{}}}}
+' "$id" ;;
+    *'notifications/'*) ;;
+    *'"method":"tools/list"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[]}}
+' "$id" ;;
+    *'"method":'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"method not found"}}
+' "$id" ;;
+  esac
+done`},
+	})
+	if err != nil {
+		t.Fatalf("a tools-only server failed to register: %v", err)
+	}
+	if got := m.ListResources(context.Background(), reg.ID); len(got) != 0 {
+		t.Errorf("resources = %+v, want none", got)
+	}
+	if got := m.ListPrompts(context.Background(), reg.ID); len(got) != 0 {
+		t.Errorf("prompts = %+v, want none", got)
 	}
 }
 

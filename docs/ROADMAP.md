@@ -113,11 +113,11 @@ The two things standing in the way, both deliberately narrow:
 
 What is left:
 
-- **Runs do not survive a restart.** Pipelines persist; a run in flight does not.
-  The executor's state is in memory, so an orchestrator restart mid-run leaves
-  the run recorded as `running` indefinitely and loses the node results that had
-  already landed. Persisting run state — and resuming from the last settled node
-  rather than restarting the graph — is the work.
+- ~~**Runs do not survive a restart.**~~ — **built.** Runs persist on every node
+  transition, and a run interrupted mid-flight resumes at boot from its last
+  settled node: settled results and already-decided branches are kept, and the
+  node that was mid-flight is re-dispatched (its half-finished task cannot be
+  rejoined — re-running work beats losing it).
 - **No fan-out over a collection.** A stage runs once. "Run this stage for each
   item the previous stage returned" needs a map construct the graph has no way to
   express.

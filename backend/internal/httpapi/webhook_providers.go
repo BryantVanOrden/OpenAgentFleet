@@ -43,9 +43,13 @@ const (
 	KindGeneric WebhookKind = "generic"
 	KindGitHub  WebhookKind = "github"
 	KindStripe  WebhookKind = "stripe"
-	// KindCRM is a bare JSON document from a CRM or form backend. It still
-	// requires a signature, in whichever of the common headers the sender uses.
-	KindCRM WebhookKind = "crm"
+	// KindCRM is a bare JSON document from a form backend or an unlisted CRM.
+	// Explicitly the generic one: it still requires an HMAC signature, and its
+	// summary is a field-name heuristic. HubSpot and Salesforce have their own
+	// kinds below with their real schemas.
+	KindCRM        WebhookKind = "crm"
+	KindHubSpot    WebhookKind = "hubspot"
+	KindSalesforce WebhookKind = "salesforce"
 )
 
 // stripeTolerance is how old a Stripe timestamp may be.
@@ -69,7 +73,11 @@ func normaliseKind(k string) WebhookKind {
 		return KindGitHub
 	case "stripe":
 		return KindStripe
-	case "crm", "hubspot", "salesforce", "form":
+	case "hubspot":
+		return KindHubSpot
+	case "salesforce", "sfdc":
+		return KindSalesforce
+	case "crm", "form":
 		return KindCRM
 	default:
 		return KindGeneric
@@ -81,6 +89,13 @@ func verifyFor(kind WebhookKind, secret string, body []byte, r *http.Request) er
 	switch kind {
 	case KindStripe:
 		return verifyStripe(secret, body, r.Header.Get("Stripe-Signature"), time.Now())
+	case KindHubSpot:
+		return verifyHubSpot(secret, body, r, time.Now())
+	case KindSalesforce:
+		// No signature header exists to check: Salesforce authenticates by URL
+		// secrecy plus the org id carried in the payload, which the stored
+		// secret must match. See verifySalesforce for the reasoning.
+		return verifySalesforce(secret, body)
 	case KindGitHub:
 		// GitHub's scheme is the same HMAC the generic path uses, but only the
 		// GitHub header counts: accepting X-AgentFleet-Signature on a webhook
@@ -198,6 +213,10 @@ func summarise(kind WebhookKind, body []byte, r *http.Request) eventSummary {
 		return summariseGitHub(body, r.Header.Get("X-GitHub-Event"))
 	case KindStripe:
 		return summariseStripe(body)
+	case KindHubSpot:
+		return summariseHubSpot(body)
+	case KindSalesforce:
+		return summariseSalesforce(body)
 	case KindCRM:
 		return summariseCRM(body)
 	default:

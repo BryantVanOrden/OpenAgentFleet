@@ -59,6 +59,12 @@ var modelPrices = map[string]modelPrice{
 var defaultPrice = modelPrice{prompt: 0.000003, completion: 0.000015}
 
 func priceFor(model string) modelPrice {
+	// A live price wins, but only on an exact normalised match — fuzzy matching
+	// against a hosted catalogue is how a local model gets billed at someone
+	// else's rate. See prices.go for where the live table comes from.
+	if p, ok := livePrices.lookup(model); ok {
+		return p
+	}
 	m := strings.ToLower(strings.TrimSpace(model))
 	// Longest keys first so "gpt-4o-mini" wins over "gpt-4o" and "gpt-4".
 	for _, k := range priceKeysByLength {
@@ -264,6 +270,9 @@ type FinancialSummary struct {
 	TotalCostUSD          float64 `json:"total_cost_usd"`
 	AvgLatencyMS          int     `json:"avg_latency_ms"`
 	TurnsCount            int     `json:"turns_count"`
+	// Pricing says where the rates came from and how fresh they are, so the
+	// dashboard states its own accuracy instead of implying invoice precision.
+	Pricing PricingInfo `json:"pricing"`
 }
 
 func (t *Tracker) GetSummary(ctx context.Context) FinancialSummary {
@@ -276,6 +285,7 @@ func (t *Tracker) GetSummary(ctx context.Context) FinancialSummary {
 	if sum.TurnsCount > 0 {
 		sum.AvgLatencyMS = int(t.sumLatency / int64(sum.TurnsCount))
 	}
+	sum.Pricing = livePrices.info()
 	return sum
 }
 

@@ -127,7 +127,7 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	if k := strings.TrimSpace(req.Kind); k != "" && normaliseKind(k) == KindGeneric &&
 		!strings.EqualFold(k, string(KindGeneric)) {
 		fail(w, http.StatusBadRequest,
-			"unknown webhook kind "+strconv.Quote(k)+": use generic, github, stripe or crm")
+			"unknown webhook kind "+strconv.Quote(k)+": use generic, github, stripe, hubspot, salesforce or crm")
 		return
 	}
 	req.Kind = string(normaliseKind(req.Kind))
@@ -241,6 +241,14 @@ func (s *Server) handleIncomingWebhook(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.TouchWebhook(r.Context(), wh.ID, now); err != nil {
 			s.logger().Warn("webhook fired but last_triggered_at not recorded", "token", token, "err", err)
 		}
+	}
+
+	// Salesforce is the one sender that does not read JSON: an outbound message
+	// expects a SOAP Ack, and without one Salesforce records the delivery as
+	// failed and retries it for 24 hours — running the same mission repeatedly.
+	if normaliseKind(wh.Kind) == KindSalesforce {
+		writeSalesforceAck(w)
+		return
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]any{

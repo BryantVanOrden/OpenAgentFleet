@@ -28,9 +28,36 @@ import (
 const mcpCallTimeout = 90 * time.Second
 
 func (r *Runner) callMCP(ctx context.Context, inst *protocol.Instance, a protocol.Action) string {
+	// One action, three capability groups. A resource read or a prompt render
+	// short-circuits here; everything below is the tool path.
+	if uri := strings.TrimSpace(a.MCPResource); uri != "" {
+		callCtx, cancel := context.WithTimeout(ctx, mcpCallTimeout)
+		defer cancel()
+		res, err := mcp.GlobalMCP.ReadResource(callCtx, a.MCPServerID, uri)
+		if err != nil {
+			return "MCP resource read failed: " + clip(err.Error(), 300)
+		}
+		return fmt.Sprintf("MCP resource %s (%v):\n%s",
+			uri, res["mime_type"], clip(fmt.Sprint(res["text"]), 2000))
+	}
+	if name := strings.TrimSpace(a.MCPPrompt); name != "" {
+		args := map[string]string{}
+		for k, v := range a.MCPParams {
+			args[k] = fmt.Sprint(v)
+		}
+		callCtx, cancel := context.WithTimeout(ctx, mcpCallTimeout)
+		defer cancel()
+		res, err := mcp.GlobalMCP.GetPrompt(callCtx, a.MCPServerID, name, args)
+		if err != nil {
+			return "MCP prompt render failed: " + clip(err.Error(), 300)
+		}
+		return fmt.Sprintf("MCP prompt %q rendered:\n%s",
+			name, clip(fmt.Sprint(res["text"]), 2000))
+	}
+
 	tool := strings.TrimSpace(a.MCPToolName)
 	if tool == "" {
-		return "failed: call_mcp needs mcp_tool_name"
+		return "failed: call_mcp needs mcp_tool_name, mcp_resource, or mcp_prompt"
 	}
 
 	// Nothing registered is the common first-run case, and "tool not found" for

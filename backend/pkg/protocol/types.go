@@ -557,6 +557,32 @@ type MCPTool struct {
 	InputSchema map[string]any `json:"input_schema,omitempty"`
 }
 
+// MCPResource is one entry in an MCP server's resource catalogue — a document,
+// a schema, a log stream — addressed by URI and fetched with resources/read.
+type MCPResource struct {
+	ServerID    string `json:"server_id"`
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mime_type,omitempty"`
+}
+
+// MCPPrompt is a parameterised prompt template an MCP server offers, rendered
+// with prompts/get.
+type MCPPrompt struct {
+	ServerID    string         `json:"server_id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Arguments   []MCPPromptArg `json:"arguments,omitempty"`
+}
+
+// MCPPromptArg is one argument a prompt template accepts.
+type MCPPromptArg struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
 // PipelineNode represents one step/agent in a multi-bot workflow DAG.
 type PipelineNode struct {
 	ID   string `json:"id"`
@@ -706,6 +732,8 @@ type Action struct {
 	MCPServerID    string         `json:"mcp_server_id,omitempty"`   // for call_mcp action
 	MCPToolName    string         `json:"mcp_tool_name,omitempty"`   // for call_mcp action
 	MCPParams      map[string]any `json:"mcp_params,omitempty"`      // for call_mcp action
+	MCPResource    string         `json:"mcp_resource,omitempty"`    // call_mcp: read this resource URI instead of calling a tool
+	MCPPrompt      string         `json:"mcp_prompt,omitempty"`      // call_mcp: render this prompt template instead of calling a tool
 	Amount         int            `json:"amount,omitempty"`          // scroll clicks / wait seconds
 	Timeout        int            `json:"timeout,omitempty"`         // seconds, for wait_for
 	Question       string         `json:"question,omitempty"`

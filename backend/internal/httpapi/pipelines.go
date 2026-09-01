@@ -68,6 +68,61 @@ func redactMCP(srv protocol.MCPServer) map[string]any {
 	}
 }
 
+// handleListMCPResources serves the cached resource catalogue.
+func (s *Server) handleListMCPResources(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, mcp.GlobalMCP.ListResources(r.Context(), r.URL.Query().Get("server_id")))
+}
+
+// handleListMCPPrompts serves the cached prompt catalogue.
+func (s *Server) handleListMCPPrompts(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, mcp.GlobalMCP.ListPrompts(r.Context(), r.URL.Query().Get("server_id")))
+}
+
+type readMCPResourceReq struct {
+	ServerID string `json:"server_id"`
+	URI      string `json:"uri"`
+}
+
+// handleReadMCPResource fetches one resource's content from its server.
+func (s *Server) handleReadMCPResource(w http.ResponseWriter, r *http.Request) {
+	var req readMCPResourceReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	res, err := mcp.GlobalMCP.ReadResource(ctx, req.ServerID, req.URI)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+type getMCPPromptReq struct {
+	ServerID  string            `json:"server_id"`
+	Name      string            `json:"name"`
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
+
+// handleGetMCPPrompt renders one prompt template with arguments.
+func (s *Server) handleGetMCPPrompt(w http.ResponseWriter, r *http.Request) {
+	var req getMCPPromptReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	res, err := mcp.GlobalMCP.GetPrompt(ctx, req.ServerID, req.Name, req.Arguments)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // handleRefreshMCPTools re-asks a server what tools it has.
 //
 // Servers may change their catalogue at runtime. Nothing subscribes to

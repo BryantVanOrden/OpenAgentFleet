@@ -29,6 +29,9 @@ type CreateSwarmReq struct {
 	Name    string                 `json:"name"`
 	Mission string                 `json:"mission"`
 	Members []protocol.SwarmMember `json:"members"`
+	// PlanFirst holds execution until every member has published a plan
+	// artifact (or an operator advances the phase by hand).
+	PlanFirst bool `json:"plan_first,omitempty"`
 }
 
 func (s *Server) handleCreateSwarm(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +45,7 @@ func (s *Server) handleCreateSwarm(w http.ResponseWriter, r *http.Request) {
 	// fabricate three bots -- "inst-lead", "inst-qa", "inst-sec" -- that exist
 	// on no fleet, so the screen showed a running mission staffed by fiction and
 	// nothing could ever be dispatched to any of them.
-	sw, err := globalSwarmCoordinator.CreateSwarm(r.Context(), req.Name, req.Mission, req.Members)
+	sw, err := globalSwarmCoordinator.CreateSwarm(r.Context(), req.Name, req.Mission, req.Members, req.PlanFirst)
 	if err != nil {
 		if errors.Is(err, swarm.ErrNoRunner) {
 			fail(w, http.StatusServiceUnavailable, err.Error())
@@ -163,4 +166,27 @@ func (s *Server) wireSwarms() {
 		},
 		s.logger(),
 	)
+}
+
+// handleAdvanceSwarmPhase lifts a planning barrier by hand.
+//
+// The automatic path is every member publishing a plan; this is the operator
+// override for the stuck case — one erroring member should not hold a mission
+// hostage, and deciding to proceed anyway is a human call.
+func (s *Server) handleAdvanceSwarmPhase(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	who := "operator"
+	if u := userFrom(r.Context()); u != nil && u.Email != "" {
+		who = u.Email
+	}
+	if err := globalSwarmCoordinator.AdvancePhase(r.Context(), id, who); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sw, err := globalSwarmCoordinator.GetSwarm(r.Context(), id)
+	if err != nil {
+		fail(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sw)
 }

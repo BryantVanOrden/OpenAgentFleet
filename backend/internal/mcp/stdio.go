@@ -50,6 +50,9 @@ type stdioTransport struct {
 	mu      sync.Mutex
 	pending map[int64]chan *rpcResponse
 	closed  bool
+	// onNotify receives server-initiated notification method names. Set once
+	// after the handshake; guarded by mu because the read loop races the setter.
+	onNotify func(method string)
 
 	// writeMu serialises writes. Two concurrent agents calling tools on the
 	// same server would otherwise interleave halves of two JSON frames into
@@ -114,9 +117,9 @@ func newStdioTransport(ctx context.Context, command string, args []string, env m
 // readLoop dispatches every frame the server sends to whoever is waiting.
 //
 // One reader, because two goroutines reading the same pipe would each get half
-// the frames. Responses go to the caller blocked on that id; notifications are
-// dropped, deliberately — nothing here subscribes to progress or list-changed
-// yet, and buffering them would be a leak.
+// the frames. Responses go to the caller blocked on that id; notifications go
+// to the onNotify callback, which is how a server's list_changed reaches the
+// manager and re-fetches the catalogue without a manual refresh.
 func (t *stdioTransport) readLoop() {
 	defer t.failAllPending(errors.New("the MCP server closed its output"))
 	for {
@@ -143,7 +146,18 @@ func (t *stdioTransport) dispatch(line []byte) {
 		return
 	}
 	if resp.ID == nil {
-		return // a notification; see readLoop
+		// A server-initiated notification. list_changed is the one that
+		// matters: it used to be dropped here, which made every catalogue a
+		// manual refresh.
+		if resp.Method != "" {
+			t.mu.Lock()
+			fn := t.onNotify
+			t.mu.Unlock()
+			if fn != nil {
+				fn(resp.Method)
+			}
+		}
+		return
 	}
 
 	t.mu.Lock()
@@ -244,6 +258,12 @@ func (t *stdioTransport) Call(ctx context.Context, method string, params any) (j
 
 func (t *stdioTransport) Notify(ctx context.Context, method string, params any) error {
 	return t.send(nil, method, params)
+}
+
+func (t *stdioTransport) SetOnNotification(fn func(method string)) {
+	t.mu.Lock()
+	t.onNotify = fn
+	t.mu.Unlock()
 }
 
 func (t *stdioTransport) failAllPending(err error) {

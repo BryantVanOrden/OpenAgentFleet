@@ -2,10 +2,13 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
+  <br>
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Flutter-3.24+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
+  <br>
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
+  <img src="https://img.shields.io/badge/Self--Hosted-100%25-8B5CF6?style=for-the-badge" alt="Self-hosted" />
 </p>
 
 <p align="center">
@@ -173,46 +176,41 @@ you would. That one decision is where everything else comes from:
 - **A phone app.** Flutter, on Android, iOS, macOS, Linux and Windows, with push
   alerts and interactive takeover on all five.
 
-### What is partly built
+### Design limits, stated plainly
 
-Stated here rather than left to be discovered. Everything in the previous version
-of this list has since been built; what remains is the smaller set below.
+Everything the previous versions of this section listed as partly built has
+since been built — the MCP bridge speaks all three capability groups
+(tools, resources, prompts) and refreshes its catalogue on the server's own
+`list_changed` announcement; swarm planning is a real barrier when a swarm is
+created with `plan_first`; pipeline runs survive a restart and resume from
+their last settled node; model pricing is fetched daily (with the built-in
+list-price table as the offline fallback, and the source reported in the
+financial summary); and HubSpot and Salesforce webhooks are parsed against
+their real schemas with their real authentication.
 
-- **MCP resources and prompts.** The bridge speaks JSON-RPC over stdio and
-  Streamable HTTP, completes the handshake, and calls tools — but only tools. MCP
-  also defines `resources/*` and `prompts/*`, and neither is implemented, so a
-  server whose value is a resource collection has nothing to offer here. Server
-  notifications (`notifications/tools/list_changed`) are received and discarded;
-  refreshing a catalogue is a manual button.
-- **Swarm phases are not enforced.** A swarm starts every member at once and
-  reviews artifacts as they are published. The `phase` field on a message
-  ("planning", "execution", "qa", "handoff") is recorded and displayed, and
-  nothing gates on it — there is no barrier that holds execution until planning
-  is agreed.
-- **Pipeline runs do not survive a restart.** Pipelines persist; a run in flight
-  does not. The orchestrator restarting mid-run leaves the run recorded as
-  `running` forever, because the executor's state is in memory. Node results that
-  had already landed are lost with it.
+What remains below is not unfinished work but the platform's honest limits —
+properties of the world or deliberate trades, stated here rather than left to
+be discovered:
+
 - **Embeddings need a provider that has them.** Episodic memory uses real
   embeddings when a configured provider can produce them — Ollama, OpenAI, or
-  Gemini — and falls back to a 128-dimension hashed bag of words otherwise, which
-  only matches when the query reuses the memory's own words. `/api/memory/fleet`
-  reports which one is in use. A fleet on Anthropic alone gets the fallback,
-  because Anthropic has no embedding API. Search is a linear scan over the
-  working set (2,000 records); that is deliberate and fine at this size, but
-  there is no ANN index behind it.
-- **The price table is hand-maintained.** Cost telemetry is priced by substring
-  match against a table in `telemetry/tracker.go`, including the cache-read
-  discount. It is list prices, approximate, and goes stale when vendors change
-  them. Nothing fetches current pricing.
-- **`developer-heavy` is still a container.** `make sandbox-dev` builds the image
-  the tier asks for, with compilers, Rust, Go and the GPU loader hints. It is
-  still a shared-kernel container, not a VM — the QEMU driver is unimplemented,
-  and the GPU hints are inert unless the host has the NVIDIA container runtime.
-- **CRM webhook parsing is heuristic.** GitHub and Stripe are parsed properly,
-  signatures included. "CRM" is a field-name search over the payload covering
-  what HubSpot, Salesforce and common form backends happen to send. There is no
-  vendor-specific schema behind it, and an unusual payload gets a thin summary.
+  Gemini — and falls back to a 128-dimension hashed bag of words otherwise,
+  which only matches when the query reuses the memory's own words.
+  `/api/memory/fleet` reports which one is in use. A fleet on Anthropic alone
+  gets the fallback, because Anthropic has no embedding API — that is a fact
+  about Anthropic, not a missing feature here. Search is a linear scan over
+  the working set (2,000 records), which is deliberate and fine at this size;
+  there is no ANN index behind it, and at this scale one would be slower to
+  build than to not need.
+- **`developer-heavy` is a container, not a VM.** `make sandbox-dev` builds
+  the image the tier asks for — compilers, Rust, Go, and the GPU loader hints
+  — but it shares the host kernel like every container. The QEMU driver that
+  would make it a real VM is unimplemented, and the GPU hints are inert unless
+  the host has the NVIDIA container runtime (in which case the request is
+  dropped with a `gpu_unavailable` label rather than failing the instance).
+  Container-grade isolation is the platform's stated security model; see
+  [SECURITY.md](docs/SECURITY.md) for exactly what that is and is not worth.
+
 
 ## Bot archetypes
 

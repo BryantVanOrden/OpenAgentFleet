@@ -151,11 +151,15 @@ func ParseAction(raw string) (protocol.Action, error) {
 		// near-misses are accepted rather than costing a step. The server id is
 		// genuinely optional: the manager resolves a tool name to its server, so
 		// the model does not have to know which server provides what.
-		if a.MCPToolName == "" {
+		if a.MCPToolName == "" && a.MCPResource == "" && a.MCPPrompt == "" {
 			a.MCPToolName = firstNonEmpty(a.ToolName, a.Target)
 		}
-		if strings.TrimSpace(a.MCPToolName) == "" {
-			return a, fmt.Errorf("call_mcp needs mcp_tool_name")
+		// One action, three MCP capability groups: a tool call, a resource
+		// read, or a prompt render. Any one of them makes the action valid.
+		if strings.TrimSpace(a.MCPToolName) == "" &&
+			strings.TrimSpace(a.MCPResource) == "" &&
+			strings.TrimSpace(a.MCPPrompt) == "" {
+			return a, fmt.Errorf("call_mcp needs mcp_tool_name, mcp_resource, or mcp_prompt")
 		}
 		if a.MCPParams == nil && a.ToolParameters != nil {
 			a.MCPParams = a.ToolParameters

@@ -91,6 +91,40 @@ func newExecutor(e *Engine, runID string, p protocol.WorkflowPipeline) *executor
 	return x
 }
 
+// newExecutorResuming rebuilds an executor from a run the previous process
+// left in flight.
+//
+// Nodes recorded done, failed or skipped keep their state and — critically —
+// their outcomes, because downstream edge conditions test those outcomes: a
+// `contains:` branch has to see the same result text after a restart that it
+// would have seen without one. Nodes recorded running are demoted to waiting
+// and re-dispatched; their half-finished task cannot be rejoined.
+func newExecutorResuming(e *Engine, runID string, p protocol.WorkflowPipeline, prior protocol.PipelineRun) *executor {
+	x := newExecutor(e, runID, p)
+	for id, st := range prior.NodeStates {
+		if _, known := x.byID[id]; !known {
+			continue // the pipeline changed shape since; unknown nodes are dropped
+		}
+		switch st {
+		case NodeDone:
+			x.state[id] = NodeDone
+			x.outcome[id] = nodeOutcome{Result: prior.NodeResults[id]}
+		case NodeFailed:
+			x.state[id] = NodeFailed
+			x.outcome[id] = nodeOutcome{Failed: true, Result: strings.TrimPrefix(prior.NodeResults[id], "failed: ")}
+			if !x.hasFailureBranchLocked(id) {
+				x.failedUnhandled++
+			}
+		case NodeSkipped:
+			x.state[id] = NodeSkipped
+			x.outcome[id] = nodeOutcome{Skipped: true}
+		default:
+			// waiting or running: runs again.
+		}
+	}
+	return x
+}
+
 // maxParallel is the pipeline's limit, or the default.
 func (x *executor) maxParallel() int {
 	if x.pipeline.MaxParallel > 0 {
@@ -107,7 +141,7 @@ func (x *executor) Run(ctx context.Context, runner NodeRunner) {
 	var wg sync.WaitGroup
 
 	for {
-		ready := x.claimReady()
+		ready := x.claimReady(ctx)
 		if len(ready) == 0 {
 			// Nothing runnable. Either everything is finished, or work is still
 			// in flight and will unblock more when it lands.
@@ -155,9 +189,9 @@ func (x *executor) Run(ctx context.Context, runner NodeRunner) {
 // Claiming and returning in one locked step is what stops a node being started
 // twice: the loop above calls this repeatedly from one goroutine, but a node
 // becomes ready as a side effect of another node finishing.
-func (x *executor) claimReady() []protocol.PipelineNode {
+func (x *executor) claimReady(ctx context.Context) []protocol.PipelineNode {
 	x.mu.Lock()
-	defer x.mu.Unlock()
+	skipped := 0
 
 	var ready []protocol.PipelineNode
 	for {
@@ -176,6 +210,7 @@ func (x *executor) claimReady() []protocol.PipelineNode {
 				x.state[id] = NodeSkipped
 				x.outcome[id] = nodeOutcome{Skipped: true}
 				x.recordResultLocked(id, "skipped: "+reason)
+				skipped++
 				progressed = true
 				continue
 			}
@@ -192,6 +227,13 @@ func (x *executor) claimReady() []protocol.PipelineNode {
 	sort.Slice(ready, func(i, j int) bool {
 		return x.position[ready[i].ID] < x.position[ready[j].ID]
 	})
+	x.mu.Unlock()
+
+	// A skip settles a node as surely as a result does, so it goes to the
+	// durable copy at the same moment it goes to the in-memory one.
+	if skipped > 0 {
+		x.engine.persistRun(ctx, x.runID)
+	}
 	return ready
 }
 
@@ -259,12 +301,14 @@ func (x *executor) runNode(ctx context.Context, runner NodeRunner, node protocol
 		}
 		x.recordResultLocked(node.ID, "failed: "+err.Error())
 		x.mu.Unlock()
+		x.engine.persistRun(ctx, x.runID)
 		return
 	}
 	x.state[node.ID] = NodeDone
 	x.outcome[node.ID] = nodeOutcome{Result: result}
 	x.recordResultLocked(node.ID, result)
 	x.mu.Unlock()
+	x.engine.persistRun(ctx, x.runID)
 }
 
 // hasFailureBranchLocked reports whether the graph handles this node failing.
@@ -314,11 +358,15 @@ func (x *executor) publishState(nodeID, state string) {
 	}
 
 	x.engine.mu.Lock()
-	defer x.engine.mu.Unlock()
 	if r, ok := x.engine.runs[x.runID]; ok {
 		r.NodeStates = states
 		x.engine.runs[x.runID] = r
 	}
+	x.engine.mu.Unlock()
+
+	// Persisted too: after a crash, the durable copy should say which nodes
+	// were mid-flight, because those are exactly the ones resume re-dispatches.
+	x.engine.persistRun(context.Background(), x.runID)
 }
 
 func (x *executor) anyRunning() bool {
@@ -369,14 +417,11 @@ func statusFor(failedUnhandled int, cancelled bool) string {
 
 func (x *executor) setStatus(status string) {
 	x.engine.mu.Lock()
-	defer x.engine.mu.Unlock()
 	r, ok := x.engine.runs[x.runID]
-	if !ok {
-		return
-	}
 	// A terminal status is not overwritten: cancelRemaining and finish can both
 	// land on a cancelled run.
-	if r.FinishedAt != nil {
+	if !ok || r.FinishedAt != nil {
+		x.engine.mu.Unlock()
 		return
 	}
 	r.Status = status
@@ -384,4 +429,9 @@ func (x *executor) setStatus(status string) {
 	now := time.Now().UTC()
 	r.FinishedAt = &now
 	x.engine.runs[x.runID] = r
+	x.engine.mu.Unlock()
+
+	// The terminal write is the one that matters most: it is the difference
+	// between history and a run stuck at `running` forever.
+	x.engine.persistRun(context.Background(), x.runID)
 }

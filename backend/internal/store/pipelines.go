@@ -7,11 +7,14 @@ import (
 	"github.com/BryantVanOrden/AgentFleet/backend/pkg/protocol"
 )
 
-// Pipelines, made durable.
+// Pipelines and their runs, made durable.
 //
-// Runs deliberately stay in memory: a run is execution state, the tasks it
-// starts are already persisted rows, and a half-finished run resumed after a
-// restart would have no runner behind it.
+// Runs used to stay in memory on the theory that a half-finished run resumed
+// after a restart would have no runner behind it. That was true of the boot
+// order, not of the problem: the engine gets its node runner attached at boot
+// anyway, so resume just has to happen after that. What the in-memory version
+// actually delivered was runs recorded as `running` forever whenever the
+// orchestrator restarted, with every settled node result lost.
 
 func (s *Store) UpsertPipeline(ctx context.Context, p protocol.WorkflowPipeline) error {
 	// Marshalled explicitly rather than through orEmptySlice, which is for
@@ -65,4 +68,57 @@ func (s *Store) ListPipelines(ctx context.Context) ([]protocol.WorkflowPipeline,
 func (s *Store) DeletePipeline(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM pipelines WHERE id=$1`, id)
 	return norm(err)
+}
+
+// ------------------------------------------------------------------- runs ---
+
+func (s *Store) UpsertPipelineRun(ctx context.Context, r protocol.PipelineRun) error {
+	if r.NodeResults == nil {
+		r.NodeResults = map[string]string{}
+	}
+	if r.NodeStates == nil {
+		r.NodeStates = map[string]string{}
+	}
+	results, err := json.Marshal(r.NodeResults)
+	if err != nil {
+		return err
+	}
+	states, err := json.Marshal(r.NodeStates)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx,
+		`INSERT INTO pipeline_runs(id,pipeline_id,status,node_results,node_states,started_at,finished_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (id) DO UPDATE SET status=$3,node_results=$4,node_states=$5,finished_at=$7`,
+		r.ID, r.PipelineID, r.Status, string(results), string(states), r.StartedAt, r.FinishedAt)
+	return norm(err)
+}
+
+// ListPipelineRuns returns the most recent runs, newest first.
+func (s *Store) ListPipelineRuns(ctx context.Context, limit int) ([]protocol.PipelineRun, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 500
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT id,pipeline_id,status,node_results,node_states,started_at,finished_at
+           FROM pipeline_runs ORDER BY started_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, norm(err)
+	}
+	defer rows.Close()
+
+	out := []protocol.PipelineRun{}
+	for rows.Next() {
+		var r protocol.PipelineRun
+		var results, states string
+		if err := rows.Scan(&r.ID, &r.PipelineID, &r.Status, &results, &states,
+			&r.StartedAt, &r.FinishedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(results), &r.NodeResults)
+		_ = json.Unmarshal([]byte(states), &r.NodeStates)
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

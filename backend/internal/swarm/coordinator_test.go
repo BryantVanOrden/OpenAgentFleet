@@ -103,7 +103,7 @@ func TestCreateSwarmStartsRealWork(t *testing.T) {
 	fleet := &fakeFleet{}
 	c := wired(fleet)
 
-	sw, err := c.CreateSwarm(ctx, "Launch", "ship the release", members())
+	sw, err := c.CreateSwarm(ctx, "Launch", "ship the release", members(), false)
 	if err != nil {
 		t.Fatalf("CreateSwarm: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestCreateSwarmRefusesWithNoMembers(t *testing.T) {
 	// This used to succeed and fabricate "inst-lead", "inst-qa" and "inst-sec",
 	// so the screen showed a running mission staffed entirely by bots that
 	// exist on no fleet.
-	_, err := c.CreateSwarm(context.Background(), "s", "m", nil)
+	_, err := c.CreateSwarm(context.Background(), "s", "m", nil, false)
 	if err == nil {
 		t.Fatal("a swarm with no members was accepted")
 	}
@@ -162,7 +162,7 @@ func TestCreateSwarmRejectsAMemberThatIsNotOnTheFleet(t *testing.T) {
 	_, err := c.CreateSwarm(context.Background(), "s", "m", []protocol.SwarmMember{
 		{InstanceID: "i-1", Role: "Lead"},
 		{InstanceID: "i-ghost", Role: "Ghost"},
-	})
+	}, false)
 	if err == nil {
 		t.Fatal("a member that is not a real instance was accepted")
 	}
@@ -181,7 +181,7 @@ func TestCreateSwarmRejectsDuplicateMembers(t *testing.T) {
 	_, err := c.CreateSwarm(context.Background(), "s", "m", []protocol.SwarmMember{
 		{InstanceID: "i-1", Role: "Lead"},
 		{InstanceID: "i-1", Role: "Also lead"},
-	})
+	}, false)
 	if err == nil {
 		t.Fatal("the same instance was accepted twice on one mission")
 	}
@@ -190,7 +190,7 @@ func TestCreateSwarmRejectsDuplicateMembers(t *testing.T) {
 func TestCreateSwarmRefusesWithNothingWiredUp(t *testing.T) {
 	// Refusing beats recording a mission that will never run, which is what it
 	// used to do.
-	_, err := NewCoordinator().CreateSwarm(context.Background(), "s", "m", members())
+	_, err := NewCoordinator().CreateSwarm(context.Background(), "s", "m", members(), false)
 	if !errors.Is(err, ErrNoRunner) {
 		t.Errorf("err = %v, want ErrNoRunner", err)
 	}
@@ -201,7 +201,7 @@ func TestMemberNamesComeFromTheFleetNotTheCaller(t *testing.T) {
 	sw, err := c.CreateSwarm(context.Background(), "s", "m", []protocol.SwarmMember{
 		// The caller's name for the bot is wrong; the fleet's wins.
 		{InstanceID: "i-1", InstanceName: "whatever-i-typed", Role: "Lead"},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("CreateSwarm: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestABusyMemberDoesNotCancelTheMission(t *testing.T) {
 	fleet := &fakeFleet{failFor: "i-2"}
 	c := wired(fleet)
 
-	sw, err := c.CreateSwarm(context.Background(), "s", "m", members())
+	sw, err := c.CreateSwarm(context.Background(), "s", "m", members(), false)
 	if err != nil {
 		t.Fatalf("one busy bot should not fail the whole swarm: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestASwarmWhereNothingStartsIsNotReportedAsRunning(t *testing.T) {
 	c := wired(fleet)
 
 	sw, err := c.CreateSwarm(context.Background(), "s", "m",
-		[]protocol.SwarmMember{{InstanceID: "i-1", Role: "Lead"}})
+		[]protocol.SwarmMember{{InstanceID: "i-1", Role: "Lead"}}, false)
 	if err == nil {
 		t.Error("a swarm where no member could start should report an error")
 	}
@@ -262,7 +262,7 @@ func TestCreateSwarmIssuesDistinctIDs(t *testing.T) {
 
 	seen := map[string]bool{}
 	for i := 0; i < 5; i++ {
-		sw, err := c.CreateSwarm(ctx, "s", "m", members())
+		sw, err := c.CreateSwarm(ctx, "s", "m", members(), false)
 		if err != nil {
 			t.Fatalf("CreateSwarm: %v", err)
 		}
@@ -281,7 +281,7 @@ func TestCreateSwarmIssuesDistinctIDs(t *testing.T) {
 func TestPostMessage(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, err := c.CreateSwarm(ctx, "Launch", "ship it", members())
+	sw, err := c.CreateSwarm(ctx, "Launch", "ship it", members(), false)
 	if err != nil {
 		t.Fatalf("CreateSwarm: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestMessageIDsAreDistinctWithinATick(t *testing.T) {
 	// nanosecond timestamp alone is not an identity.
 	sw, err := c.CreateSwarm(ctx, "s", "m", []protocol.SwarmMember{
 		{InstanceID: "i-1", Role: "a"}, {InstanceID: "i-2", Role: "b"}, {InstanceID: "i-3", Role: "c"},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("CreateSwarm: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestMessageIDsAreDistinctWithinATick(t *testing.T) {
 func TestEmptyMessagesAreRejected(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "s", "m", members())
+	sw, _ := c.CreateSwarm(ctx, "s", "m", members(), false)
 	if _, err := c.PostMessage(ctx, sw.ID, "a", "b", "p", "   ", nil); err == nil {
 		t.Error("an empty message was accepted onto the blackboard")
 	}
@@ -351,7 +351,7 @@ func TestPublishArtifactSendsItForPeerReview(t *testing.T) {
 	ctx := context.Background()
 	fleet := &fakeFleet{}
 	c := wired(fleet)
-	sw, err := c.CreateSwarm(ctx, "Launch", "ship it", members())
+	sw, err := c.CreateSwarm(ctx, "Launch", "ship it", members(), false)
 	if err != nil {
 		t.Fatalf("CreateSwarm: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestPublishArtifactSendsItForPeerReview(t *testing.T) {
 func TestReviewRecordsAVerdict(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "Launch", "ship it", members())
+	sw, _ := c.CreateSwarm(ctx, "Launch", "ship it", members(), false)
 	art, err := c.PublishArtifact(ctx, sw.ID, "Audit", "qa", "security_audit", "no findings")
 	if err != nil {
 		t.Fatalf("PublishArtifact: %v", err)
@@ -437,7 +437,7 @@ func TestARejectionDoesNotCompleteTheMission(t *testing.T) {
 		{InstanceID: "i-1", Role: "Lead"},
 		{InstanceID: "i-2", Role: "QA"},
 		{InstanceID: "i-3", Role: "Security"},
-	})
+	}, false)
 	art, _ := c.PublishArtifact(ctx, sw.ID, "Patch", "arch", "code_patch", "the diff")
 
 	if _, err := c.ReviewArtifact(ctx, sw.ID, art.ID, "qa", true, "looks fine"); err != nil {
@@ -463,7 +463,7 @@ func TestAReviewerCannotApproveTwice(t *testing.T) {
 		{InstanceID: "i-1", Role: "Lead"},
 		{InstanceID: "i-2", Role: "QA"},
 		{InstanceID: "i-3", Role: "Security"},
-	})
+	}, false)
 	art, _ := c.PublishArtifact(ctx, sw.ID, "Patch", "arch", "code_patch", "the diff")
 
 	// Two approvals from one reviewer must not stand in for two reviewers.
@@ -484,7 +484,7 @@ func TestAReviewerCannotApproveTwice(t *testing.T) {
 func TestARejectionRetractsAnEarlierApproval(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "s", "m", members())
+	sw, _ := c.CreateSwarm(ctx, "s", "m", members(), false)
 	art, _ := c.PublishArtifact(ctx, sw.ID, "Patch", "qa", "code_patch", "the diff")
 
 	if _, err := c.ReviewArtifact(ctx, sw.ID, art.ID, "arch", true, "fine"); err != nil {
@@ -503,7 +503,7 @@ func TestARejectionRetractsAnEarlierApproval(t *testing.T) {
 func TestReviewOfAnUnknownArtifactIsAnError(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "s", "m", members())
+	sw, _ := c.CreateSwarm(ctx, "s", "m", members(), false)
 	if _, err := c.ReviewArtifact(ctx, sw.ID, "art-nope", "arch", true, ""); err == nil {
 		t.Error("reviewing an artifact that does not exist succeeded")
 	}
@@ -512,7 +512,7 @@ func TestReviewOfAnUnknownArtifactIsAnError(t *testing.T) {
 func TestAOneBotSwarmSaysThereIsNobodyToReview(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "s", "m", []protocol.SwarmMember{{InstanceID: "i-1", Role: "Solo"}})
+	sw, _ := c.CreateSwarm(ctx, "s", "m", []protocol.SwarmMember{{InstanceID: "i-1", Role: "Solo"}}, false)
 
 	if _, err := c.PublishArtifact(ctx, sw.ID, "Note", "arch", "note", "body"); err != nil {
 		t.Fatalf("PublishArtifact: %v", err)
@@ -536,7 +536,7 @@ func TestAOneBotSwarmSaysThereIsNobodyToReview(t *testing.T) {
 func TestEmptyArtifactsAreRejected(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "s", "m", members())
+	sw, _ := c.CreateSwarm(ctx, "s", "m", members(), false)
 	if _, err := c.PublishArtifact(ctx, sw.ID, "", "qa", "note", "body"); err == nil {
 		t.Error("an artifact with no title was accepted")
 	}
@@ -568,7 +568,7 @@ func TestUnknownSwarmIsAnError(t *testing.T) {
 func TestWritesBumpUpdatedAt(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "Launch", "ship it", members())
+	sw, _ := c.CreateSwarm(ctx, "Launch", "ship it", members(), false)
 	created := sw.UpdatedAt
 
 	if _, err := c.PostMessage(ctx, sw.ID, "a", "all", "execution", "working", nil); err != nil {
@@ -601,7 +601,7 @@ func TestListSwarmsOnAnEmptyCoordinator(t *testing.T) {
 func TestSnapshotsDoNotShareSlicesWithTheCoordinator(t *testing.T) {
 	ctx := context.Background()
 	c := wired(&fakeFleet{})
-	sw, _ := c.CreateSwarm(ctx, "s", "m", members())
+	sw, _ := c.CreateSwarm(ctx, "s", "m", members(), false)
 
 	// The API serialises what GetSwarm returns while reviews append to the
 	// coordinator's own copy. Handing out the live slices is a data race.
@@ -657,7 +657,7 @@ func TestSwarmsSurviveARestart(t *testing.T) {
 	if err := first.AttachStore(ctx, st); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
-	sw, err := first.CreateSwarm(ctx, "Launch", "ship it", members())
+	sw, err := first.CreateSwarm(ctx, "Launch", "ship it", members(), false)
 	if err != nil {
 		t.Fatalf("CreateSwarm: %v", err)
 	}
@@ -696,7 +696,7 @@ func TestDeleteSwarmRemovesTheRow(t *testing.T) {
 	if err := c.AttachStore(ctx, st); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
-	sw, _ := c.CreateSwarm(ctx, "s", "m", members())
+	sw, _ := c.CreateSwarm(ctx, "s", "m", members(), false)
 
 	c.DeleteSwarm(ctx, sw.ID)
 	if _, err := c.GetSwarm(ctx, sw.ID); err == nil {

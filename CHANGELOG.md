@@ -6,6 +6,50 @@ semantic versioning.
 
 ## [Unreleased]
 
+### The partly-built list is now empty of unbuilt features
+
+The five buildable items in the README's "What is partly built" section are
+built; the section is renamed "Design limits, stated plainly" and holds only
+the two entries that were never missing features — Anthropic having no
+embedding API, and a container not being a VM — because faking a build for a
+fact about the world is the disease this list exists to prevent.
+
+- **MCP resources and prompts.** The bridge now speaks all three capability
+  groups: `resources/list`/`read` and `prompts/list`/`get` alongside tools,
+  paginated, with a server that answers -32601 for an optional group read as
+  "none" rather than "broken". Agents reach them through `call_mcp` with
+  `mcp_resource` or `mcp_prompt`; the API serves them at `/api/mcp/resources`
+  and `/api/mcp/prompts`. Server notifications are no longer discarded: a
+  `notifications/*/list_changed` on either transport re-fetches the catalogue
+  on its own, and the manual refresh button re-fetches all three groups.
+  Pinned by tests against a real subprocess MCP server.
+- **Swarm phases are enforced.** A swarm created with `plan_first` starts its
+  members on planning goals, refuses any non-plan artifact while planning
+  ("the swarm is still in its planning phase..."), lifts the barrier by itself
+  when every member's plan artifact is in, and hands each executor the agreed
+  plans. `POST /api/swarms/{id}/advance` is the operator override for a stuck
+  member. Without `plan_first`, behaviour is unchanged.
+- **Pipeline runs survive a restart.** Runs are written through on every node
+  transition and rehydrated at boot; one interrupted mid-flight resumes from
+  its last settled node — settled results and already-decided branches kept,
+  the mid-flight node re-dispatched, and a run whose pipeline was deleted
+  closed out instead of left `running` forever. Pinned by a death-and-rebirth
+  test across two engine instances sharing one store.
+- **Model pricing is fetched.** OpenRouter's public catalogue is loaded at
+  boot and daily, used only on an exact normalised model-name match (fuzzy
+  matching a hosted catalogue is how a local model gets billed at someone
+  else's rate), with the hand-maintained table as the offline fallback and
+  `PRICING_REFRESH=off` for air-gapped fleets. The financial summary now
+  reports the pricing source and its age.
+- **HubSpot and Salesforce are parsed properly.** HubSpot deliveries verify
+  with the real v3 signature (method+uri+body+timestamp, replay-bounded) or
+  v1, and summarise the actual event array. Salesforce outbound messages are
+  parsed as the SOAP XML they are, authenticate by matching the payload's
+  OrganizationId against the stored secret (15- and 18-character forms both),
+  and get the SOAP Ack back — without which Salesforce records the delivery
+  failed and retries the same mission for 24 hours. The generic `crm` kind
+  remains for form backends, now explicitly described as the heuristic it is.
+
 ### The README shows the product now
 
 The hero is a live capture of what the pitch actually is: one agent's own XFCE

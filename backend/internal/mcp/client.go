@@ -31,6 +31,10 @@ type ClientManager struct {
 	mu      sync.RWMutex
 	servers map[string]protocol.MCPServer
 	tools   map[string][]protocol.MCPTool
+	// resources and prompts are the other two MCP capability groups, cached the
+	// same way tools are and refreshed by the same paths.
+	resources map[string][]protocol.MCPResource
+	prompts   map[string][]protocol.MCPPrompt
 	// live holds the open connection per server. A server can be registered and
 	// not connected: its process exited, or it was unreachable at boot. That is
 	// reported rather than hidden, and the next call reconnects.
@@ -54,10 +58,12 @@ var GlobalMCP = NewClientManager()
 
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		servers: make(map[string]protocol.MCPServer),
-		tools:   make(map[string][]protocol.MCPTool),
-		live:    make(map[string]*session),
-		lastErr: make(map[string]string),
+		servers:   make(map[string]protocol.MCPServer),
+		tools:     make(map[string][]protocol.MCPTool),
+		resources: make(map[string][]protocol.MCPResource),
+		prompts:   make(map[string][]protocol.MCPPrompt),
+		live:      make(map[string]*session),
+		lastErr:   make(map[string]string),
 	}
 }
 
@@ -164,6 +170,22 @@ func (m *ClientManager) RegisterServer(ctx context.Context, srv protocol.MCPServ
 		return srv, fmt.Errorf("connected to %s but could not list its tools: %w", srv.Name, err)
 	}
 	srv.ToolsCount = len(tools)
+	// The other two capability groups. Optional by spec, so a server without
+	// them registers fine with empty lists — but a server whose whole value is
+	// a resource collection now actually has something to offer here. Bounded,
+	// so a server that goes mute on an optional probe cannot hang registration.
+	probeCtx, cancelProbe := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelProbe()
+	resources, err := sess.ListResources(probeCtx, srv.ID)
+	if err != nil {
+		_ = sess.Close()
+		return srv, fmt.Errorf("connected to %s but could not list its resources: %w", srv.Name, err)
+	}
+	prompts, err := sess.ListPrompts(probeCtx, srv.ID)
+	if err != nil {
+		_ = sess.Close()
+		return srv, fmt.Errorf("connected to %s but could not list its prompts: %w", srv.Name, err)
+	}
 
 	// Adopt the server's own name if the operator did not pick one that says
 	// anything. Its self-reported name is generally the useful one.
@@ -182,10 +204,13 @@ func (m *ClientManager) RegisterServer(ctx context.Context, srv protocol.MCPServ
 	}
 	m.servers[srv.ID] = srv
 	m.tools[srv.ID] = tools
+	m.resources[srv.ID] = resources
+	m.prompts[srv.ID] = prompts
 	m.live[srv.ID] = sess
 	delete(m.lastErr, srv.ID)
 	st := m.store
 	m.mu.Unlock()
+	sess.setNotificationHandler(srv.ID, m.onListChanged)
 
 	if st != nil {
 		if err := st.UpsertMCPServer(ctx, srv); err != nil {
@@ -219,25 +244,25 @@ func (m *ClientManager) ensure(ctx context.Context, serverID string) (*session, 
 		return nil, err
 	}
 
-	tools, err := sess.ListTools(ctx, serverID)
-	if err != nil {
-		_ = sess.Close()
-		m.mu.Lock()
-		m.lastErr[serverID] = err.Error()
-		m.mu.Unlock()
-		return nil, err
-	}
-
 	m.mu.Lock()
 	if old := m.live[serverID]; old != nil && old != sess {
 		go old.Close()
 	}
 	m.live[serverID] = sess
-	m.tools[serverID] = tools
-	srv.ToolsCount = len(tools)
-	m.servers[serverID] = srv
 	delete(m.lastErr, serverID)
 	m.mu.Unlock()
+
+	if err := m.refreshCatalogue(ctx, serverID, sess); err != nil {
+		_ = sess.Close()
+		m.mu.Lock()
+		if m.live[serverID] == sess {
+			delete(m.live, serverID)
+		}
+		m.lastErr[serverID] = err.Error()
+		m.mu.Unlock()
+		return nil, err
+	}
+	sess.setNotificationHandler(serverID, m.onListChanged)
 	return sess, nil
 }
 
@@ -298,6 +323,8 @@ func (m *ClientManager) DeleteServer(ctx context.Context, id string) {
 	sess := m.live[id]
 	delete(m.servers, id)
 	delete(m.tools, id)
+	delete(m.resources, id)
+	delete(m.prompts, id)
 	delete(m.live, id)
 	delete(m.lastErr, id)
 	st := m.store
@@ -330,30 +357,21 @@ func (m *ClientManager) ListTools(ctx context.Context, serverID string) []protoc
 	return all
 }
 
-// RefreshTools re-asks a server what it can do.
+// RefreshTools re-asks a server for its whole catalogue — tools, resources and
+// prompts together, since they go stale together.
 //
-// Servers are allowed to change their catalogue at runtime and to announce it
-// with notifications/tools/list_changed. Nothing subscribes to that yet, so this
-// is the manual equivalent and the console offers it as a button.
+// Still exposed as the console's manual button, but no longer the only path:
+// a server announcing notifications/*/list_changed triggers the same re-fetch
+// on its own (see onListChanged).
 func (m *ClientManager) RefreshTools(ctx context.Context, serverID string) ([]protocol.MCPTool, error) {
 	sess, err := m.ensure(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
-	tools, err := sess.ListTools(ctx, serverID)
-	if err != nil {
+	if err := m.refreshCatalogue(ctx, serverID, sess); err != nil {
 		return nil, err
 	}
-
-	m.mu.Lock()
-	m.tools[serverID] = tools
-	if srv, ok := m.servers[serverID]; ok {
-		srv.ToolsCount = len(tools)
-		srv.UpdatedAt = time.Now().UTC()
-		m.servers[serverID] = srv
-	}
-	m.mu.Unlock()
-	return tools, nil
+	return m.ListTools(ctx, serverID), nil
 }
 
 // FindTool locates a tool by name across every server, so an agent can name a

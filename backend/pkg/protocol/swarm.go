@@ -48,10 +48,18 @@ type SwarmArtifact struct {
 
 // SwarmTeam defines a multi-agent collaborative mission.
 type SwarmTeam struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Mission   string          `json:"mission"`
-	Status    SwarmStatus     `json:"status"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Mission string      `json:"mission"`
+	Status  SwarmStatus `json:"status"`
+	// Phase is the swarm's current stage: "planning" or "execution". With
+	// PlanFirst set, execution is genuinely gated — members are asked to
+	// publish a plan artifact, non-plan artifacts are refused, and the
+	// execution tasks only start when every member's plan is in (or an
+	// operator advances the phase by hand). Without it the swarm starts in
+	// "execution", which is the old behaviour.
+	Phase     string `json:"phase,omitempty"`
+	PlanFirst bool   `json:"plan_first,omitempty"`
 	Members   []SwarmMember   `json:"members"`
 	Messages  []SwarmMessage  `json:"messages"`
 	Artifacts []SwarmArtifact `json:"artifacts"`

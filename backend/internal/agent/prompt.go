@@ -37,6 +37,8 @@ Schema:
   "tool_handler": "python function definition (for mount_tool)",
   "memory_scope": "bot|fleet (for remember; bot is the default and is private)",
   "mcp_tool_name": "name of the MCP tool to invoke (for call_mcp)",
+  "mcp_resource": "URI of an MCP resource to read instead (for call_mcp)",
+  "mcp_prompt": "name of an MCP prompt template to render instead (for call_mcp)",
   "mcp_params": {"param1": "value1"},
   "mcp_server_id": "optional; omit and the tool name is resolved to its server",
   "work_name": "what other agents refer to this item by (for publish_work/read_work)",

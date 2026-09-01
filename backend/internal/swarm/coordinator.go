@@ -105,7 +105,7 @@ var ErrNoRunner = errors.New(
 // whatever it was given and, given nothing, made up three bots — so a swarm's
 // member list bore no relation to the fleet.
 func (c *Coordinator) CreateSwarm(ctx context.Context, name, mission string,
-	members []protocol.SwarmMember) (*protocol.SwarmTeam, error) {
+	members []protocol.SwarmMember, planFirst bool) (*protocol.SwarmTeam, error) {
 
 	if strings.TrimSpace(name) == "" || strings.TrimSpace(mission) == "" {
 		return nil, errors.New("a swarm needs a name and a mission")
@@ -161,11 +161,17 @@ func (c *Coordinator) CreateSwarm(ctx context.Context, name, mission string,
 	now := time.Now().UTC()
 	id := fmt.Sprintf("swarm-%d", now.UnixNano())
 
+	phase := "execution"
+	if planFirst {
+		phase = "planning"
+	}
 	team := &protocol.SwarmTeam{
 		ID:        id,
 		Name:      name,
 		Mission:   mission,
 		Status:    protocol.SwarmStatusInitializing,
+		Phase:     phase,
+		PlanFirst: planFirst,
 		Members:   members,
 		Messages:  make([]protocol.SwarmMessage, 0, len(members)+1),
 		Artifacts: make([]protocol.SwarmArtifact, 0),
@@ -186,6 +192,12 @@ func (c *Coordinator) CreateSwarm(ctx context.Context, name, mission string,
 	var started int
 	for _, m := range members {
 		goal := memberGoal(mission, m, members)
+		if planFirst {
+			// The barrier: what each member is asked to do first is a plan, not
+			// the work. Execution tasks start when every plan is in — see
+			// PublishArtifact — or when an operator advances the phase by hand.
+			goal = planningGoal(mission, m, members)
+		}
 		taskID, err := start(ctx, m.InstanceID, goal, "swarm:"+name)
 		if err != nil {
 			// Recorded on the blackboard rather than failing the whole swarm:
@@ -312,9 +324,50 @@ func (c *Coordinator) PublishArtifact(ctx context.Context, swarmID, title, autho
 		Content:   content,
 		CreatedAt: time.Now().UTC(),
 	}
+
+	// The planning barrier. While the swarm is planning, the only artifact it
+	// accepts is a plan: an agent that races ahead and publishes work product
+	// is told the phase it is in rather than having the work quietly filed.
+	// This is the enforcement the phase field never had.
+	if team.Phase == "planning" && !isPlanCategory(art.Category) {
+		c.mu.Unlock()
+		return nil, fmt.Errorf(
+			"the swarm is still in its planning phase: publish your plan first "+
+				"(an artifact with category \"plan\"), not %q — execution starts "+
+				"when every member's plan is in", art.Category)
+	}
+
 	team.Artifacts = append(team.Artifacts, art)
-	team.Status = protocol.SwarmStatusReviewing
 	team.UpdatedAt = art.CreatedAt
+
+	// A plan landing during planning may complete the barrier.
+	if team.Phase == "planning" && isPlanCategory(art.Category) {
+		allPlanned := true
+		for _, m := range team.Members {
+			if m.Status == "error" {
+				continue // a member that never started cannot hold the mission hostage
+			}
+			if !hasPlanFrom(team, m) {
+				allPlanned = false
+				break
+			}
+		}
+		st := c.store
+		c.mu.Unlock()
+		c.persist(ctx, st, swarmID)
+		c.note(ctx, swarmID, art.Author, "all", "planning",
+			fmt.Sprintf("Plan published: %q", title))
+		if allPlanned {
+			// Every plan is in: the barrier lifts and the real work starts.
+			if err := c.AdvancePhase(ctx, swarmID, "Mission Coordinator (all plans are in)"); err != nil {
+				c.note(ctx, swarmID, "Mission Coordinator", "all", "planning",
+					"All plans are in but execution could not start: "+err.Error())
+			}
+		}
+		return &art, nil
+	}
+
+	team.Status = protocol.SwarmStatusReviewing
 
 	reviewers := make([]protocol.SwarmMember, 0, len(team.Members))
 	for _, m := range team.Members {
@@ -352,6 +405,116 @@ func (c *Coordinator) PublishArtifact(ctx context.Context, swarmID, title, autho
 			fmt.Sprintf("%s is reviewing %q as task %s", r.InstanceName, title, taskID))
 	}
 	return &art, nil
+}
+
+// isPlanCategory treats the spellings agents actually produce as "plan".
+func isPlanCategory(category string) bool {
+	c := strings.ToLower(strings.TrimSpace(category))
+	return c == "plan" || c == "planning" || c == "mission_plan"
+}
+
+// hasPlanFrom reports whether a member has published a plan artifact.
+func hasPlanFrom(team *protocol.SwarmTeam, m protocol.SwarmMember) bool {
+	for _, a := range team.Artifacts {
+		if !isPlanCategory(a.Category) {
+			continue
+		}
+		if a.Author == m.InstanceID || a.Author == m.InstanceName {
+			return true
+		}
+	}
+	return false
+}
+
+// AdvancePhase moves a planning swarm into execution and starts the real work.
+//
+// Called automatically when the last plan lands, and exposed to operators for
+// the stuck case — one member erroring mid-plan should not hold the mission
+// hostage forever, and who decides to proceed anyway is a human question.
+func (c *Coordinator) AdvancePhase(ctx context.Context, swarmID, advancedBy string) error {
+	c.mu.Lock()
+	team, ok := c.swarms[swarmID]
+	if !ok {
+		c.mu.Unlock()
+		return fmt.Errorf("swarm %s not found", swarmID)
+	}
+	if team.Phase != "planning" {
+		c.mu.Unlock()
+		return fmt.Errorf("the swarm is in its %s phase; only planning can be advanced", team.Phase)
+	}
+	team.Phase = "execution"
+	team.UpdatedAt = time.Now().UTC()
+	members := append([]protocol.SwarmMember(nil), team.Members...)
+	mission := team.Mission
+	name := team.Name
+	// The plans, handed to every executor: the point of planning first is that
+	// execution starts from what the team agreed, not from the mission alone.
+	var plans []protocol.SwarmArtifact
+	for _, a := range team.Artifacts {
+		if isPlanCategory(a.Category) {
+			plans = append(plans, a)
+		}
+	}
+	start, st := c.start, c.store
+	c.mu.Unlock()
+
+	c.persist(ctx, st, swarmID)
+	c.note(ctx, swarmID, advancedBy, "all", "execution",
+		fmt.Sprintf("Planning is complete (%d plan(s) on the blackboard). Execution begins.", len(plans)))
+
+	if start == nil {
+		return ErrNoRunner
+	}
+	var started int
+	for _, m := range members {
+		if m.Status == "error" {
+			continue
+		}
+		goal := executionGoal(mission, m, members, plans)
+		taskID, err := start(ctx, m.InstanceID, goal, "swarm:"+name)
+		if err != nil {
+			c.note(ctx, swarmID, "Mission Coordinator", m.InstanceName, "execution",
+				fmt.Sprintf("Could not start %s: %s", m.InstanceName, err.Error()))
+			c.setMemberStatus(ctx, swarmID, m.InstanceID, "error")
+			continue
+		}
+		started++
+		c.note(ctx, swarmID, "Mission Coordinator", m.InstanceName, "execution",
+			fmt.Sprintf("%s (%s) started execution as task %s", m.InstanceName, m.Role, taskID))
+	}
+	if started == 0 {
+		return errors.New("no member could be started for the execution phase")
+	}
+	return nil
+}
+
+// planningGoal asks one member for a plan, and nothing else.
+func planningGoal(mission string, me protocol.SwarmMember, all []protocol.SwarmMember) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "You are the %s on a team mission, in its PLANNING phase.\n\n", me.Role)
+	fmt.Fprintf(&sb, "Mission: %s\n\n", mission)
+	fmt.Fprintf(&sb, "Team: %s\n\n", memberList(all))
+	sb.WriteString("Do NOT start the work yet — the swarm holds execution until every " +
+		"member's plan is in. Research what your role needs, then publish your plan " +
+		"as a swarm artifact with category \"plan\": what you will do, in what order, " +
+		"what you need from the other members, and what you will hand them. " +
+		"When your plan is published, finish this task.")
+	return sb.String()
+}
+
+// executionGoal is the real work, grounded in the plans the team agreed on.
+func executionGoal(mission string, me protocol.SwarmMember, all []protocol.SwarmMember,
+	plans []protocol.SwarmArtifact) string {
+	var sb strings.Builder
+	sb.WriteString(memberGoal(mission, me, all))
+	if len(plans) > 0 {
+		sb.WriteString("\n\nThe team planned before starting. The agreed plans:\n")
+		for _, p := range plans {
+			fmt.Fprintf(&sb, "\n--- plan by %s: %s ---\n%s\n", p.Author, p.Title, clip(p.Content, 1500))
+		}
+		sb.WriteString("\nFollow your own plan and honour what you promised the others.")
+	}
+	return sb.String()
 }
 
 func reviewGoal(mission string, art protocol.SwarmArtifact, reviewer protocol.SwarmMember) string {

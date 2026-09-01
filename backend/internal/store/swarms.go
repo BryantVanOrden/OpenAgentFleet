@@ -38,18 +38,19 @@ func (s *Store) UpsertSwarm(ctx context.Context, sw protocol.SwarmTeam) error {
 	sw.UpdatedAt = time.Now().UTC()
 
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO swarms(id,name,mission,status,members,messages,artifacts,created_at,updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (id) DO UPDATE SET name=$2,mission=$3,status=$4,members=$5,
-             messages=$6,artifacts=$7,updated_at=$9`,
-		sw.ID, sw.Name, sw.Mission, string(sw.Status), members, messages, artifacts,
-		sw.CreatedAt, sw.UpdatedAt)
+		`INSERT INTO swarms(id,name,mission,status,phase,plan_first,members,messages,artifacts,created_at,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (id) DO UPDATE SET name=$2,mission=$3,status=$4,phase=$5,plan_first=$6,
+             members=$7,messages=$8,artifacts=$9,updated_at=$11`,
+		sw.ID, sw.Name, sw.Mission, string(sw.Status), sw.Phase, sw.PlanFirst,
+		members, messages, artifacts, sw.CreatedAt, sw.UpdatedAt)
 	return norm(err)
 }
 
 func (s *Store) ListSwarms(ctx context.Context) ([]protocol.SwarmTeam, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id,name,mission,status,members,messages,artifacts,created_at,updated_at
+		`SELECT id,name,mission,status,COALESCE(phase,'execution'),COALESCE(plan_first,false),
+                members,messages,artifacts,created_at,updated_at
            FROM swarms ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, norm(err)
@@ -60,8 +61,8 @@ func (s *Store) ListSwarms(ctx context.Context) ([]protocol.SwarmTeam, error) {
 	for rows.Next() {
 		var sw protocol.SwarmTeam
 		var status, members, messages, artifacts string
-		if err := rows.Scan(&sw.ID, &sw.Name, &sw.Mission, &status, &members, &messages,
-			&artifacts, &sw.CreatedAt, &sw.UpdatedAt); err != nil {
+		if err := rows.Scan(&sw.ID, &sw.Name, &sw.Mission, &status, &sw.Phase, &sw.PlanFirst,
+			&members, &messages, &artifacts, &sw.CreatedAt, &sw.UpdatedAt); err != nil {
 			return nil, err
 		}
 		sw.Status = protocol.SwarmStatus(status)

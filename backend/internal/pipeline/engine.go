@@ -32,28 +32,141 @@ type Engine struct {
 	// before: every node slept for half a second and recorded "verified
 	// deliverable created" without anything having run.
 	run NodeRunner
+
+	// interrupted collects runs found `running` at load — the previous process
+	// died under them. ResumeInterrupted drains it once a runner exists.
+	interrupted []string
 }
 
-// PipelineStore is the durable half.
+// PipelineStore is the durable half — the pipelines themselves and their runs.
 type PipelineStore interface {
 	UpsertPipeline(ctx context.Context, p protocol.WorkflowPipeline) error
 	ListPipelines(ctx context.Context) ([]protocol.WorkflowPipeline, error)
 	DeletePipeline(ctx context.Context, id string) error
+	UpsertPipelineRun(ctx context.Context, r protocol.PipelineRun) error
+	ListPipelineRuns(ctx context.Context, limit int) ([]protocol.PipelineRun, error)
 }
 
-// AttachStore reloads stored pipelines and writes new ones through.
+// AttachStore reloads stored pipelines and run history, and writes both through.
+//
+// Runs that were `running` when the previous process died are remembered for
+// ResumeInterrupted, which the server calls once the node runner exists — the
+// runner is attached after the store, so resuming here would dispatch nodes
+// into a nil runner.
 func (e *Engine) AttachStore(ctx context.Context, st PipelineStore) error {
 	saved, err := st.ListPipelines(ctx)
 	if err != nil {
 		return err
 	}
+	runs, err := st.ListPipelineRuns(ctx, 0)
+	if err != nil {
+		return err
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.store = st
 	for _, p := range saved {
 		e.pipelines[p.ID] = p
 	}
+	for _, r := range runs {
+		// Anything started since boot is newer than the table.
+		if _, live := e.runs[r.ID]; live {
+			continue
+		}
+		e.runs[r.ID] = r
+		if r.Status == "running" {
+			e.interrupted = append(e.interrupted, r.ID)
+		}
+	}
 	return nil
+}
+
+// ResumeInterrupted restarts every run the previous process left in flight.
+//
+// A run resumes from its last settled node: nodes recorded done, failed or
+// skipped keep their state and results, and everything that was waiting or
+// mid-flight is executed again. A node that was mid-flight when the process
+// died is re-dispatched from the start — its half-finished task cannot be
+// rejoined — which re-runs work rather than losing it; for a pipeline node
+// that is the right side to err on, and the log says it happened.
+func (e *Engine) ResumeInterrupted(ctx context.Context) int {
+	e.mu.Lock()
+	ids := e.interrupted
+	e.interrupted = nil
+	runner := e.run
+	e.mu.Unlock()
+
+	if len(ids) == 0 {
+		return 0
+	}
+	if runner == nil {
+		// Refused loudly rather than silently: a deployment with no runner
+		// cannot resume anything, and pretending otherwise re-creates the
+		// stuck-at-running lie this feature removes.
+		return 0
+	}
+
+	resumed := 0
+	for _, runID := range ids {
+		e.mu.Lock()
+		r, okRun := e.runs[runID]
+		p, okPipe := e.pipelines[r.PipelineID]
+		e.mu.Unlock()
+		if !okRun || !okPipe {
+			// The pipeline was deleted while its run was in flight. The run
+			// cannot continue; it is closed out rather than left running forever.
+			e.closeOrphanRun(ctx, runID, "the pipeline no longer exists")
+			continue
+		}
+
+		go func(runID string, p protocol.WorkflowPipeline, prior protocol.PipelineRun) {
+			newExecutorResuming(e, runID, p, prior).Run(context.WithoutCancel(ctx), runner)
+		}(runID, p, r)
+		resumed++
+	}
+	return resumed
+}
+
+// closeOrphanRun terminates a run that cannot be resumed.
+func (e *Engine) closeOrphanRun(ctx context.Context, runID, reason string) {
+	e.mu.Lock()
+	r, ok := e.runs[runID]
+	if ok {
+		r.Status = "failed"
+		if r.NodeResults == nil {
+			r.NodeResults = map[string]string{}
+		}
+		r.NodeResults["_run"] = "not resumed: " + reason
+		now := time.Now().UTC()
+		r.FinishedAt = &now
+		e.runs[runID] = r
+	}
+	e.mu.Unlock()
+	if ok {
+		e.persistRun(ctx, runID)
+	}
+}
+
+// persistRun writes one run's current snapshot through to the store.
+//
+// Fire-and-forget on purpose: node transitions are minutes apart, and a failed
+// write costs the durable copy one update, not the run.
+func (e *Engine) persistRun(ctx context.Context, runID string) {
+	e.mu.RLock()
+	st := e.store
+	r, ok := e.runs[runID]
+	var snap protocol.PipelineRun
+	if ok {
+		snap = snapshotRun(r)
+	}
+	e.mu.RUnlock()
+	if st == nil || !ok {
+		return
+	}
+	go func() {
+		_ = st.UpsertPipelineRun(context.WithoutCancel(ctx), snap)
+	}()
 }
 
 // SetNodeRunner attaches the thing that actually does the work.
@@ -181,6 +294,10 @@ func (e *Engine) TriggerRun(ctx context.Context, pipelineID string) (protocol.Pi
 	e.runs[runID] = run
 	snapshot := snapshotRun(run)
 	e.mu.Unlock()
+
+	// Durable from birth: a run that dies with the process must be findable as
+	// `running`-then-resumed, not absent as though it never started.
+	e.persistRun(ctx, runID)
 
 	// Real execution: every node whose dependencies have settled runs, several
 	// at a time, with each incoming edge's condition deciding whether the node

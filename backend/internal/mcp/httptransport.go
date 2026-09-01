@@ -37,6 +37,7 @@ type httpTransport struct {
 	// on every later request. Servers that keep per-session state reject
 	// requests without it, and servers that do not use sessions never set it.
 	mu        sync.RWMutex
+	onNotify  func(method string)
 	sessionID string
 	// protocolVersion is echoed back on later requests, which newer servers
 	// require once they have negotiated it.
@@ -157,6 +158,8 @@ func (t *httpTransport) readSSE(body io.Reader, want int64) (json.RawMessage, er
 		result, err := decodeFrame([]byte(payload), want)
 		if err != nil {
 			if errors.Is(err, errFrameNotMine) {
+				// Not our reply — possibly a notification riding the stream.
+				t.handOffNotification([]byte(payload))
 				return nil, false, nil
 			}
 			return nil, true, err
@@ -194,6 +197,34 @@ func (t *httpTransport) readSSE(body io.Reader, want int64) (json.RawMessage, er
 
 // errFrameNotMine marks a well-formed frame addressed to a different request.
 var errFrameNotMine = errors.New("frame belongs to another request")
+
+// handOffNotification recognises a server-initiated notification frame and
+// hands its method to the callback. HTTP has no standing server->client
+// channel in this client (the optional GET stream is not opened), so the only
+// place a notification can arrive is interleaved in a call's own SSE stream —
+// which is exactly where servers send list_changed after a tools/call that
+// mutated their catalogue.
+func (t *httpTransport) handOffNotification(raw []byte) {
+	var resp rpcResponse
+	if json.Unmarshal(bytes.TrimSpace(raw), &resp) != nil {
+		return
+	}
+	if resp.ID != nil || resp.Method == "" {
+		return
+	}
+	t.mu.RLock()
+	fn := t.onNotify
+	t.mu.RUnlock()
+	if fn != nil {
+		fn(resp.Method)
+	}
+}
+
+func (t *httpTransport) SetOnNotification(fn func(method string)) {
+	t.mu.Lock()
+	t.onNotify = fn
+	t.mu.Unlock()
+}
 
 func decodeFrame(raw []byte, want int64) (json.RawMessage, error) {
 	// A batch is legal JSON-RPC and some servers use it even for one call.

@@ -259,7 +259,11 @@ is not using the model you thought it was. It answers per role.
 | `POST` | `/api/mcp/servers` | admin | Register one. Connects and discovers tools before storing. |
 | `DELETE` | `/api/mcp/servers/{id}` | admin | Remove one, closing its connection. |
 | `GET` | `/api/mcp/tools` | any | Tools discovered across all registered servers. |
-| `POST` | `/api/mcp/servers/{id}/refresh` | admin | Re-ask a server what tools it has. |
+| `POST` | `/api/mcp/servers/{id}/refresh` | admin | Re-ask a server for its whole catalogue (tools, resources, prompts). A server's own `list_changed` notification triggers the same re-fetch automatically. |
+| `GET` | `/api/mcp/resources` | any | Resources discovered across all servers (`?server_id=` to filter). |
+| `POST` | `/api/mcp/resources/read` | operator | Fetch one resource's content: `{server_id?, uri}`. The server is resolved from the URI when omitted. |
+| `GET` | `/api/mcp/prompts` | any | Prompt templates discovered across all servers. |
+| `POST` | `/api/mcp/prompts/get` | operator | Render one prompt: `{server_id?, name, arguments?}`. |
 | `POST` | `/api/mcp/call` | operator | Invoke a tool. `server_id` is optional. |
 
 There is no `/api/tools` prefix; MCP is the whole surface.
@@ -334,7 +338,7 @@ nothing acts on it. The only branching is that an error aborts the run.
 | `GET` | `/api/pipelines/{id}` | any | One pipeline. |
 | `DELETE` | `/api/pipelines/{id}` | admin | Delete. |
 | `POST` | `/api/pipelines/{id}/run` | operator | Start a run. |
-| `GET` | `/api/pipelines/{id}/runs` | any | Run history. |
+| `GET` | `/api/pipelines/{id}/runs` | any | Run history. Durable: runs survive a restart, and one interrupted mid-flight resumes from its last settled node at boot. |
 
 Note the asymmetry: saving and running a pipeline needs `operator`, deleting one
 needs `admin`.
@@ -385,6 +389,7 @@ recorded as `running` indefinitely.
 | `GET` | `/api/swarms/{id}` | any | One swarm and its blackboard. |
 | `DELETE` | `/api/swarms/{id}` | admin | Forget a mission. |
 | `POST` | `/api/swarms/{id}/messages` | operator | Post to the shared blackboard. |
+| `POST` | `/api/swarms/{id}/advance` | operator | Lift a `plan_first` swarm's planning barrier by hand — the override for a stuck member; normally the barrier lifts itself when every member's plan artifact is in. |
 | `POST` | `/api/swarms/{id}/artifacts` | operator | Publish a deliverable and send it for peer review. |
 | `POST` | `/api/swarms/{id}/artifacts/{artifactId}/review` | operator | Record a verdict. |
 

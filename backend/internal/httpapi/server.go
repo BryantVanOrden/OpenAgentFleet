@@ -108,6 +108,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/swarms", auth(roleOperator, s.handleCreateSwarm))
 	mux.Handle("GET /api/swarms/{id}", auth(roleAny, s.handleGetSwarm))
 	mux.Handle("POST /api/swarms/{id}/messages", auth(roleOperator, s.handlePostSwarmMessage))
+	mux.Handle("POST /api/swarms/{id}/advance", auth(roleOperator, s.handleAdvanceSwarmPhase))
 	mux.Handle("DELETE /api/swarms/{id}", auth(roleAdmin, s.handleDeleteSwarm))
 	mux.Handle("POST /api/swarms/{id}/artifacts", auth(roleOperator, s.handlePublishArtifact))
 	mux.Handle("POST /api/swarms/{id}/artifacts/{artifactId}/review", auth(roleOperator, s.handleReviewArtifact))
@@ -161,6 +162,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/archetypes/{id}/export", auth(roleAny, s.handleExportArchetype))
 	mux.Handle("POST /api/archetypes/import", auth(roleAdmin, s.handleImportArchetype))
 	mux.Handle("POST /api/mcp/servers/{id}/refresh", auth(roleAdmin, s.handleRefreshMCPTools))
+	mux.Handle("GET /api/mcp/resources", auth(roleAny, s.handleListMCPResources))
+	mux.Handle("POST /api/mcp/resources/read", auth(roleOperator, s.handleReadMCPResource))
+	mux.Handle("GET /api/mcp/prompts", auth(roleAny, s.handleListMCPPrompts))
+	mux.Handle("POST /api/mcp/prompts/get", auth(roleOperator, s.handleGetMCPPrompt))
 	mux.Handle("POST /api/mcp/call", auth(roleOperator, s.handleCallMCPTool))
 
 	// Multi-Bot Workflow DAG Pipelines

@@ -350,8 +350,11 @@ func TestNormaliseKindMapsAliasesAndDefaults(t *testing.T) {
 		"gh":         KindGitHub,
 		"stripe":     KindStripe,
 		"  Stripe  ": KindStripe,
-		"hubspot":    KindCRM,
-		"salesforce": KindCRM,
+		// These used to collapse into the generic CRM heuristic; both vendors
+		// now have real parsers and their own kinds.
+		"hubspot":    KindHubSpot,
+		"salesforce": KindSalesforce,
+		"sfdc":       KindSalesforce,
 		"crm":        KindCRM,
 		// Anything unrecognised falls back to the original behaviour rather
 		// than failing; the create handler rejects typos separately, where the

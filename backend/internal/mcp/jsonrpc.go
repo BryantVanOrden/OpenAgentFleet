@@ -60,5 +60,9 @@ type transport interface {
 	Call(ctx context.Context, method string, params any) (json.RawMessage, error)
 	// Notify sends a request with no id and does not wait.
 	Notify(ctx context.Context, method string, params any) error
+	// SetOnNotification registers a callback for server-initiated
+	// notifications. Called from the transport's read path, so the callback
+	// must not block; the manager's handler goes async immediately.
+	SetOnNotification(fn func(method string))
 	Close() error
 }
