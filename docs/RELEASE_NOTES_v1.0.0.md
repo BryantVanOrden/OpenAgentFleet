@@ -62,4 +62,4 @@ make up
 ```
 
 Console on `:8081`, create your admin on the first-run screen, and point an
-engine at your Ollama. The [README](../README.md) covers the rest.
+engine at your Ollama. The [README](https://github.com/BryantVanOrden/AgentFleet#readme) covers the rest.
