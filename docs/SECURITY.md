@@ -118,6 +118,31 @@ Each instance is a container with:
   `agentd` drop to `agent`.
 - Its own network, unreachable from the control plane except by the orchestrator.
 
+### The QEMU tier
+
+An instance created with `"driver": "qemu"` boots the same sandbox as a real
+virtual machine, which changes the boundary in one specific way: the agent's
+kernel is the **guest** kernel. A kernel exploit inside a container-tier
+sandbox is a host compromise; inside the VM tier it lands in a disposable
+guest, and the attacker's next step is a QEMU escape — a materially higher
+bar. Precision about what this does and does not buy:
+
+- **The guest is the container image**, converted to a disk at build time, so
+  everything above about the agent being uid 1000 and root-owned services
+  holds identically inside the VM.
+- **The runner container is not hardened like a sandbox** — its only process
+  is QEMU, it holds `/dev/kvm` when the host provides it, and it has no shell
+  surface an agent can reach.
+- **Egress policies are refused on this driver**, fail-closed. nftables
+  programs the container netns; the guest's traffic tunnels through SLIRP
+  underneath it, so a policy would look applied and bind nothing. Instances
+  that need one stay on the docker driver until the VM enforces policy
+  natively (guest-side nftables driven from the kernel cmdline is the planned
+  shape).
+- **Without `/dev/kvm`** (Docker Desktop, most CI) the guest runs under TCG
+  software emulation: the isolation property is the same, the boot takes
+  minutes, and the runner logs which mode it chose.
+
 ### Sudo in the sandbox
 
 Sudo is granted per instance and can be turned on and off while the instance is

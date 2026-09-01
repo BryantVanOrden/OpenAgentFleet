@@ -64,6 +64,10 @@ hero-shot: ## Recapture the README hero (a live agent desktop). Needs INSTANCE_I
 sandbox: ## Build the sandbox desktop image
 	docker build -t agentfleet/sandbox:latest ./sandbox
 
+.PHONY: sandbox-vm
+sandbox-vm: sandbox ## Build the VM runner image (the sandbox rootfs, bootable under QEMU)
+	docker build -t agentfleet/sandbox:latest-vm 		--build-arg BASE_IMAGE=agentfleet/sandbox:latest 		-f ./sandbox/Dockerfile.vm ./sandbox
+
 .PHONY: sandbox-dev
 sandbox-dev: sandbox ## Build the developer-heavy image (compilers, Rust, Go, GPU hints)
 	docker build -t agentfleet/sandbox:latest-dev \

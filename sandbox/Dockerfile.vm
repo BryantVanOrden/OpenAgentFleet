@@ -1,0 +1,76 @@
+# AgentFleet VM sandbox: the container image, booted as a real virtual machine.
+#
+# The `qemu` driver runs this image as an ordinary container whose only process
+# is QEMU, booting a guest whose root filesystem is the sandbox container image
+# converted to a disk. The security this buys over the container driver is a
+# hardware(-emulated) boundary: the agent's kernel is the GUEST kernel, and a
+# kernel exploit inside the sandbox lands in the VM, not on the host.
+#
+# The rootfs conversion is the load-bearing trick. The guest disk is built from
+# agentfleet/sandbox:latest at IMAGE BUILD TIME with mke2fs -d (which populates
+# a filesystem from a directory with no privileges and no loop mounts), so the
+# VM runs byte-for-byte the same agentd, desktop and supervisord config as the
+# container tier — a separately-maintained guest image is how the two would
+# drift, and agentd is the first thing that would.
+#
+# With /dev/kvm on the host this is hardware-accelerated; without it QEMU falls
+# back to TCG software emulation, which boots the same desktop slowly. The
+# entrypoint detects, uses what exists, and says which it chose.
+ARG BASE_IMAGE=agentfleet/sandbox:latest
+
+# ---- stage 1: the guest rootfs, with its init installed --------------------
+FROM ${BASE_IMAGE} AS rootfs
+# The guest's DNS is SLIRP's proxy, written by vm-init at boot — the
+# container-runtime-managed resolv.conf never makes it into the image layer,
+# so there is nothing to clean up here (and buildkit mounts it read-busy
+# during RUN, so trying fails the build).
+COPY vm-init.sh /sbin/agentfleet-init
+# The Dockerfile ENV defaults (DISPLAY, SCREEN_RESOLUTION, AGENTD_PORT...) live
+# in image METADATA, which converting the filesystem to a disk cannot carry —
+# and the entrypoint runs `set -u`, so the first missing one kernel-panicked
+# the guest by killing init. Captured here at build time, where RUN sees
+# exactly those ENVs; vm-init sources this file first and lets the
+# kernel-cmdline env override it, mirroring how docker run's -e overrides the
+# image's own ENV.
+RUN chmod +x /sbin/agentfleet-init \
+    && env | grep -vE '^(PWD|SHLVL|OLDPWD|_)=' > /etc/agentfleet-image.env
+
+# ---- stage 2: disk + kernel -------------------------------------------------
+FROM debian:bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        e2fsprogs linux-image-cloud-amd64 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=rootfs / /rootfs
+RUN mkdir -p /vm \
+    # 16G sparse: the file only occupies what the rootfs actually uses (~3G);
+    # the rest is the agent's workspace headroom inside the guest.
+    && truncate -s 16G /vm/rootfs.img \
+    && mke2fs -q -F -t ext4 -d /rootfs -L agentfleet /vm/rootfs.img \
+    # The cloud kernel and its initrd: virtio disk and net come up from the
+    # initrd, so nothing about the guest kernel is bespoke.
+    && cp /boot/vmlinuz-* /vm/vmlinuz \
+    && cp /boot/initrd.img-* /vm/initrd
+
+# ---- stage 3: the runner ----------------------------------------------------
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        qemu-system-x86 qemu-utils curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /vm /vm
+COPY vm-entrypoint.sh /usr/local/bin/vm-entrypoint.sh
+RUN chmod +x /usr/local/bin/vm-entrypoint.sh
+
+# The same ports as the container tier, forwarded into the guest by QEMU, so
+# the orchestrator's addressing, health checks and desktop proxy are identical
+# for both drivers.
+EXPOSE 6901 6902 7900
+
+# The guest boots a whole desktop; under TCG that takes minutes, and marking
+# the runner unhealthy while the guest is still coming up would have the
+# reconciler fighting the boot.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10m --retries=8 \
+    CMD curl -fsS http://localhost:7900/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/vm-entrypoint.sh"]

@@ -8,8 +8,7 @@ This guide covers setting up the development environment, running components loc
 
 * **Docker & Docker Compose** (v24+)
 * **Go** 1.25+ — `backend/go.mod` declares `go 1.25.0`, so an older toolchain
-  will either refuse to build or silently download a newer one. Note that CI is
-  currently pinned to Go 1.23, which is a mismatch worth fixing.
+  will either refuse to build or silently download a newer one. CI uses 1.25.
 * **Node.js** (v20+) & **npm** — the admin image builds on Node 22.
 * **Python** (3.10+)
 * **Flutter** 3.24+ *(optional, for the mobile app)* — `mobile/pubspec.yaml`
@@ -150,6 +149,15 @@ make smoke-agent
 
 # The subsystems that were once stubs. Needs an admin account.
 VERIFY_EMAIL=you@example.com VERIFY_PASSWORD=... make verify-features
+```
+
+The VM tier's end-to-end test is deliberate and manual — a TCG boot takes
+minutes, which is too slow for every CI run:
+
+```bash
+make sandbox-vm
+# then create an instance with {"driver": "qemu"} and watch it reach running;
+# verify-features covers the cheap parts (fail-closed egress, image presence).
 ```
 
 `verify-features` registers a real MCP server in a container and calls a tool on

@@ -47,3 +47,6 @@ admin/tsconfig.tsbuildinfo
 **/__pycache__/
 *.pyc
 *.egg-info/
+docs/demo/*.webm
+docs/demo/*.mp4
+docs/demo/frame-*.png

@@ -18,11 +18,20 @@
 </p>
 
 <p align="center">
+  <img src="docs/demo/demo.gif" alt="A real agent run, uncut: the goal is typed into the console, a local vision model opens Firefox on its own sandboxed desktop, navigates to Hacker News, and reports the #1 story" width="920">
+</p>
+
+<p align="center"><em>A real run, recorded uncut from the console and played at 8× speed: the goal is typed, a <strong>local</strong> vision model<br>
+(qwen3.8-27b over Ollama — no cloud, no API key) opens Firefox on its own desktop with <strong>shell access disabled</strong>,<br>
+navigates to Hacker News, reads the #1 story, and reports it. Sixteen GUI actions, zero cuts —<br>
+the real-time recording is attached to <a href="https://github.com/BryantVanOrden/AgentFleet/releases/tag/v1.3.0">the release</a>.</em></p>
+
+<p align="center">
   <img src="docs/images/desktop-live-dark.png" alt="An agent's own desktop, streaming live into the console: Firefox open on its sandboxed XFCE desktop, with the task panel and teach-by-demonstration controls beside it" width="920">
 </p>
 
-<p align="center"><em>This is one agent's desktop — a real XFCE session in a hardened container, streaming live.<br>
-It is <strong>interactive</strong>: click the stream and you are driving its mouse and keyboard; let go and the agent carries on.<br>
+<p align="center"><em>The same view, still: a real XFCE session in a hardened container, streaming live.<br>
+It is <strong>interactive</strong> — click the stream and you are driving its mouse and keyboard; let go and the agent carries on.<br>
 Do a task yourself once with the recorder on, and it compiles into a skill the agent can repeat.</em></p>
 
 ---
@@ -199,17 +208,28 @@ quality; `/api/memory/fleet` reports which scheme is live, and
 linear scan over the working set (2,000 records) — deliberate, and fine at
 this size.
 
-What remains below is the platform's one honest limit — a property of the
-design, stated here rather than left to be discovered:
+And the QEMU driver exists now, closing the last entry this section carried:
+`"driver": "qemu"` on instance create boots the sandbox as a **real virtual
+machine** — the guest disk is converted from the container image at build time
+(`make sandbox-vm`), so the VM runs byte-for-byte the same agentd and desktop
+as the container tier and cannot drift from it. KVM-accelerated when the host
+has `/dev/kvm`; TCG software emulation otherwise (same guest, slower boot, and
+the runner logs which it chose).
 
-- **`developer-heavy` is a container, not a VM.** `make sandbox-dev` builds
-  the image the tier asks for — compilers, Rust, Go, and the GPU loader hints
-  — but it shares the host kernel like every container. The QEMU driver that
-  would make it a real VM is unimplemented, and the GPU hints are inert unless
-  the host has the NVIDIA container runtime (in which case the request is
-  dropped with a `gpu_unavailable` label rather than failing the instance).
-  Container-grade isolation is the platform's stated security model; see
-  [SECURITY.md](docs/SECURITY.md) for exactly what that is and is not worth.
+What remains are the VM driver's own stated boundaries, not absences —
+fail-closed where it matters:
+
+- **Egress policies are refused on the qemu driver.** nftables programs the
+  container's network namespace, and a guest's traffic tunnels through SLIRP
+  underneath it — so an instance that asks for an egress policy on this driver
+  is rejected at create rather than coming up looking restricted while being
+  open. Use the docker driver for policied instances until the VM enforces
+  them natively.
+- **No GPU on the VM tier.** `vfio-pci` passthrough is roadmap; the container
+  tier's GPU request (with its no-runtime fallback) is unchanged.
+- **Container-grade isolation remains the default.** The docker driver is the
+  shipped security model, documented in [SECURITY.md](docs/SECURITY.md); the
+  VM driver is the stronger boundary for workloads that warrant the boot cost.
 
 
 ## Bot archetypes

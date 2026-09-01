@@ -137,8 +137,17 @@ type hostConfig struct {
 	Mounts         []mount               `json:"Mounts,omitempty"`
 	StorageOpt     map[string]string     `json:"StorageOpt,omitempty"`
 	DeviceRequests []deviceRequest       `json:"DeviceRequests,omitempty"`
+	// Devices maps host device nodes into the container — /dev/kvm for the
+	// qemu driver. Distinct from DeviceRequests, which is the GPU plugin path.
+	Devices []deviceMapping `json:"Devices,omitempty"`
 	Tmpfs          map[string]string     `json:"Tmpfs,omitempty"`
 	Ulimits        []ulimit              `json:"Ulimits,omitempty"`
+}
+
+type deviceMapping struct {
+	PathOnHost        string `json:"PathOnHost"`
+	PathInContainer   string `json:"PathInContainer"`
+	CgroupPermissions string `json:"CgroupPermissions"`
 }
 
 type portBind struct {

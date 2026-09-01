@@ -63,6 +63,10 @@ type CreateRequest struct {
 	SystemPrompt      string                     `json:"system_prompt,omitempty"`
 	PreinstalledTools []string                   `json:"preinstalled_tools,omitempty"`
 	Tier              protocol.Tier              `json:"tier"`
+	// Driver overrides the tier's virtualisation backend for this instance.
+	// "qemu" boots the sandbox as a real VM (agentfleet/sandbox:latest-vm,
+	// built by `make sandbox-vm`); empty keeps the tier's default.
+	Driver protocol.Driver `json:"driver,omitempty"`
 	Override          *protocol.ResourceOverride `json:"override,omitempty"`
 	Egress            protocol.EgressPolicy      `json:"egress"`
 	ShellAccess       bool                       `json:"shell_access"`
@@ -133,8 +137,27 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		return nil, fmt.Errorf("unknown tier %q; available: %s", req.Tier, TierNames(m.tiers))
 	}
 	profile := ApplyOverride(TierByName(m.tiers, req.Tier), req.Override)
+
+	// A per-instance driver override. "qemu" boots the same sandbox rootfs as
+	// a real virtual machine — the guest disk is built from the container
+	// image, so the two cannot drift — behind a hardware(-emulated) boundary.
+	switch req.Driver {
+	case "", protocol.DriverDocker:
+	case protocol.DriverQEMU:
+		profile.Driver = protocol.DriverQEMU
+	default:
+		return nil, fmt.Errorf("%w: unknown driver %q (use docker or qemu)", ErrInvalidRequest, req.Driver)
+	}
 	if profile.Driver == protocol.DriverQEMU {
-		return nil, fmt.Errorf("the qemu driver is not wired up yet; see docs/ROADMAP.md phase 5")
+		// Fail closed on egress: nftables policy is programmed in the
+		// container's netns, and a QEMU guest's traffic leaves through SLIRP
+		// inside the runner — the policy would not see it. An instance that
+		// asked to be restricted must not come up unrestricted.
+		if len(req.Egress.Allow) > 0 || len(req.Egress.Deny) > 0 || req.Egress.BlockLocal {
+			return nil, fmt.Errorf("%w: egress policies are not enforced inside the qemu tier yet; "+
+				"use the docker driver for instances that need one", ErrInvalidRequest)
+		}
+		profile.Image = vmImageFor(profile.Image)
 	}
 
 	id := store.NewID()
@@ -259,6 +282,32 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	if hasEgressPolicy(inst.Egress) {
 		spec.HostConfig.CapAdd = append(spec.HostConfig.CapAdd, "NET_ADMIN")
 	}
+
+	if p.Driver == protocol.DriverQEMU {
+		// The runner's only process is QEMU; the sandbox env computed above is
+		// forwarded into the guest by the runner over the kernel command line.
+		// The guest gets the tier's memory; the runner's own limit carries a
+		// fixed overhead for QEMU itself, so the tier's number means what it
+		// says inside the machine the agent actually uses.
+		const qemuOverheadMB = 512
+		guestMB := p.MemoryMB
+		spec.HostConfig.Memory = (guestMB + qemuOverheadMB) * 1024 * 1024
+		spec.HostConfig.MemorySwap = spec.HostConfig.Memory
+		spec.Env = append(spec.Env,
+			fmt.Sprintf("VM_VCPUS=%d", int(p.VCPU)),
+			fmt.Sprintf("VM_MEMORY_MB=%d", guestMB),
+			"AGENTFLEET_HOSTNAME="+sanitiseHostname(inst.Name),
+			// Applied inside the guest by vm-init. docker exec cannot reach
+			// past the runner, so the sudo decision travels with the boot.
+			fmt.Sprintf("SUDO_ACCESS=%t", inst.SudoAccess),
+		)
+		// /dev/kvm when the host has it. Requested optimistically and retried
+		// without below, because the engine's error is the only reliable
+		// signal — the same lesson the GPU fallback taught.
+		spec.HostConfig.Devices = []deviceMapping{{
+			PathOnHost: "/dev/kvm", PathInContainer: "/dev/kvm", CgroupPermissions: "rwm",
+		}}
+	}
 	if p.DiskGB > 0 {
 		// Only honoured on overlay2 + xfs with pquota; harmless elsewhere.
 		spec.HostConfig.StorageOpt = map[string]string{"size": fmt.Sprintf("%dG", p.DiskGB)}
@@ -279,6 +328,17 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	}
 
 	cid, err := m.docker.CreateContainer(ctx, containerName, spec)
+	if err != nil && p.Driver == protocol.DriverQEMU && len(spec.HostConfig.Devices) > 0 &&
+		strings.Contains(strings.ToLower(err.Error()), "kvm") {
+		// No /dev/kvm on this host (Docker Desktop, most CI). QEMU falls back
+		// to TCG software emulation inside the runner — the same guest boots,
+		// slowly — so the honest response is to run without the device, not to
+		// fail the tier on machines that lack nested virtualisation.
+		m.log.Warn("host has no /dev/kvm; the VM will run under software emulation",
+			"instance", inst.ID)
+		spec.HostConfig.Devices = nil
+		cid, err = m.docker.CreateContainer(ctx, containerName, spec)
+	}
 	if err != nil {
 		// StorageOpt is rejected on most default setups; retry without the quota
 		// rather than failing provisioning outright.
@@ -369,7 +429,13 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		}
 	}
 
-	if err := m.waitHealthy(ctx, inst.AgentdURL, 90*time.Second); err != nil {
+	// A container-tier desktop is up in seconds; a VM guest boots a kernel and
+	// a whole desktop first, and under TCG that is minutes, not seconds.
+	readyBudget := 90 * time.Second
+	if p.Driver == protocol.DriverQEMU {
+		readyBudget = 12 * time.Minute
+	}
+	if err := m.waitHealthy(ctx, inst.AgentdURL, readyBudget); err != nil {
 		return fmt.Errorf("sandbox never became ready: %w", err)
 	}
 
@@ -974,6 +1040,19 @@ func envOr(k, def string) string {
 func (m *Manager) SetSudo(ctx context.Context, inst *protocol.Instance, allowed bool) error {
 	if inst.Runtime == "" {
 		return fmt.Errorf("instance has no container")
+	}
+	// The qemu tier applies sudo INSIDE the guest at boot, from the SUDO_ACCESS
+	// value carried on the kernel command line — docker exec reaches only the
+	// runner container, where there is no sudo and no agent. Boot-time is a
+	// no-op here (already applied by vm-init); runtime toggling would need a
+	// channel into the guest that does not exist yet, so it is refused rather
+	// than reported as done.
+	if inst.Driver == protocol.DriverQEMU {
+		if allowed == inst.SudoAccess {
+			return nil
+		}
+		return fmt.Errorf("sudo cannot be changed on a running qemu instance yet; " +
+			"recreate the instance with the setting you want")
 	}
 	mode := "u-s"
 	if allowed {

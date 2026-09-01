@@ -132,7 +132,7 @@ Departments are organisations. There is no `/api/departments` prefix.
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/tiers` | any | The configured hardware tiers. |
 | `GET` | `/api/instances` | any | List instances. |
-| `POST` | `/api/instances` | operator | Provision and start an instance. |
+| `POST` | `/api/instances` | operator | Provision and start an instance. `"driver": "qemu"` boots it as a real virtual machine (image built by `make sandbox-vm`; KVM-accelerated when the host has `/dev/kvm`, software-emulated otherwise). Egress policies are refused on that driver — they are not enforced inside the VM yet, and failing closed beats a policy that looks applied. |
 | `GET` | `/api/instances/{id}` | any | One instance. |
 | `DELETE` | `/api/instances/{id}` | operator | Destroy an instance and its container. |
 | `POST` | `/api/instances/{id}/start` | operator | Lifecycle. |

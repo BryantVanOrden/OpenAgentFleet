@@ -47,17 +47,20 @@ operator-supplied custom tool recipes.
 
 ### Phase 5 — heavy workloads and real isolation
 
-The `developer-heavy` tier currently runs as a container with a GPU device
-request. That is fine for compiling something you trust and wrong for anything
-else.
-
-- QEMU/KVM driver behind the existing `Driver` interface, with `vfio-pci` GPU
-  passthrough.
-- Copy-on-write base images so a 150 GB dev box provisions in seconds rather than
-  minutes.
-- Snapshot and restore, so a build environment can be rewound instead of rebuilt.
-  *Partly built:* workspace-level snapshot and rollback of `/home/agent/work`
-  ship as the `snapshot` and `rollback` actions. Whole-machine rewind does not.
+- ~~QEMU/KVM driver behind the existing `Driver` interface~~ — **built**, with
+  deliberate boundaries. `"driver": "qemu"` on instance create boots the
+  sandbox as a real VM: the guest disk is converted from the container image
+  at build time (`make sandbox-vm`), so the VM runs byte-for-byte the same
+  agentd and desktop and cannot drift. KVM-accelerated when the host has
+  `/dev/kvm`, TCG software emulation otherwise (same guest, slow boot — the
+  runner logs which). Copy-on-write already: each boot runs a qcow2 overlay
+  over the pristine base disk. Still ahead, in honesty order:
+  - **Egress policies inside the VM** — refused (fail-closed) on this driver
+    today, because nftables programs the container netns and the guest's
+    traffic tunnels through SLIRP underneath it.
+  - **`vfio-pci` GPU passthrough** — the VM tier has no GPU story yet.
+  - **Whole-machine snapshot/rewind** — workspace-level `snapshot`/`rollback`
+    still ship on both drivers; VM disk snapshots do not.
 
 ### Phase 6 — WebRTC streaming
 

@@ -396,6 +396,34 @@ else
   note "agentfleet/sandbox:latest-dev not built yet — run: make sandbox-dev"
 fi
 
+head "9. qemu driver"
+
+if [ -f sandbox/Dockerfile.vm ]; then
+  ok "sandbox/Dockerfile.vm exists"
+else
+  bad "no Dockerfile for the VM runner"
+fi
+if grep -q '^sandbox-vm:' Makefile 2>/dev/null; then
+  ok "make sandbox-vm builds it"
+else
+  bad "no make target builds the VM image"
+fi
+# The fail-closed contract: an egress policy on the qemu driver is refused
+# rather than silently unenforced.
+refused=$(api POST /api/instances '{"name":"vm-egress-probe","tier":"micro","driver":"qemu","egress":{"block_local":true}}')
+if has "$refused" 'not enforced inside the qemu tier'; then
+  ok "an egress policy on the qemu driver is refused, fail-closed"
+else
+  bad "a policied qemu instance was not refused: $(printf '%s' "$refused" | head -c 160)"
+  rid=$(printf '%s' "$refused" | sed -n 's/.*"id":"\([a-f0-9-]*\)".*/\1/p')
+  [ -n "$rid" ] && CLEANUP+=("curl -sS -X DELETE '$BASE/api/instances/$rid' -H 'Authorization: Bearer $TOKEN'")
+fi
+if docker image inspect agentfleet/sandbox:latest-vm >/dev/null 2>&1; then
+  ok "agentfleet/sandbox:latest-vm is built locally"
+else
+  note "agentfleet/sandbox:latest-vm not built yet — run: make sandbox-vm"
+fi
+
 # -------------------------------------------------------------------- summary ---
 
 echo

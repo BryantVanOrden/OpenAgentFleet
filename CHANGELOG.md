@@ -6,6 +6,48 @@ semantic versioning.
 
 ## [Unreleased]
 
+### The QEMU driver is real
+
+`"driver": "qemu"` on instance create boots the sandbox as an actual virtual
+machine. The trick that keeps it honest is the guest disk: it is converted
+from the sandbox container image at build time (`make sandbox-vm`, using
+`mke2fs -d` — no privileges, no loop mounts), so the VM runs byte-for-byte
+the same agentd, desktop and supervisord config as the container tier and the
+two cannot drift. A tiny init mounts kernel filesystems, configures SLIRP's
+fixed addresses statically, imports the sandbox environment from the kernel
+command line, and hands off to the same entrypoint the container runs.
+
+KVM acceleration is detected, not configured — `/dev/kvm` is granted when the
+host has it and requested-then-dropped when it does not (the same
+engine-error-is-the-only-signal lesson the GPU fallback taught), falling back
+to TCG software emulation: same guest, slow boot, and the runner logs which
+mode it chose. Each boot runs on a qcow2 overlay over the pristine base disk.
+QEMU's port forwards put agentd and both VNC servers on the runner's own
+address, so the orchestrator's health checks, desktop proxy and addressing
+are identical for both drivers.
+
+Stated boundaries, fail-closed where it matters: egress policies are refused
+on this driver (nftables programs the container netns; the guest's traffic
+tunnels through SLIRP underneath it — a policy would look applied and bind
+nothing); no GPU on the VM tier yet; and the console's launch dialog does not
+offer the driver field yet — it is API-only.
+
+### The demo video is real
+
+`scripts/demo-video.mjs` records the launch demo from the running console,
+uncut: the goal typed on camera, a real vision model (qwen3.8-27b-vision over
+a LAN Ollama) driving the sandbox, and the finish. The first successful take
+produced an accidental honesty lesson: given shell access, the agent skipped
+Firefox entirely and answered via curl in two steps — efficient, honest, and
+cinematically dead — so the shipped demo runs on a bot with shell access OFF,
+which forces the GUI path the product actually sells.
+
+Setting the recording up surfaced a deployment bug worth more than the video:
+the admin console's nginx resolved the api's address once at startup, so
+recreating the api container (any deploy) left the console answering 502
+until the admin container was also restarted. The proxy now resolves through
+Docker's embedded DNS per-request.
+
 ### Semantic memory ships by default
 
 The last feature-shaped entry in the design-limits list is gone: the compose

@@ -90,10 +90,19 @@ func TierByName(tiers []protocol.TierProfile, name protocol.Tier) protocol.TierP
 // that tier to a command that rebuilds the base and leaves the tag they need
 // still missing.
 func buildTargetFor(image string) string {
+	if strings.HasSuffix(image, "-vm") {
+		return "make sandbox-vm"
+	}
 	if strings.HasSuffix(image, "-dev") {
 		return "make sandbox-dev"
 	}
 	return "make sandbox"
+}
+
+// vmImageFor derives the VM runner's tag from the sandbox image: the guest
+// disk inside it is built FROM that image, so the pairing is by construction.
+func vmImageFor(image string) string {
+	return image + "-vm"
 }
 
 // ApplyOverride layers per-instance resource tweaks over a tier profile.
