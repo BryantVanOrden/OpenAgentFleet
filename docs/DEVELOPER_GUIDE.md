@@ -157,7 +157,8 @@ minutes, which is too slow for every CI run:
 ```bash
 make sandbox-vm
 # then create an instance with {"driver": "qemu"} and watch it reach running;
-# verify-features covers the cheap parts (fail-closed egress, image presence).
+# verify-features covers the automated parts: a policied qemu instance is
+# accepted, the runner's netns carries the nftables rules, the image exists.
 ```
 
 `verify-features` registers a real MCP server in a container and calls a tool on

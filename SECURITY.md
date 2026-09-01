@@ -55,6 +55,8 @@ For the full architectural threat model — what the sandbox isolation is and is
 not worth, how sudo is gated and what that trade costs, and the limits of the
 egress policy — see [docs/SECURITY.md](docs/SECURITY.md).
 
-Note that some features in this repository are unfinished stubs rather than
-working code; the README lists them under "What is partly built". A stub
-behaving oddly is a bug report, not a vulnerability.
+The README's "Design limits, stated plainly" section is the authoritative list
+of what each capability deliberately does not do. A documented limit behaving
+as documented is a design discussion, not a vulnerability — but a limit the
+docs *fail* to state, or a boundary that does not hold as described, is
+exactly what this policy wants reported.

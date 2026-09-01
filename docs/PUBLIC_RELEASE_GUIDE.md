@@ -103,7 +103,6 @@ specific caveat that is easy to overstate:
   description; `/api/memory/fleet` still reports the live scheme, and only a
   deployment that removes the sidecar *and* has no embedding provider falls
   back to the keyword index.
-- **The README's "Design limits, stated plainly"** section (formerly "What is
-  partly built" — everything buildable on that list has been built) is the list
-  to check before claiming anything. It is kept current deliberately; the
+- **The README's "Design limits, stated plainly"** section is the list to
+  check before claiming anything. It is kept current deliberately; the
   announcement should not contradict it.

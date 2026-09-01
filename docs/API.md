@@ -132,7 +132,7 @@ Departments are organisations. There is no `/api/departments` prefix.
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/tiers` | any | The configured hardware tiers. |
 | `GET` | `/api/instances` | any | List instances. |
-| `POST` | `/api/instances` | operator | Provision and start an instance. `"driver": "qemu"` boots it as a real virtual machine (image built by `make sandbox-vm`; KVM-accelerated when the host has `/dev/kvm`, software-emulated otherwise). Egress policies are refused on that driver — they are not enforced inside the VM yet, and failing closed beats a policy that looks applied. |
+| `POST` | `/api/instances` | operator | Provision and start an instance. `"driver": "qemu"` boots it as a real virtual machine (image built by `make sandbox-vm`; KVM-accelerated when the host has `/dev/kvm`, software-emulated otherwise). Egress policies are enforced on that driver in the runner's network namespace — where every guest connection must pass and nothing inside the guest can reach — applied before QEMU starts, fail-closed. |
 | `GET` | `/api/instances/{id}` | any | One instance. |
 | `DELETE` | `/api/instances/{id}` | operator | Destroy an instance and its container. |
 | `POST` | `/api/instances/{id}/start` | operator | Lifecycle. |
@@ -615,9 +615,11 @@ payload appended, labelled as untrusted external data; that labelling matters
 here, because a pull request title is attacker-controlled text going into an
 agent's prompt.
 
-**Partly built:** the CRM parser is a field-name search over what HubSpot,
-Salesforce and common form backends happen to send. There is no vendor-specific
-schema behind it.
+**A deliberate split:** `hubspot` and `salesforce` are vendor-specific kinds
+with their real signature schemes (HubSpot v3/v1; Salesforce outbound-message
+SOAP with org-id check and Ack response). The `crm` kind is explicitly the
+generic one — an HMAC-verified field-name search over what common form
+backends happen to send, for senders that have no scheme of their own.
 
 ---
 

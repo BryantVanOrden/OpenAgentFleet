@@ -189,7 +189,8 @@ you would. That one decision is where everything else comes from:
 
 This project's habit is to say what a feature does not do in the same breath
 as shipping it, so the boundaries live here rather than waiting to be
-discovered. Two capabilities come with context worth knowing:
+discovered. First, three capabilities whose design is worth knowing, because
+each makes a deliberate trade:
 
 - **Semantic memory ships by default.** The compose stack includes a small
   local embedding sidecar (model2vec `potion-base-8M`, ~30 MB, CPU-only,
@@ -211,23 +212,29 @@ discovered. Two capabilities come with context worth knowing:
   the container tier and cannot drift from it. KVM-accelerated when the host
   has `/dev/kvm`; TCG software emulation otherwise (same guest, slower boot,
   and the runner logs which it chose).
+- **Egress policies on the VM tier are enforced where the guest can't reach
+  them.** Every connection the guest opens leaves through QEMU's SLIRP
+  sockets in the runner container's network namespace, dialled to the
+  destination the guest asked for — so the same nftables program the
+  container tier uses is applied there, before QEMU starts, fail-closed (if
+  the policy can't be programmed, the VM doesn't boot). This placement is
+  *stronger* than the container tier's: an agent with root inside the guest
+  can flush its own tables all day and never touch the policy, and the guest
+  is never even told a policy exists.
 
-The VM driver's own boundaries, fail-closed where it matters:
+And the limits that remain, stated as limits:
 
-- **Egress policies are enforced on the qemu driver — in the runner, where
-  the guest can't reach them.** Every connection the guest opens leaves
-  through QEMU's SLIRP sockets in the runner container's network namespace,
-  dialled to the destination the guest asked for, so the same nftables
-  program the container tier uses is applied there before QEMU starts
-  (fail-closed: if the policy can't be programmed, the VM doesn't boot). This
-  placement is *stronger* than the container tier's: an agent with root
-  inside the guest can flush its own tables all day and never touch the
-  policy.
-- **No GPU on the VM tier.** `vfio-pci` passthrough is roadmap; the container
-  tier's GPU request (with its no-runtime fallback) is unchanged.
+- **No GPU on the VM tier.** `vfio-pci` passthrough needs IOMMU hardware this
+  project's CI cannot exercise, and shipping untested code is against the
+  point of this section — so it stays roadmap. The container tier's GPU
+  request (with its no-runtime fallback) is unchanged.
 - **Container-grade isolation remains the default.** The docker driver is the
   shipped security model, documented in [SECURITY.md](docs/SECURITY.md); the
   VM driver is the stronger boundary for workloads that warrant the boot cost.
+- **Egress hostname rules resolve once, at policy time.** A CDN-backed host
+  whose addresses rotate drifts out of an allow-list; use a CIDR or an egress
+  proxy for those. `block_local` covers IPv4 only — the shipped networks are
+  v4-only, and [SECURITY.md](docs/SECURITY.md) spells out when that matters.
 
 
 ## Bot archetypes
