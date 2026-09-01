@@ -1,6 +1,6 @@
 # Skills, Demonstration Recording & Continual Refinement
 
-AgentFleet combines **Human Demonstration Recording** with **AI Continual Self-Improvement** to produce robust, self-healing computer-use workflows.
+OpenAgentFleet combines **Human Demonstration Recording** with **AI Continual Self-Improvement** to produce robust, self-healing computer-use workflows.
 
 ---
 
@@ -11,7 +11,7 @@ Hardcoding coordinate macros (`click 412, 108`) is notoriously brittle:
 * Operating system themes and DPI scaling change.
 * Browser layouts shift with new versions.
 
-AgentFleet solves this by recording **semantic interactions**:
+OpenAgentFleet solves this by recording **semantic interactions**:
 1. You perform the task once manually on the desktop.
 2. The recorder captures raw mouse/keyboard events **simultaneously with the AT-SPI accessibility element** underneath each interaction.
 3. The compiler lifts the trace into a structured `SKILL.md` — instructing the model to *"Click the button labelled 'Build'"*, not click a fixed pixel coordinate.

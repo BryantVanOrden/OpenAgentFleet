@@ -1,6 +1,6 @@
 # Release checklist
 
-Steps for taking AgentFleet from private development to a public release, and for
+Steps for taking OpenAgentFleet from private development to a public release, and for
 each release after that.
 
 ---
@@ -30,7 +30,7 @@ from the Actions tab).
 
 One-time setup on pypi.org (already done if `open-agent-fleet` shows a pending
 publisher): **Your account → Publishing → Add a pending publisher** with
-project `open-agent-fleet`, owner `BryantVanOrden`, repository `AgentFleet`,
+project `open-agent-fleet`, owner `BryantVanOrden`, repository `OpenAgentFleet`,
 workflow `publish-pypi.yml`, environment `pypi`. Until the SDK is on PyPI, the
 README and quickstart scripts install it from the repo with
 `pip install -e ./sdk/python`.
@@ -47,7 +47,7 @@ To build the Linux desktop bundle, the Windows `.exe` and the Android APK:
    `RUN_HEAVY_BUILDS`.) Alternatively, run the workflow manually from the Actions
    tab with **Force heavy cross-platform builds** ticked, which sets the same
    condition for one run without leaving it on for every push.
-2. **Push the tag.** `git tag -a v1.0.0 -m "AgentFleet v1.0.0" && git push
+2. **Push the tag.** `git tag -a v1.0.0 -m "OpenAgentFleet v1.0.0" && git push
    origin v1.0.0`. The workflow triggers on `tags: [ 'v*' ]`, takes the version
    from the tag it was built for, and creates the release.
 

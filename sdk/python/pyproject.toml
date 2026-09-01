@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "open-agent-fleet"
 version = "1.0.0"
-description = "Official Python SDK and fleetctl CLI for AgentFleet — self-hosted autonomous computer-use agents, each with its own Linux desktop"
+description = "Official Python SDK and fleetctl CLI for OpenAgentFleet — self-hosted autonomous computer-use agents, each with its own Linux desktop"
 readme = "README.md"
 authors = [
     { name = "Bryant VanOrden", email = "supermanismebvo123@gmail.com" }

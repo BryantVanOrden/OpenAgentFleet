@@ -298,7 +298,7 @@ func TestVerifyWebhookSignature(t *testing.T) {
 		want   bool
 	}{
 		{"github style", "X-Hub-Signature-256", "sha256=" + good, true},
-		{"bare hex", "X-AgentFleet-Signature", good, true},
+		{"bare hex", "X-OpenAgentFleet-Signature", good, true},
 		{"upper case hex", "X-Hub-Signature-256", "sha256=" + strings.ToUpper(good), true},
 		{"wrong body signature", "X-Hub-Signature-256", "sha256=" + strings.Repeat("ab", 32), false},
 		{"truncated", "X-Hub-Signature-256", "sha256=" + good[:10], false},

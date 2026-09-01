@@ -219,7 +219,7 @@ func scalarString(v any) string {
 func verifyWebhookSignature(secret string, body []byte, r *http.Request) bool {
 	provided := r.Header.Get("X-Hub-Signature-256")
 	if provided == "" {
-		provided = r.Header.Get("X-AgentFleet-Signature")
+		provided = r.Header.Get("X-OpenAgentFleet-Signature")
 	}
 	provided = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(provided), "sha256="))
 	if provided == "" {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Archetype & Workspace Initializer for AgentFleet Sandbox
+# Archetype & Workspace Initializer for OpenAgentFleet Sandbox
 # Runs during container startup to prepare the agent's work directory.
 set -euo pipefail
 

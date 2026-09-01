@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to AgentFleet. The format is loosely
+Notable changes to OpenAgentFleet. The format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 

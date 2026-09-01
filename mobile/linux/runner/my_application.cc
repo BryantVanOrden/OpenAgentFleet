@@ -40,7 +40,7 @@ static void my_application_activate(GApplication* application) {
   // remote desktop needs and leaving the app looking like it has two chromes.
   // The window title is still set, so anything that lists windows still names
   // it properly.
-  gtk_window_set_title(window, "AgentFleet");
+  gtk_window_set_title(window, "OpenAgentFleet");
 
   gtk_window_set_default_size(window, 1280, 720);
 

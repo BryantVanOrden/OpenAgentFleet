@@ -1,4 +1,4 @@
-"""AgentFleet Python SDK."""
+"""OpenAgentFleet Python SDK."""
 
 from agentfleet.bot import Bot
 from agentfleet.client import FleetClient

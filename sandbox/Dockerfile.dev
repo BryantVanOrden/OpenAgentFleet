@@ -1,4 +1,4 @@
-# AgentFleet developer-heavy sandbox: the base desktop plus a build toolchain.
+# OpenAgentFleet developer-heavy sandbox: the base desktop plus a build toolchain.
 #
 # The `developer-heavy` tier asks for `agentfleet/sandbox:latest-dev` (see
 # fleet.DefaultTiers, which appends "-dev" to the configured image). Nothing

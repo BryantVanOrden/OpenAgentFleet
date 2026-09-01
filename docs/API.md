@@ -1,4 +1,4 @@
-# AgentFleet API reference
+# OpenAgentFleet API reference
 
 The orchestrator exposes a REST API and a WebSocket event bus. The React admin
 console, the Flutter companion app and the Python SDK all speak to it.
@@ -592,7 +592,7 @@ summariser:
 
 | `kind` | Signature | Notes |
 | :--- | :--- | :--- |
-| `generic` (default) | HMAC-SHA256 of the raw body, in `X-Hub-Signature-256` or `X-AgentFleet-Signature`. | Unchanged behaviour. |
+| `generic` (default) | HMAC-SHA256 of the raw body, in `X-Hub-Signature-256` or `X-OpenAgentFleet-Signature`. | Unchanged behaviour. |
 | `github` | The same HMAC, but **only** in `X-Hub-Signature-256`. | Event name read from `X-GitHub-Event`. |
 | `stripe` | `Stripe-Signature`: `t=<unix>,v1=<hmac>` over `<t>.<body>`. | Five-minute replay window; multiple `v1` accepted for secret rotation. |
 | `crm` | As generic. | Contact/deal field extraction over a bare JSON document. |

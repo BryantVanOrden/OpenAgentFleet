@@ -39,7 +39,7 @@ type WebhookKind string
 
 const (
 	// KindGeneric is the original behaviour: HMAC-SHA256 over the raw body,
-	// in X-Hub-Signature-256 or X-AgentFleet-Signature.
+	// in X-Hub-Signature-256 or X-OpenAgentFleet-Signature.
 	KindGeneric WebhookKind = "generic"
 	KindGitHub  WebhookKind = "github"
 	KindStripe  WebhookKind = "stripe"
@@ -98,7 +98,7 @@ func verifyFor(kind WebhookKind, secret string, body []byte, r *http.Request) er
 		return verifySalesforce(secret, body)
 	case KindGitHub:
 		// GitHub's scheme is the same HMAC the generic path uses, but only the
-		// GitHub header counts: accepting X-AgentFleet-Signature on a webhook
+		// GitHub header counts: accepting X-OpenAgentFleet-Signature on a webhook
 		// declared as GitHub would let anyone who learns the URL sign with the
 		// header of their choosing.
 		if !hmacHexEqual(secret, body, strings.TrimPrefix(

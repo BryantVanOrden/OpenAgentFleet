@@ -1,4 +1,4 @@
-# Contributing to AgentFleet
+# Contributing to OpenAgentFleet
 
 Bug fixes, documentation improvements, performance work and new features are all
 welcome.
@@ -78,4 +78,4 @@ Follow standard [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Licensing notice
 
-By contributing to AgentFleet, you agree that your contributions will be licensed under the **[MIT License](LICENSE)**.
+By contributing to OpenAgentFleet, you agree that your contributions will be licensed under the **[MIT License](LICENSE)**.

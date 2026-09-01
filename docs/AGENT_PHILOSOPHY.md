@@ -1,6 +1,6 @@
 # Agent philosophy
 
-How AgentFleet divides the work of driving a desktop, and why. This document
+How OpenAgentFleet divides the work of driving a desktop, and why. This document
 separates what the code does today from what it is designed to grow into, and
 labels which is which. Everything in "What ships" is traceable to a named file.
 

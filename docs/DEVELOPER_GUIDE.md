@@ -1,4 +1,4 @@
-# AgentFleet Developer Guide
+# OpenAgentFleet Developer Guide
 
 This guide covers setting up the development environment, running components locally, executing test suites, and understanding the codebase architecture.
 

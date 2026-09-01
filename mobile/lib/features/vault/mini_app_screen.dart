@@ -51,7 +51,7 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
       // A one-way channel carrying error text out of the page and nothing in.
       // The page is agent-authored, so whatever arrives here is untrusted: it
       // is displayed as plain text and never executed or parsed.
-      ..addJavaScriptChannel('AgentFleetError',
+      ..addJavaScriptChannel('OpenAgentFleetError',
           onMessageReceived: (msg) {
         if (!mounted || _scriptError != null) return;
         setState(() => _scriptError = msg.message);
@@ -99,7 +99,7 @@ class _MiniAppScreenState extends State<MiniAppScreen> {
     // in the document runs, so a parse error in the page's own script is still
     // caught.
     const reporter = '<script>window.addEventListener("error",function(e){'
-        'try{AgentFleetError.postMessage(String(e.message||"script error"));}'
+        'try{OpenAgentFleetError.postMessage(String(e.message||"script error"));}'
         'catch(_){}});</script>';
 
     final head = RegExp(r'<head[^>]*>', caseSensitive: false).firstMatch(html);

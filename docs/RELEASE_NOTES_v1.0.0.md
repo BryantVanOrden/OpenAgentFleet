@@ -1,8 +1,8 @@
-# AgentFleet 1.0.0
+# OpenAgentFleet 1.0.0
 
 The first public release.
 
-AgentFleet is a self-hosted platform for autonomous computer-use agents:
+OpenAgentFleet is a self-hosted platform for autonomous computer-use agents:
 every agent gets its own disposable Linux desktop that streams live into your
 browser — click the stream and you are driving; let go and the agent carries
 on. It runs on your hardware, against your models, and pings your phone when

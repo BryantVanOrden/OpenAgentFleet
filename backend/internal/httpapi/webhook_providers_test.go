@@ -158,7 +158,7 @@ func TestGitHubOnlyAcceptsItsOwnSignatureHeader(t *testing.T) {
 	// A webhook declared as GitHub must not accept the house header: anyone who
 	// learns the URL could otherwise sign with whichever header they prefer.
 	other := httptest.NewRequest(http.MethodPost, "/", nil)
-	other.Header.Set("X-AgentFleet-Signature", sign(secret, body))
+	other.Header.Set("X-OpenAgentFleet-Signature", sign(secret, body))
 	if err := verifyFor(KindGitHub, secret, body, other); err == nil {
 		t.Error("a GitHub webhook accepted a signature in the generic header")
 	}
@@ -323,7 +323,7 @@ func TestGenericWebhooksBehaveExactlyAsBefore(t *testing.T) {
 
 	// Both headers still work, and the summary is empty so the rendered goal is
 	// whatever renderGoal produced before any of this existed.
-	for _, header := range []string{"X-Hub-Signature-256", "X-AgentFleet-Signature"} {
+	for _, header := range []string{"X-Hub-Signature-256", "X-OpenAgentFleet-Signature"} {
 		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		req.Header.Set(header, sign(secret, body))
 		if err := verifyFor(KindGeneric, secret, body, req); err != nil {

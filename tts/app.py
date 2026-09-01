@@ -1,4 +1,4 @@
-"""Text to speech for AgentFleet, on CPU.
+"""Text to speech for OpenAgentFleet, on CPU.
 
 Runs beside the orchestrator rather than inside it or inside a sandbox. The
 orchestrator is a Go binary in an Alpine image and cannot host a PyTorch model;
@@ -72,7 +72,7 @@ ALL_VOICES = [
     "peter_yearsley", "rafael", "stuart_bell", "vera",
 ]
 
-app = FastAPI(title="AgentFleet TTS")
+app = FastAPI(title="OpenAgentFleet TTS")
 
 _model: TTSModel | None = None
 _model_lock = threading.Lock()

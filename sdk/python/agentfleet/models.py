@@ -1,4 +1,4 @@
-"""Data models for AgentFleet SDK."""
+"""Data models for OpenAgentFleet SDK."""
 
 from __future__ import annotations
 

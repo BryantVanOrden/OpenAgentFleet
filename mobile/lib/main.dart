@@ -76,7 +76,7 @@ class _BootstrapState extends State<Bootstrap> {
             apiProvider.overrideWithValue(deps.api),
             sharedPreferencesProvider.overrideWithValue(deps.prefs),
           ],
-          child: AgentFleetApp(api: deps.api),
+          child: OpenAgentFleetApp(api: deps.api),
         );
       },
     );
@@ -89,15 +89,15 @@ class _Deps {
   final SharedPreferences prefs;
 }
 
-class AgentFleetApp extends ConsumerStatefulWidget {
-  const AgentFleetApp({super.key, required this.api});
+class OpenAgentFleetApp extends ConsumerStatefulWidget {
+  const OpenAgentFleetApp({super.key, required this.api});
   final ApiClient api;
 
   @override
-  ConsumerState<AgentFleetApp> createState() => _AgentFleetAppState();
+  ConsumerState<OpenAgentFleetApp> createState() => _OpenAgentFleetAppState();
 }
 
-class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
+class _OpenAgentFleetAppState extends ConsumerState<OpenAgentFleetApp> {
   final _navigator = GlobalKey<NavigatorState>();
   late final PushService _push = PushService(widget.api);
 
@@ -150,7 +150,7 @@ class _AgentFleetAppState extends ConsumerState<AgentFleetApp> {
     final choice = ref.watch(themeControllerProvider);
 
     return MaterialApp(
-      title: 'AgentFleet',
+      title: 'OpenAgentFleet',
       navigatorKey: _navigator,
       debugShowCheckedModeBanner: false,
       themeMode: choice.mode,

@@ -357,7 +357,7 @@ export const WEBHOOK_KINDS: { value: WebhookKind; label: string; hint: string }[
   {
     value: "generic",
     label: "Generic",
-    hint: "HMAC-SHA256 of the body in X-Hub-Signature-256 or X-AgentFleet-Signature.",
+    hint: "HMAC-SHA256 of the body in X-Hub-Signature-256 or X-OpenAgentFleet-Signature.",
   },
   {
     value: "github",

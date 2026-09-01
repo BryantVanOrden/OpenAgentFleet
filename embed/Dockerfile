@@ -1,4 +1,4 @@
-# AgentFleet embedding sidecar: the floor under semantic memory.
+# OpenAgentFleet embedding sidecar: the floor under semantic memory.
 #
 # Episodic memory search needs vectors. Providers that can embed (Ollama,
 # OpenAI, Gemini) are preferred when configured; this sidecar is what makes a

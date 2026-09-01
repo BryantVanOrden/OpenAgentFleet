@@ -1,11 +1,11 @@
-"""AgentFleet exceptions."""
+"""OpenAgentFleet exceptions."""
 
 class FleetError(Exception):
-    """Base exception for all AgentFleet errors."""
+    """Base exception for all OpenAgentFleet errors."""
 
 
 class FleetApiError(FleetError):
-    """Raised when the AgentFleet HTTP API returns an error."""
+    """Raised when the OpenAgentFleet HTTP API returns an error."""
 
     def __init__(self, message: str, status_code: int = 500) -> None:
         super().__init__(f"[{status_code}] {message}")

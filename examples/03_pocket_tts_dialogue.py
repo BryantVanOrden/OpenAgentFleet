@@ -42,7 +42,7 @@ def main():
     print("🎙️ Synthesizing the six curated voices:\n")
     for vid, blurb in VOICES:
         try:
-            wav = fleet.speak(f"AgentFleet voice profile {vid} operational.", voice=vid)
+            wav = fleet.speak(f"OpenAgentFleet voice profile {vid} operational.", voice=vid)
         except FleetApiError as exc:
             print(f"  ✗ {vid}: {exc}")
             continue

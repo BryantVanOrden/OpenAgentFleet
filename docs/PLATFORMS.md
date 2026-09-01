@@ -1,6 +1,6 @@
 # Running on Linux, macOS and Windows
 
-Every piece of AgentFleet runs on all three, but not in the same way, and the
+Every piece of OpenAgentFleet runs on all three, but not in the same way, and the
 differences are worth knowing before you debug something that is working as
 designed.
 

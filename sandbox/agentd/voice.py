@@ -1,4 +1,4 @@
-"""Ultra-low-latency Voice Synthesis Engine for AgentFleet.
+"""Ultra-low-latency Voice Synthesis Engine for OpenAgentFleet.
 
 Supports Pocket TTS (Kyutai Labs) with 6 curated voices:
 - 4 Male: 'shadow' (default, deep cyberpunk operative), 'atlas' (resonant leader), 'vortex' (dynamic), 'echo' (analytical)

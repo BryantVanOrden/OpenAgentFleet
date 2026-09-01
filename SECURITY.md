@@ -1,6 +1,6 @@
 # Security policy
 
-AgentFleet runs autonomous agent loops against real desktops and holds a Docker
+OpenAgentFleet runs autonomous agent loops against real desktops and holds a Docker
 socket with root-equivalent authority, so a vulnerability here can reach the
 host. Please report one privately.
 

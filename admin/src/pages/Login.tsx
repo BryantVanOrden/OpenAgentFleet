@@ -45,7 +45,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: (u: User) 
           <div className="mx-auto grid size-11 place-items-center rounded-xl bg-live-500 text-lg font-bold text-ink-950">
             AF
           </div>
-          <h1 className="pt-2 text-lg font-semibold">AgentFleet</h1>
+          <h1 className="pt-2 text-lg font-semibold">OpenAgentFleet</h1>
           <p className="text-sm text-ink-400">
             {firstRun ? "Create the first administrator" : "Sign in to the fleet console"}
           </p>

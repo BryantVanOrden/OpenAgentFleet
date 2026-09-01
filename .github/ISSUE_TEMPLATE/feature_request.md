@@ -1,6 +1,6 @@
 ---
 name: 💡 Feature Request
-about: Suggest an idea or new bot archetype for AgentFleet
+about: Suggest an idea or new bot archetype for OpenAgentFleet
 title: "[FEATURE] "
 labels: ["enhancement"]
 assignees: ''

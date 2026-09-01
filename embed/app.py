@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 MODEL_NAME = "minishlab/potion-base-8M"
 
-app = FastAPI(title="AgentFleet Embeddings")
+app = FastAPI(title="OpenAgentFleet Embeddings")
 
 # Loaded at import: the weights are baked into the image, so this is a disk
 # read measured in milliseconds, and failing at boot beats failing on the

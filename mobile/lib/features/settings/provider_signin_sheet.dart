@@ -82,7 +82,7 @@ class _ProviderSignInSheetState extends ConsumerState<ProviderSignInSheet> {
 
   /// Sign in inside the app: load the provider's consent page in a webview and
   /// let the server handle the redirect. This is the path that finishes without
-  /// leaving AgentFleet.
+  /// leaving OpenAgentFleet.
   Future<void> _startInApp() async {
     if (_clientId.text.trim().isEmpty) {
       setState(() => _error = 'An OAuth client ID is required.');

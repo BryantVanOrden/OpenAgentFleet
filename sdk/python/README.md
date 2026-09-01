@@ -1,7 +1,7 @@
-# AgentFleet Python SDK & `fleetctl` CLI
+# OpenAgentFleet Python SDK & `fleetctl` CLI
 
 Official Python SDK and command-line management client for
-[**AgentFleet**](https://github.com/BryantVanOrden/OpenAgentFleet) — the
+[**OpenAgentFleet**](https://github.com/BryantVanOrden/OpenAgentFleet) — the
 self-hosted platform for autonomous computer-use agents, where every agent
 gets its own disposable Linux desktop that streams live into your browser.
 
@@ -21,7 +21,7 @@ git clone https://github.com/BryantVanOrden/OpenAgentFleet.git
 pip install -e OpenAgentFleet/sdk/python
 ```
 
-The SDK is a client — it talks to an AgentFleet orchestrator. To run one,
+The SDK is a client — it talks to an OpenAgentFleet orchestrator. To run one,
 see the [main README](https://github.com/BryantVanOrden/OpenAgentFleet#readme)
 (`make up` is the whole quickstart).
 

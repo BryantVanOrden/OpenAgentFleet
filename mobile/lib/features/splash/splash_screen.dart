@@ -45,7 +45,7 @@ class SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const Text(
-              'AgentFleet',
+              'OpenAgentFleet',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 26,
@@ -103,7 +103,7 @@ class SplashError extends StatelessWidget {
                   color: Color(0xFFF87171), size: 40),
               const SizedBox(height: 16),
               const Text(
-                'AgentFleet could not start',
+                'OpenAgentFleet could not start',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,

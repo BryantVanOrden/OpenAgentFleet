@@ -115,7 +115,7 @@ for entry in "$API_PORT:orchestrator" "$ADMIN_PORT:console"; do
     port="${entry%%:*}"; what="${entry##*:}"
     if port_busy "$port"; then
         if curl -fsS "http://localhost:$port/healthz" >/dev/null 2>&1; then
-            ok "port $port — AgentFleet $what already running"
+            ok "port $port — OpenAgentFleet $what already running"
         else
             warn "port $port is in use by something else — set ${what^^}_PORT in .env"
         fi

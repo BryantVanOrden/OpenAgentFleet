@@ -1,4 +1,4 @@
-# AgentFleet
+# OpenAgentFleet
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
@@ -38,7 +38,7 @@ Do a task yourself once with the recorder on, and it compiles into a skill the a
 
 ## Why this exists
 
-Most agent frameworks give a model some tools. AgentFleet gives each model a
+Most agent frameworks give a model some tools. OpenAgentFleet gives each model a
 **computer** — a disposable Linux desktop it perceives through screenshots and
 an accessibility tree, and drives with a mouse and keyboard, exactly the way
 you would. That one decision is where everything else comes from:
@@ -315,7 +315,7 @@ fleetctl voice speak "All systems operational." --voice shadow
 
 ## Hardware profiles and isolation tiers
 
-AgentFleet ships with four pre-configured hardware tiers:
+OpenAgentFleet ships with four pre-configured hardware tiers:
 
 | Tier | vCPU | Memory | Disk | GPU | Primary Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -568,14 +568,14 @@ make screenshots      # Recapture the documentation screenshots
 
 ## License
 
-AgentFleet is open source under the **[MIT License](LICENSE)**. Use it, fork it,
+OpenAgentFleet is open source under the **[MIT License](LICENSE)**. Use it, fork it,
 ship it — personally or commercially — with attribution.
 
 ---
 
 ## Supporting the project
 
-If AgentFleet is useful to you, you can support development with XRP or Bitcoin.
+If OpenAgentFleet is useful to you, you can support development with XRP or Bitcoin.
 
 <div align="center">
 

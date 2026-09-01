@@ -119,7 +119,7 @@ class PersistentREPL:
         self.mounted_tools: dict[str, dict[str, Any]] = {}
         self.globals: dict[str, Any] = {
             "__name__": "__agentfleet_repl__",
-            "__doc__": "AgentFleet Persistent Python REPL",
+            "__doc__": "OpenAgentFleet Persistent Python REPL",
             "a11y": a11y,
             "capture": capture,
             "inject": inject,
@@ -130,7 +130,7 @@ class PersistentREPL:
         """A clean execution namespace bound to `state`."""
         return {
             "__name__": "__agentfleet_repl__",
-            "__doc__": "AgentFleet Persistent Python REPL",
+            "__doc__": "OpenAgentFleet Persistent Python REPL",
             "a11y": a11y,
             "capture": capture,
             "inject": inject,

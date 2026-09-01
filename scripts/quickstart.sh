@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AgentFleet 1-Click Interactive Quickstart & Bootstrap Script (Linux / macOS)
+# OpenAgentFleet 1-Click Interactive Quickstart & Bootstrap Script (Linux / macOS)
 # ==============================================================================
 set -euo pipefail
 
@@ -26,7 +26,7 @@ echo -e "==============================================================${NC}\n"
 echo -n "🔍 Checking Docker installation and daemon... "
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}FAILED${NC}"
-    echo -e "${RED}Error: Docker is not installed. Please install Docker and Docker Compose before running AgentFleet.${NC}"
+    echo -e "${RED}Error: Docker is not installed. Please install Docker and Docker Compose before running OpenAgentFleet.${NC}"
     exit 1
 fi
 
@@ -54,7 +54,7 @@ if [ ! -f .env ]; then
     PG_PASS=$(gen_secret | cut -c1-24)
 
     cat > .env << EOF
-# AgentFleet Production Environment Configuration
+# OpenAgentFleet Production Environment Configuration
 PORT=8080
 BASE_URL=http://localhost:8080
 MASTER_KEY=${MASTER_KEY}
@@ -71,11 +71,11 @@ else
 fi
 
 # 3. Boot Full Fleet Stack
-echo -e "\n🐳 Starting AgentFleet stack via Docker Compose..."
+echo -e "\n🐳 Starting OpenAgentFleet stack via Docker Compose..."
 docker compose up -d
 
 echo -e "\n${GREEN}==============================================================${NC}"
-echo -e "${GREEN}🎉 AgentFleet is up and running!${NC}"
+echo -e "${GREEN}🎉 OpenAgentFleet is up and running!${NC}"
 echo -e "${GREEN}==============================================================${NC}"
 echo -e "🖥️  Web Admin Console:   ${CYAN}http://localhost:5173${NC}"
 echo -e "⚡ Orchestrator API:     ${CYAN}http://localhost:8080${NC}"

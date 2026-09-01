@@ -587,7 +587,7 @@ class TestVaultAndCommsSurface(unittest.TestCase):
         self.fail("implement once a comms method exists")
 
 
-class TestAgentFleetSDK(unittest.TestCase):
+class TestOpenAgentFleetSDK(unittest.TestCase):
     def setUp(self):
         self.client = FleetClient("http://mock-fleet:8080", token="mock-token")
 

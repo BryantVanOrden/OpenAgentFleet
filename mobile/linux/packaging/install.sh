@@ -28,4 +28,4 @@ command -v update-desktop-database >/dev/null && update-desktop-database "$apps"
 command -v gtk-update-icon-cache >/dev/null && \
   gtk-update-icon-cache -f -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
 
-echo "installed AgentFleet -> $apps/agentfleet.desktop"
+echo "installed OpenAgentFleet -> $apps/agentfleet.desktop"

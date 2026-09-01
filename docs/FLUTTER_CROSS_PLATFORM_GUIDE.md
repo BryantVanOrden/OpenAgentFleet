@@ -1,6 +1,6 @@
 # Flutter Cross-Platform Companion Guide 📱💻
 
-This comprehensive guide covers building and connecting the **AgentFleet Flutter Companion App** across **Linux Desktop**, **Windows Desktop**, **Apple macOS & iOS**, and **Android**.
+This comprehensive guide covers building and connecting the **OpenAgentFleet Flutter Companion App** across **Linux Desktop**, **Windows Desktop**, **Apple macOS & iOS**, and **Android**.
 
 ---
 
@@ -16,7 +16,7 @@ The Flutter companion app is designed for triage, real-time agent monitoring, mu
                 │ HTTP REST               │ WebSocket
                 │ (/api/*)                │ (/api/events)
  ┌──────────────▼─────────────────────────▼───────────────┐
- │               AgentFleet Orchestrator                  │
+ │               OpenAgentFleet Orchestrator                  │
  │               (Default: Port 8080)                     │
  └────────────────────────────────────────────────────────┘
 ```
@@ -172,10 +172,10 @@ Generated APKs:
 
 ## 🔒 6. Remote Connectivity Best Practices (On-The-Go Access)
 
-To connect your phone or laptop companion app to your AgentFleet orchestrator from outside your home/office network:
+To connect your phone or laptop companion app to your OpenAgentFleet orchestrator from outside your home/office network:
 
 ### Option A: Tailscale Private Mesh VPN (Recommended)
-1. Install [Tailscale](https://tailscale.com) on your host server running AgentFleet and on your phone.
+1. Install [Tailscale](https://tailscale.com) on your host server running OpenAgentFleet and on your phone.
 2. Open the Flutter Companion App on your phone.
 3. In **Settings**, set the API Endpoint to your host server's Tailscale IP:
    `http://100.X.Y.Z:8080`

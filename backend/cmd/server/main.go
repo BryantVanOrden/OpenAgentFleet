@@ -1,4 +1,4 @@
-// Command server is the AgentFleet orchestrator: fleet provisioning, the agent
+// Command server is the OpenAgentFleet orchestrator: fleet provisioning, the agent
 // loop, the model gateway and the API the admin panel and companion app talk to.
 package main
 

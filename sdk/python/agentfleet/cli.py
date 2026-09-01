@@ -1,4 +1,4 @@
-"""fleetctl — The Command-Line Interface for AgentFleet.
+"""fleetctl — The Command-Line Interface for OpenAgentFleet.
 
 Provides complete administrative control, telemetry, task execution,
 swarm orchestration, voice synthesis, and system diagnostics.
@@ -627,9 +627,9 @@ def cmd_hub_import(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="fleetctl",
-        description="AgentFleet CLI — Manage hard-sandboxed autonomous OS agents & collaborative swarms",
+        description="OpenAgentFleet CLI — Manage hard-sandboxed autonomous OS agents & collaborative swarms",
     )
-    parser.add_argument("--url", help="AgentFleet orchestrator URL")
+    parser.add_argument("--url", help="OpenAgentFleet orchestrator URL")
     parser.add_argument("--token", help="Authentication Bearer token")
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)

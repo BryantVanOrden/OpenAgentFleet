@@ -1,4 +1,4 @@
-# AgentFleet VM sandbox: the container image, booted as a real virtual machine.
+# OpenAgentFleet VM sandbox: the container image, booted as a real virtual machine.
 #
 # The `qemu` driver runs this image as an ordinary container whose only process
 # is QEMU, booting a guest whose root filesystem is the sandbox container image

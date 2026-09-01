@@ -46,7 +46,7 @@ func DefaultBotTemplates() []BotTemplate {
 			PreinstalledTools: []string{
 				"tmux", "git", "gh", "ripgrep", "jq", "curl", "n8n", "htop", "tree",
 			},
-			SpecializedPrompt: `You are the Autonomous Fleet Commander & Mission Supervisor for AgentFleet.
+			SpecializedPrompt: `You are the Autonomous Fleet Commander & Mission Supervisor for OpenAgentFleet.
 Your primary role is to orchestrate, delegate, and supervise complex multi-faceted operations across the fleet of specialized bot agents.
 
 OPERATING PLAYBOOK:

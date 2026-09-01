@@ -1,4 +1,4 @@
-# AgentFleet sandbox: a disposable Linux desktop an AI can see and drive.
+# OpenAgentFleet sandbox: a disposable Linux desktop an AI can see and drive.
 #
 # Layers, deliberately ordered cheapest-to-change last:
 #   1. X stack + XFCE + VNC + noVNC          (rarely changes)

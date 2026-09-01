@@ -3,7 +3,7 @@
 # No API token exists anywhere in this repository or its secrets — PyPI trusts
 # this specific workflow in this specific repository, configured on the PyPI
 # side under Publishing → "Add a pending publisher" (project: open-agent-fleet,
-# owner: BryantVanOrden, repository: AgentFleet, workflow: publish-pypi.yml,
+# owner: BryantVanOrden, repository: OpenAgentFleet, workflow: publish-pypi.yml,
 # environment: pypi). That beats a long-lived token in every way that matters:
 # nothing to leak, nothing to rotate, and the grant is scoped to exactly this
 # file.

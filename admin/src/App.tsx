@@ -160,7 +160,7 @@ export default function App() {
             AF
           </div>
           <div>
-            <div className="text-sm font-semibold tracking-tight">AgentFleet</div>
+            <div className="text-sm font-semibold tracking-tight">OpenAgentFleet</div>
             <div className="text-[11px] text-ink-400">autonomous OS agents</div>
           </div>
         </div>

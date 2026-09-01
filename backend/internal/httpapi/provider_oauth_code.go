@@ -265,14 +265,14 @@ func (s *Server) handleAuthCodeStatus(w http.ResponseWriter, r *http.Request) {
 // sets a marker the app can detect without reading the URL's query string.
 func oauthResultPage(w http.ResponseWriter, ok bool, detail string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("X-AgentFleet-SignIn", map[bool]string{true: "ok", false: "failed"}[ok])
+	w.Header().Set("X-OpenAgentFleet-SignIn", map[bool]string{true: "ok", false: "failed"}[ok])
 	status := http.StatusOK
 	if !ok {
 		status = http.StatusBadRequest
 	}
 	w.WriteHeader(status)
 
-	title, body, colour := "Signed in", "You can close this and go back to AgentFleet.", "#2e7d32"
+	title, body, colour := "Signed in", "You can close this and go back to OpenAgentFleet.", "#2e7d32"
 	if !ok {
 		title, body, colour = "Sign-in failed", detail, "#c62828"
 	}

@@ -1,4 +1,4 @@
--- AgentFleet initial schema.
+-- OpenAgentFleet initial schema.
 
 CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY,

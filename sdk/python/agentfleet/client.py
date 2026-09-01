@@ -1,4 +1,4 @@
-"""AgentFleet orchestrator client."""
+"""OpenAgentFleet orchestrator client."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from agentfleet.task import Task
 
 
 class FleetClient:
-    """Client for communicating with the AgentFleet orchestrator API."""
+    """Client for communicating with the OpenAgentFleet orchestrator API."""
 
     def __init__(
         self,

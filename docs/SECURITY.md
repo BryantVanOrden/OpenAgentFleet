@@ -457,7 +457,7 @@ What contains it:
   agent to use `work_kind: "file"` instead.
 
 What is *not* contained: the document is arbitrary JavaScript running in a web
-view on your phone. It cannot reach AgentFleet or the network, but it can
+view on your phone. It cannot reach OpenAgentFleet or the network, but it can
 consume CPU and it can draw anything it likes. Treat an app the way you would
 treat a script a colleague sent you — the catalog says which bot published it
 and at which version, which is there so that question has an answer.

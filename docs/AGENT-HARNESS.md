@@ -395,7 +395,7 @@ We have no way to know whether any of this helped. Adopt an external harness
 rather than inventing a benchmark:
 **HUD** ([hud-evals/hud-python](https://github.com/hud-evals/hud-python), MIT) —
 computer use over VNC with containerised environments, structurally closest to
-AgentFleet. **Inspect AI**
+OpenAgentFleet. **Inspect AI**
 ([UKGovernmentBEIS/inspect_ai](https://github.com/UKGovernmentBEIS/inspect_ai),
 MIT) — built-in `computer` tool, Docker sandboxing, and can drive *external*
 agents, which suits a Go orchestrator behind a thin Python shim. **OSWorld**
@@ -420,7 +420,7 @@ certainly Prime Intellect's **Prime Agent**.
 
 **Recommendation: do not pull Prime Agent in.** It is TypeScript, TUI/daemon
 shaped, has no vision or GUI path, and its own README states its worker/kernel
-isolation is *not* a security sandbox. AgentFleet's entire value is a sandboxed
+isolation is *not* a security sandbox. OpenAgentFleet's entire value is a sandboxed
 desktop with vision; Prime Agent solves long-horizon coding in a trusted repo.
 Adopting it means running a second orchestrator in a second language to obtain
 capabilities we would then have to bolt vision onto. Nothing in the Prime stack

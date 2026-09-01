@@ -105,7 +105,7 @@ export default function Models({ role }: { role: string }) {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">AI Connections & Tiered Fallback Chain</h1>
           <p className="text-sm text-ink-400">
-            Define your primary model and automatic fallback sequence. If your primary engine (e.g. Claude) runs out of usage, hits a rate limit, or experiences an outage, AgentFleet automatically fails over to the next tier seamlessly.
+            Define your primary model and automatic fallback sequence. If your primary engine (e.g. Claude) runs out of usage, hits a rate limit, or experiences an outage, OpenAgentFleet automatically fails over to the next tier seamlessly.
           </p>
         </div>
         {!readOnly && (

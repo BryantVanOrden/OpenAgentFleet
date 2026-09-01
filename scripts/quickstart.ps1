@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-AgentFleet 1-Click Interactive Quickstart & Bootstrap Script (Windows PowerShell)
+OpenAgentFleet 1-Click Interactive Quickstart & Bootstrap Script (Windows PowerShell)
 #>
 
 $Cyan = "Cyan"
@@ -54,7 +54,7 @@ if (-not (Test-Path ".env")) {
     $PgPass = (Get-RandomSecret 16).Substring(0, 20)
 
     $envContent = @"
-# AgentFleet Production Environment Configuration
+# OpenAgentFleet Production Environment Configuration
 PORT=8080
 BASE_URL=http://localhost:8080
 MASTER_KEY=$MasterKey
@@ -74,12 +74,12 @@ HOST_GATEWAY=host.docker.internal
 
 # 3. Boot Full Fleet Stack
 Write-Host ""
-Write-Host "🐳 Starting AgentFleet stack via Docker Compose..." -ForegroundColor $Cyan
+Write-Host "🐳 Starting OpenAgentFleet stack via Docker Compose..." -ForegroundColor $Cyan
 docker compose up -d
 
 Write-Host ""
 Write-Host "==============================================================" -ForegroundColor $Green
-Write-Host "🎉 AgentFleet is up and running!" -ForegroundColor $Green
+Write-Host "🎉 OpenAgentFleet is up and running!" -ForegroundColor $Green
 Write-Host "==============================================================" -ForegroundColor $Green
 Write-Host "🖥️  Web Admin Console:   http://localhost:5173" -ForegroundColor $Cyan
 Write-Host "⚡ Orchestrator API:     http://localhost:8080" -ForegroundColor $Cyan

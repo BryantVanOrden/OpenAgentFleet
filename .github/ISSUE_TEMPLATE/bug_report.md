@@ -1,6 +1,6 @@
 ---
 name: 🐛 Bug Report
-about: Create a report to help us improve AgentFleet (Non-security bugs only)
+about: Create a report to help us improve OpenAgentFleet (Non-security bugs only)
 title: "[BUG] "
 labels: ["bug"]
 assignees: ''

@@ -1,4 +1,4 @@
-name: AgentFleet CI & Release Build Pipeline
+name: OpenAgentFleet CI & Release Build Pipeline
 
 on:
   push:
@@ -253,7 +253,7 @@ jobs:
             echo "not a tag build; nothing to release"
             exit 0
           fi
-          TITLE="AgentFleet ${TAG}"
+          TITLE="OpenAgentFleet ${TAG}"
 
           # Prefer hand-written notes for this version when they exist.
           NOTES="docs/RELEASE_NOTES_${TAG}.md"

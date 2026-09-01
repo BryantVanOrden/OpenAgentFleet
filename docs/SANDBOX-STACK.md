@@ -278,7 +278,7 @@ pref("general.config.obscure_value", 0);
 skipped by the parser**:
 
 ```js
-// AgentFleet sandbox preferences. First line is intentionally ignored.
+// OpenAgentFleet sandbox preferences. First line is intentionally ignored.
 
 // Accessibility: force the engine on rather than waiting for an AT client.
 lockPref("accessibility.force_disabled", -1);

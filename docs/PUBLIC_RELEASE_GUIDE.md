@@ -1,6 +1,6 @@
-# 🚀 AgentFleet Official Public Release Guide
+# 🚀 OpenAgentFleet Official Public Release Guide
 
-This document outlines the step-by-step checklist and procedures for taking **AgentFleet** public on GitHub and publishing the official Python SDK and `fleetctl` CLI to PyPI.
+This document outlines the step-by-step checklist and procedures for taking **OpenAgentFleet** public on GitHub and publishing the official Python SDK and `fleetctl` CLI to PyPI.
 
 ---
 
@@ -40,7 +40,7 @@ publisher** with exactly:
 |---|---|
 | PyPI project name | `open-agent-fleet` |
 | Owner | `BryantVanOrden` |
-| Repository name | `AgentFleet` |
+| Repository name | `OpenAgentFleet` |
 | Workflow name | `publish-pypi.yml` |
 | Environment name | `pypi` |
 
@@ -78,7 +78,7 @@ In GitHub Repository Settings $\rightarrow$ **Secrets and variables** $\rightarr
   - **Name**: `RUN_HEAVY_BUILDS`
   - **Value**: `yes`
 
-Or trigger the workflow manually at any time under **Actions** $\rightarrow$ **AgentFleet CI & Release Build Pipeline** $\rightarrow$ **Run workflow** (checking *Force heavy cross-platform builds*).
+Or trigger the workflow manually at any time under **Actions** $\rightarrow$ **OpenAgentFleet CI & Release Build Pipeline** $\rightarrow$ **Run workflow** (checking *Force heavy cross-platform builds*).
 
 ---
 
