@@ -149,6 +149,7 @@ class Task {
     required this.createdAt,
     this.error = '',
     this.result = '',
+    this.parentTaskId = '',
   });
 
   final String id;
@@ -160,6 +161,10 @@ class Task {
   final DateTime createdAt;
   final String error;
   final String result;
+
+  /// Set when this run was started by another run — a sub-agent. Empty for a
+  /// task the operator (or a trigger) started directly.
+  final String parentTaskId;
 
   bool get isLive =>
       state == 'running' || state == 'queued' || state == 'awaiting_human';
@@ -175,6 +180,108 @@ class Task {
             DateTime.now(),
         error: j['error'] as String? ?? '',
         result: j['result'] as String? ?? '',
+        parentTaskId: j['parent_task_id'] as String? ?? '',
+      );
+}
+
+/// What the agent decided to do on one step, as recorded by the loop.
+///
+/// Only the fields the timeline renders; the wire payload carries more
+/// (tool definitions, sub-goal plumbing) that a phone has no use for.
+class AgentAction {
+  const AgentAction({
+    this.action = '',
+    this.thought = '',
+    this.target = '',
+    this.mark = 0,
+    this.coordinates = const [],
+    this.text = '',
+    this.key = '',
+    this.query = '',
+  });
+
+  final String action;
+  final String thought;
+  final String target;
+
+  /// Set-of-Marks index the model clicked, when it picked an element by its
+  /// numbered overlay rather than by coordinates. 0 means none.
+  final int mark;
+  final List<num> coordinates;
+  final String text;
+  final String key;
+  final String query;
+
+  /// What the action was aimed at, in the console's precedence order:
+  /// an element, typed text, a key chord, or raw coordinates.
+  String get detail {
+    if (target.isNotEmpty) return target;
+    if (text.isNotEmpty) return text;
+    if (key.isNotEmpty) return key;
+    if (coordinates.isNotEmpty) return coordinates.join(',');
+    return '';
+  }
+
+  factory AgentAction.fromJson(Map<String, dynamic> j) => AgentAction(
+        action: j['action'] as String? ?? '',
+        thought: j['thought'] as String? ?? '',
+        target: j['target'] as String? ?? '',
+        mark: (j['mark'] as num?)?.toInt() ?? 0,
+        coordinates: ((j['coordinates'] as List?) ?? const [])
+            .whereType<num>()
+            .toList(growable: false),
+        text: j['text'] as String? ?? '',
+        key: j['key'] as String? ?? '',
+        query: j['query'] as String? ?? '',
+      );
+}
+
+/// One step of a run: what the agent saw, thought, did, and what came of it.
+class StepRecord {
+  StepRecord({
+    required this.id,
+    required this.taskId,
+    required this.step,
+    required this.action,
+    required this.outcome,
+    required this.durationMs,
+    required this.promptTokens,
+    required this.outputTokens,
+    this.observationKey = '',
+  });
+
+  final String id;
+  final String taskId;
+  final int step;
+  final AgentAction action;
+
+  /// Artifact key of the screenshot the agent acted on. Empty when the step
+  /// had no frame (a shell step, say).
+  final String observationKey;
+  final String outcome;
+  final int durationMs;
+  final int promptTokens;
+  final int outputTokens;
+
+  static final _failure =
+      RegExp(r'fail|error|refused|timed out', caseSensitive: false);
+
+  /// Whether the outcome reads as a failure — the same heuristic the console
+  /// uses to tint a step red, kept identical so the two clients agree on
+  /// which steps look alarming.
+  bool get failed => _failure.hasMatch(outcome);
+
+  factory StepRecord.fromJson(Map<String, dynamic> j) => StepRecord(
+        id: j['id'] as String? ?? '',
+        taskId: j['task_id'] as String? ?? '',
+        step: (j['step'] as num?)?.toInt() ?? 0,
+        action: AgentAction.fromJson(
+            ((j['action'] as Map?) ?? const {}).cast<String, dynamic>()),
+        observationKey: j['observation_key'] as String? ?? '',
+        outcome: j['outcome'] as String? ?? '',
+        durationMs: (j['duration_ms'] as num?)?.toInt() ?? 0,
+        promptTokens: (j['prompt_tokens'] as num?)?.toInt() ?? 0,
+        outputTokens: (j['output_tokens'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -266,18 +373,124 @@ class ChatMessage {
       );
 }
 
+/// One recorded action inside a skill.
+///
+/// [label] is nullable rather than defaulting to '': absent means the recorder
+/// captured no accessibility information at all for this step, which is what
+/// the coordinate-only warning keys off. Fields the app does not render
+/// ([assertText], [meta]) are still carried, so saving an edited skill does not
+/// silently strip what the recorder captured.
+class SkillStep {
+  SkillStep({
+    this.index = 0,
+    this.kind = '',
+    this.window = '',
+    this.role = '',
+    this.label,
+    this.coordinates = const [],
+    this.text = '',
+    this.key = '',
+    this.param = '',
+    this.assertText = '',
+    this.meta = const {},
+  });
+
+  final int index;
+  final String kind;
+  final String window;
+  final String role;
+  String? label;
+  final List<num> coordinates;
+  String text;
+  String param;
+  final String key;
+  final String assertText;
+  final Map<String, dynamic> meta;
+
+  /// Replay will fall back to raw coordinates — fragile if the layout moves.
+  bool get coordinateOnly =>
+      (label == null || label!.isEmpty) && coordinates.isNotEmpty;
+
+  factory SkillStep.fromJson(Map<String, dynamic> j) => SkillStep(
+        index: (j['index'] as num?)?.toInt() ?? 0,
+        kind: j['kind'] as String? ?? '',
+        window: j['window'] as String? ?? '',
+        role: j['role'] as String? ?? '',
+        label: j['label'] as String?,
+        coordinates: ((j['coordinates'] as List?) ?? const [])
+            .whereType<num>()
+            .toList(),
+        text: j['text'] as String? ?? '',
+        key: j['key'] as String? ?? '',
+        param: j['param'] as String? ?? '',
+        assertText: j['assert'] as String? ?? '',
+        meta: ((j['meta'] as Map?) ?? const {}).cast<String, dynamic>(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'index': index,
+        'kind': kind,
+        if (window.isNotEmpty) 'window': window,
+        if (role.isNotEmpty) 'role': role,
+        if (label != null) 'label': label,
+        if (coordinates.isNotEmpty) 'coordinates': coordinates,
+        if (text.isNotEmpty) 'text': text,
+        if (key.isNotEmpty) 'key': key,
+        if (param.isNotEmpty) 'param': param,
+        if (assertText.isNotEmpty) 'assert': assertText,
+        if (meta.isNotEmpty) 'meta': meta,
+      };
+}
+
 class Skill {
-  Skill({required this.id, required this.name, required this.stepCount});
+  Skill({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.params = const [],
+    this.steps = const [],
+    this.markdown = '',
+    this.version = 1,
+    this.refinementNotes = '',
+  });
 
   final String id;
-  final String name;
-  final int stepCount;
+  String name;
+  String description;
+  List<String> params;
+  List<SkillStep> steps;
+
+  /// The compiled instructions the model actually sees. Regenerated by the
+  /// server on save, so it is read-only here.
+  final String markdown;
+  final int version;
+
+  /// What the last AI refinement pass changed, in its own words.
+  final String refinementNotes;
+
+  int get stepCount => steps.length;
 
   factory Skill.fromJson(Map<String, dynamic> j) => Skill(
         id: j['id'] as String,
         name: j['name'] as String? ?? '',
-        stepCount: (j['steps'] as List?)?.length ?? 0,
+        description: j['description'] as String? ?? '',
+        params:
+            ((j['params'] as List?) ?? const []).map((e) => '$e').toList(),
+        steps: ((j['steps'] as List?) ?? const [])
+            .map((e) => SkillStep.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
+        markdown: j['markdown'] as String? ?? '',
+        version: (j['version'] as num?)?.toInt() ?? 1,
+        refinementNotes: j['refinement_notes'] as String? ?? '',
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'description': description,
+        'params': params,
+        'steps': [for (final s in steps) s.toJson()],
+      };
 }
 
 class FleetEvent {
@@ -359,6 +572,7 @@ class SwarmArtifact {
     required this.category,
     required this.content,
     required this.createdAt,
+    this.approvedBy = const [],
   });
 
   final String id;
@@ -368,6 +582,10 @@ class SwarmArtifact {
   final String content;
   final DateTime createdAt;
 
+  /// Who has signed off — peer bots and, when the operator weighs in, the
+  /// literal reviewer name "operator". Empty means still awaiting review.
+  final List<String> approvedBy;
+
   factory SwarmArtifact.fromJson(Map<String, dynamic> j) => SwarmArtifact(
         id: j['id'] as String? ?? '',
         title: j['title'] as String? ?? '',
@@ -376,6 +594,9 @@ class SwarmArtifact {
         content: j['content'] as String? ?? '',
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
+        approvedBy: ((j['approved_by'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(growable: false),
       );
 }
 
@@ -907,6 +1128,7 @@ class PipelineNode {
     required this.name,
     required this.archetypeId,
     required this.goalTemplate,
+    this.instanceId = '',
   });
 
   final String id;
@@ -914,12 +1136,27 @@ class PipelineNode {
   final String archetypeId;
   final String goalTemplate;
 
+  /// Pins the stage to one bot. Empty falls back to [archetypeId] — a node
+  /// names one or the other, never both.
+  final String instanceId;
+
   factory PipelineNode.fromJson(Map<String, dynamic> j) => PipelineNode(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
-        archetypeId: j['archetype_id'] as String? ?? 'fullstack_dev',
+        // No archetype fallback: a node pinned to an instance has none, and
+        // inventing one here corrupted the node on the next save.
+        archetypeId: j['archetype_id'] as String? ?? '',
         goalTemplate: j['goal_template'] as String? ?? '',
+        instanceId: j['instance_id'] as String? ?? '',
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'goal_template': goalTemplate,
+        'archetype_id': archetypeId,
+        'instance_id': instanceId,
+      };
 }
 
 class WorkflowPipeline {
@@ -929,12 +1166,16 @@ class WorkflowPipeline {
     this.description = '',
     required this.nodes,
     this.edges = const [],
+    this.maxParallel = 0,
   });
 
   final String id;
   final String name;
   final String description;
   final List<PipelineNode> nodes;
+
+  /// Bounds concurrent stages. 0 means the engine default (4).
+  final int maxParallel;
 
   /// Which stage feeds which. The API has always returned these; the app
   /// simply never read them, so a pipeline rendered as a flat list and the
@@ -954,6 +1195,7 @@ class WorkflowPipeline {
                     (e as Map).cast<String, dynamic>()))
                 .toList() ??
             const [],
+        maxParallel: (j['max_parallel'] as num?)?.toInt() ?? 0,
       );
 
   /// Stages grouped into dependency layers: nothing in layer 0 depends on
@@ -999,6 +1241,9 @@ class PipelineRun {
     required this.pipelineId,
     required this.status,
     required this.startedAt,
+    this.nodeStates = const {},
+    this.nodeResults = const {},
+    this.finishedAt,
   });
 
   final String id;
@@ -1006,11 +1251,32 @@ class PipelineRun {
   final String status;
   final DateTime startedAt;
 
+  /// Per-node state: waiting | running | done | failed | skipped. Several
+  /// stages genuinely run at once, so a single "current node" cannot describe
+  /// a run; this can.
+  final Map<String, String> nodeStates;
+  final Map<String, String> nodeResults;
+  final DateTime? finishedAt;
+
+  /// How many nodes sit in each state, for the one-line run summary.
+  Map<String, int> get stateTally {
+    final out = <String, int>{};
+    for (final s in nodeStates.values) {
+      out[s] = (out[s] ?? 0) + 1;
+    }
+    return out;
+  }
+
   factory PipelineRun.fromJson(Map<String, dynamic> j) => PipelineRun(
         id: j['id'] as String? ?? '',
         pipelineId: j['pipeline_id'] as String? ?? '',
         status: j['status'] as String? ?? 'running',
         startedAt: DateTime.tryParse(j['started_at'] as String? ?? '') ?? DateTime.now(),
+        nodeStates: ((j['node_states'] as Map?) ?? const {})
+            .map((k, v) => MapEntry('$k', '$v')),
+        nodeResults: ((j['node_results'] as Map?) ?? const {})
+            .map((k, v) => MapEntry('$k', '$v')),
+        finishedAt: DateTime.tryParse(j['finished_at'] as String? ?? ''),
       );
 }
 
@@ -1174,6 +1440,78 @@ class GpuStats {
       memoryTotal == 0 ? 0 : memoryUsed / memoryTotal;
 }
 
+/// Fleet-lifetime totals from GET /api/telemetry/financials.
+class FinancialSummary {
+  const FinancialSummary({
+    this.totalPromptTokens = 0,
+    this.totalCompletionTokens = 0,
+    this.totalCachedTokens = 0,
+    this.totalCostUsd = 0,
+    this.avgLatencyMs = 0,
+    this.turnsCount = 0,
+  });
+
+  final int totalPromptTokens;
+  final int totalCompletionTokens;
+  final int totalCachedTokens;
+  final double totalCostUsd;
+  final int avgLatencyMs;
+  final int turnsCount;
+
+  factory FinancialSummary.fromJson(Map<String, dynamic> j) =>
+      FinancialSummary(
+        totalPromptTokens: (j['total_prompt_tokens'] as num?)?.toInt() ?? 0,
+        totalCompletionTokens:
+            (j['total_completion_tokens'] as num?)?.toInt() ?? 0,
+        totalCachedTokens: (j['total_cached_tokens'] as num?)?.toInt() ?? 0,
+        totalCostUsd: (j['total_cost_usd'] as num?)?.toDouble() ?? 0,
+        avgLatencyMs: (j['avg_latency_ms'] as num?)?.toInt() ?? 0,
+        turnsCount: (j['turns_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// One model round-trip: which engine answered, what it cost, how long it took.
+class TokenTelemetryRecord {
+  const TokenTelemetryRecord({
+    required this.id,
+    required this.taskId,
+    required this.instanceId,
+    required this.providerId,
+    required this.modelName,
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.costUsd,
+    required this.latencyMs,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String taskId;
+  final String instanceId;
+  final String providerId;
+  final String modelName;
+  final int promptTokens;
+  final int completionTokens;
+  final double costUsd;
+  final int latencyMs;
+  final DateTime createdAt;
+
+  factory TokenTelemetryRecord.fromJson(Map<String, dynamic> j) =>
+      TokenTelemetryRecord(
+        id: j['id'] as String? ?? '',
+        taskId: j['task_id'] as String? ?? '',
+        instanceId: j['instance_id'] as String? ?? '',
+        providerId: j['provider_id'] as String? ?? '',
+        modelName: j['model_name'] as String? ?? '',
+        promptTokens: (j['prompt_tokens'] as num?)?.toInt() ?? 0,
+        completionTokens: (j['completion_tokens'] as num?)?.toInt() ?? 0,
+        costUsd: (j['cost_usd'] as num?)?.toDouble() ?? 0,
+        latencyMs: (j['latency_ms'] as num?)?.toInt() ?? 0,
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}
+
 /// A bot archetype from GET /api/templates: a starting point for provisioning
 /// rather than a blank instance.
 class BotTemplate {
@@ -1287,7 +1625,28 @@ class WebhookTrigger {
     required this.goalTemplate,
     this.targetArchetype = '',
     this.targetInstanceId = '',
+    this.token = '',
+    this.kind = 'generic',
+    this.hasSecret = true,
+    this.active = true,
+    this.lastTriggeredAt,
+    this.createdAt,
   });
+
+  /// Which sender the hook expects; selects the signature scheme. A Stripe
+  /// webhook filed as generic rejects every delivery, so it has to be visible.
+  static const kinds = ['generic', 'github', 'stripe', 'crm'];
+
+  static const kindHints = {
+    'generic':
+        'HMAC-SHA256 of the body in X-Hub-Signature-256 or X-OpenAgentFleet-Signature.',
+    'github':
+        "Paste the secret into the repository's webhook settings. Events are summarised.",
+    'stripe':
+        'Use the whsec_… signing secret from the Stripe dashboard, not your API key.',
+    'crm':
+        'A bare JSON document. Contact and deal fields are extracted where present.',
+  };
 
   final String id;
   final String name;
@@ -1295,12 +1654,30 @@ class WebhookTrigger {
   final String targetArchetype;
   final String targetInstanceId;
 
+  /// The path segment external senders call: POST /api/webhooks/<token>.
+  final String token;
+  final String kind;
+
+  /// The signing secret itself never comes back from the API; this says
+  /// whether one is set. Without one the endpoint refuses every delivery.
+  final bool hasSecret;
+  final bool active;
+  final DateTime? lastTriggeredAt;
+  final DateTime? createdAt;
+
   factory WebhookTrigger.fromJson(Map<String, dynamic> j) => WebhookTrigger(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
         goalTemplate: j['goal_template'] as String? ?? '',
         targetArchetype: j['target_archetype'] as String? ?? '',
         targetInstanceId: j['target_instance_id'] as String? ?? '',
+        token: j['token'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'generic',
+        hasSecret: j['has_secret'] as bool? ?? true,
+        active: j['active'] as bool? ?? true,
+        lastTriggeredAt:
+            DateTime.tryParse(j['last_triggered_at'] as String? ?? ''),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
       );
 }
 
@@ -1502,5 +1879,186 @@ class WorkItem {
         version: (j['version'] as num?)?.toInt() ?? 1,
         updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? '') ??
             DateTime.now(),
+      );
+}
+
+
+/// An external MCP tool server mounted on the fleet.
+class McpServer {
+  const McpServer({
+    required this.id,
+    required this.name,
+    required this.transport,
+    required this.command,
+    this.url = '',
+    this.toolsCount = 0,
+    this.active = true,
+    this.createdAt,
+  });
+
+  final String id;
+  final String name;
+
+  /// 'stdio' (a subprocess command) or 'sse' (a remote URL).
+  final String transport;
+  final String command;
+  final String url;
+  final int toolsCount;
+  final bool active;
+  final DateTime? createdAt;
+
+  /// What to show as the address: the command for stdio, the URL for sse.
+  String get endpoint => transport == 'sse' && url.isNotEmpty ? url : command;
+
+  factory McpServer.fromJson(Map<String, dynamic> j) => McpServer(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        transport: j['transport'] as String? ?? 'stdio',
+        command: j['command'] as String? ?? '',
+        url: j['url'] as String? ?? '',
+        toolsCount: (j['tools_count'] as num?)?.toInt() ?? 0,
+        active: j['active'] as bool? ?? true,
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
+      );
+}
+
+/// A tool an MCP server offers, discovered by asking the server itself.
+class McpTool {
+  const McpTool({
+    required this.serverId,
+    required this.name,
+    this.description = '',
+  });
+
+  final String serverId;
+  final String name;
+  final String description;
+
+  factory McpTool.fromJson(Map<String, dynamic> j) => McpTool(
+        serverId: j['server_id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+      );
+}
+
+/// A sealed platform credential, metadata only. The value is encrypted under
+/// MASTER_KEY on the server and is never readable through the API.
+class SecretRef {
+  const SecretRef({required this.ref, this.note = '', this.updatedAt});
+
+  final String ref;
+  final String note;
+  final DateTime? updatedAt;
+
+  factory SecretRef.fromJson(Map<String, dynamic> j) => SecretRef(
+        ref: j['ref'] as String? ?? '',
+        note: j['note'] as String? ?? '',
+        updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? ''),
+      );
+}
+
+/// The orchestrator's own health figures, from GET /healthz.
+class PlatformHealth {
+  const PlatformHealth({
+    this.status = '?',
+    this.liveInstances = 0,
+    this.maxInstances = 0,
+    this.wsSubscribers = 0,
+    this.eventsDropped = 0,
+  });
+
+  final String status;
+  final int liveInstances;
+  final int maxInstances;
+
+  /// Connected console/app clients on the event bus.
+  final int wsSubscribers;
+
+  /// Events the bus shed because a subscriber could not keep up. Nonzero means
+  /// some client somewhere rendered a stale picture.
+  final int eventsDropped;
+
+  factory PlatformHealth.fromJson(Map<String, dynamic> j) => PlatformHealth(
+        status: '${j['status'] ?? '?'}',
+        liveInstances: (j['live_instances'] as num?)?.toInt() ?? 0,
+        maxInstances: (j['max_instances'] as num?)?.toInt() ?? 0,
+        wsSubscribers: (j['ws_subscribers'] as num?)?.toInt() ?? 0,
+        eventsDropped: (j['events_dropped'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// A portable archetype package.
+///
+/// Kept as the raw map plus typed accessors rather than fully parsed: import
+/// posts the manifest back to the server verbatim, and round-tripping through
+/// a typed model would silently drop any field this app does not know about.
+class ArchetypeManifest {
+  const ArchetypeManifest(this.raw);
+
+  final Map<String, dynamic> raw;
+
+  String get id => '${raw['id'] ?? ''}';
+  String get name => '${raw['name'] ?? ''}';
+  String get category => '${raw['category'] ?? ''}';
+  String get recommendedTier => '${raw['recommended_tier'] ?? ''}';
+  double get vcpu => (raw['vcpu'] as num?)?.toDouble() ?? 0;
+  int get memoryMb => (raw['memory_mb'] as num?)?.toInt() ?? 0;
+  bool get defaultShellAccess => raw['default_shell_access'] == true;
+  List<dynamic> get tools => (raw['preinstalled_tools'] as List?) ?? const [];
+  List<dynamic> get recordedSkills =>
+      (raw['recorded_skills'] as List?) ?? const [];
+  List<dynamic> get mcpServers => (raw['mcp_servers'] as List?) ?? const [];
+
+  /// MCP env keys the installer must supply, named "server.KEY". Named up
+  /// front rather than discovered as an auth failure later.
+  List<String> get neededEnvKeys => [
+        for (final s in mcpServers.whereType<Map>())
+          for (final k in (s['env_keys'] as List?) ?? const [])
+            '${s['name'] ?? ''}.$k',
+      ];
+}
+
+/// What an archetype import actually did, itemised — "imported successfully"
+/// is what the old CLI printed while creating nothing.
+class ImportArchetypeResult {
+  const ImportArchetypeResult({
+    this.archetype = '',
+    this.skillsCreated = const [],
+    this.skillsSkipped = const [],
+    this.mcpRegistered = const [],
+    this.mcpFailed = const [],
+    this.needsSecrets = const [],
+    this.instanceId = '',
+    this.instanceName = '',
+    this.instanceStatus = '',
+  });
+
+  final String archetype;
+  final List<String> skillsCreated;
+  final List<String> skillsSkipped;
+  final List<String> mcpRegistered;
+  final List<String> mcpFailed;
+  final List<String> needsSecrets;
+  final String instanceId;
+  final String instanceName;
+  final String instanceStatus;
+
+  bool get nothingInstalled =>
+      skillsCreated.isEmpty && mcpRegistered.isEmpty && instanceId.isEmpty;
+
+  static List<String> _list(dynamic v) =>
+      ((v as List?) ?? const []).map((e) => '$e').toList();
+
+  factory ImportArchetypeResult.fromJson(Map<String, dynamic> j) =>
+      ImportArchetypeResult(
+        archetype: j['archetype'] as String? ?? '',
+        skillsCreated: _list(j['skills_created']),
+        skillsSkipped: _list(j['skills_skipped']),
+        mcpRegistered: _list(j['mcp_registered']),
+        mcpFailed: _list(j['mcp_failed']),
+        needsSecrets: _list(j['needs_secrets']),
+        instanceId: j['instance_id'] as String? ?? '',
+        instanceName: j['instance_name'] as String? ?? '',
+        instanceStatus: j['instance_status'] as String? ?? '',
       );
 }

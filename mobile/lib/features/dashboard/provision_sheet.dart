@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models.dart';
+import '../../core/network/api_client.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 
@@ -56,10 +57,33 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
   bool _busy = false;
   String? _error;
 
+  /// Machine and isolation, collapsed by default: the tier is the common case
+  /// and these are the exceptions.
+  bool _showMachine = false;
+  final _cpu = TextEditingController();
+  final _memory = TextEditingController();
+  final _disk = TextEditingController();
+  final _allow = TextEditingController();
+  bool _gpu = false;
+
+  /// Off by default, deliberately: this platform's rule is that egress
+  /// restrictions are chosen, never silently applied.
+  bool _blockLocal = false;
+
+  /// Work to hand the bot the moment it is up, so provisioning and assigning
+  /// are one gesture instead of two screens.
+  final _goal = TextEditingController();
+  bool _autoRefine = true;
+
   @override
   void dispose() {
     _name.dispose();
     _persona.dispose();
+    _cpu.dispose();
+    _memory.dispose();
+    _disk.dispose();
+    _allow.dispose();
+    _goal.dispose();
     super.dispose();
   }
 
@@ -136,8 +160,33 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
       _busy = true;
       _error = null;
     });
+
+    // Overrides go up only when actually set, so the tier's own profile
+    // applies untouched otherwise.
+    final override = <String, dynamic>{
+      if (double.tryParse(_cpu.text.trim()) != null)
+        'vcpu': double.parse(_cpu.text.trim()),
+      if (int.tryParse(_memory.text.trim()) != null)
+        'memory_mb': int.parse(_memory.text.trim()),
+      if (int.tryParse(_disk.text.trim()) != null)
+        'disk_gb': int.parse(_disk.text.trim()),
+      if (_gpu) 'gpu': true,
+    };
+    final allowList = _allow.text
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final egress = _blockLocal || allowList.isNotEmpty
+        ? {
+            'block_local': _blockLocal,
+            if (allowList.isNotEmpty) 'allow': allowList,
+          }
+        : null;
+
+    var provisionedId = '';
     try {
-      await ref.read(apiProvider).createInstance(
+      final instance = await ref.read(apiProvider).createInstance(
             name: name,
             tier: tier,
             archetypeId: _archetype,
@@ -149,13 +198,37 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
             customTools: _custom,
             shellAccess: _shell,
             systemPrompt: _persona.text.trim(),
+            override: override.isEmpty ? null : override,
+            egress: egress,
           );
+      provisionedId = instance.id;
+
+      final goal = _goal.text.trim();
+      if (goal.isNotEmpty) {
+        if (!instance.isRunning) {
+          throw ApiException(
+              'machine came up ${instance.state} instead of running', 0);
+        }
+        await ref.read(apiProvider).createTask(
+              instanceId: instance.id,
+              goal: goal,
+              autoRefine: _autoRefine,
+            );
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (err) {
       // Provisioning can fail for reasons worth reading — the host at
       // capacity, an image still pulling — so the message stays on the sheet
-      // rather than vanishing with it.
-      if (mounted) setState(() => _error = '$err');
+      // rather than vanishing with it. A machine that provisioned but then
+      // failed to take its first task is still useful; say so rather than
+      // leaving the operator wondering whether it sits there costing memory.
+      if (mounted) {
+        setState(() => _error = provisionedId.isEmpty
+            ? '$err'
+            : '$err — the machine was provisioned and is in the fleet; '
+                'you can assign it work directly.');
+      }
+      if (provisionedId.isNotEmpty) ref.invalidate(instancesProvider);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -271,6 +344,177 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
     if (n.isEmpty || sp.isEmpty) return;
     setState(() => _custom.add(CustomTool(name: n, method: method, spec: sp)));
   }
+
+  /// Hardware overrides and network isolation, collapsed until asked for.
+  Widget _machineSection() {
+    final summary = [
+      if (_gpu) 'GPU',
+      if (_blockLocal) 'private nets blocked',
+      if (_allow.text.trim().isNotEmpty) 'allow-list',
+    ].join(' · ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _showMachine = !_showMachine),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Icon(
+                  _showMachine ? Icons.arrow_drop_down : Icons.arrow_right,
+                  size: 20,
+                  color: Fleet.ink300,
+                ),
+                Text('Machine and isolation',
+                    style: TextStyle(color: Fleet.ink300, fontSize: 12)),
+                if (!_showMachine && summary.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(summary,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Fleet.ink500,
+                            fontSize: 10.5,
+                            fontFamily: 'monospace')),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (_showMachine)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Fleet.ink850,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Fleet.ink800),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _cpu,
+                        enabled: !_busy,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                            labelText: 'vCPU', isDense: true),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _memory,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'Memory MB', isDense: true),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _disk,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'Disk GB', isDense: true),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Blank keeps the tier\'s own profile. vCPU minimum 1 in '
+                  'steps of 0.5; memory minimum 512 in steps of 512; disk '
+                  'minimum 5. Memory is a hard ceiling with swap disabled.',
+                  style: TextStyle(
+                      color: Fleet.ink500, fontSize: 10.5, height: 1.35),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: _gpu,
+                  onChanged: _busy ? null : (v) => setState(() => _gpu = v),
+                  title: const Text('GPU', style: TextStyle(fontSize: 13)),
+                  subtitle: Text(
+                    'Passes the host GPU through to this sandbox.',
+                    style: TextStyle(color: Fleet.ink400, fontSize: 11),
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: _blockLocal,
+                  onChanged:
+                      _busy ? null : (v) => setState(() => _blockLocal = v),
+                  title: const Text('Block private networks',
+                      style: TextStyle(fontSize: 13)),
+                  subtitle: Text(
+                    'Stops the sandbox reaching your LAN, this database, or '
+                    'cloud metadata.',
+                    style: TextStyle(color: Fleet.ink400, fontSize: 11),
+                  ),
+                ),
+                TextField(
+                  controller: _allow,
+                  enabled: !_busy,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Egress allow-list',
+                    hintText: 'github.com, godotengine.org',
+                    helperText:
+                        'Comma separated. Blank allows all public hosts.',
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// The bot's first goal, assigned the moment the machine is up.
+  Widget _firstTaskSection() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _goal,
+            enabled: !_busy,
+            minLines: 2,
+            maxLines: 4,
+            style: const TextStyle(fontSize: 12, height: 1.4),
+            decoration: const InputDecoration(
+              labelText: 'First task (optional)',
+              hintText: 'What should it start on the moment it is up? '
+                  'Blank provisions an idle machine.',
+              isDense: true,
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            value: _autoRefine,
+            onChanged: _busy ? null : (v) => setState(() => _autoRefine = v),
+            title: const Text('Continual self-refinement',
+                style: TextStyle(fontSize: 13)),
+            subtitle: Text(
+              'Optimises and self-heals the recorded SKILL.md after a '
+              'successful run.',
+              style: TextStyle(color: Fleet.ink400, fontSize: 11),
+            ),
+          ),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +682,10 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
                 style: TextStyle(color: Fleet.ink300, fontSize: 12),
               ),
             ),
+            const SizedBox(height: 4),
+            _machineSection(),
+            const SizedBox(height: 12),
+            _firstTaskSection(),
             if (_error != null) ...[
               const SizedBox(height: 8),
               _Problem(_error!),

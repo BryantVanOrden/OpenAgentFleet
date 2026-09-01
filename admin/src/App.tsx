@@ -156,9 +156,7 @@ export default function App() {
     <div className="flex h-full">
       <aside className="flex w-56 shrink-0 flex-col border-r border-ink-800 bg-ink-900">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="grid size-8 place-items-center rounded-lg bg-live-500 font-bold text-ink-950">
-            AF
-          </div>
+          <img src="/mascot.png" alt="Oaf" className="size-8 object-contain" />
           <div>
             <div className="text-sm font-semibold tracking-tight">OpenAgentFleet</div>
             <div className="text-[11px] text-ink-400">autonomous OS agents</div>
@@ -231,7 +229,7 @@ export default function App() {
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/swarms" element={<MissionControl />} />
           <Route path="/pipelines" element={<Pipelines />} />
-          <Route path="/vault" element={<Vault />} />
+          <Route path="/vault" element={<Vault role={user.role} />} />
           <Route path="/mcp" element={<MCPHub />} />
           <Route path="/financials" element={<Financials />} />
           <Route path="/triggers" element={<Triggers />} />

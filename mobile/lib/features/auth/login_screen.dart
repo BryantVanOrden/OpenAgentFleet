@@ -24,6 +24,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _busy = false;
   String? _error;
 
+  /// First-run path: a fresh deployment has no users at all, so rather than
+  /// making the operator run a CLI command, the same form bootstraps the
+  /// first admin — the API refuses once any user exists.
+  bool _firstRun = false;
+
   /// Prefilled orchestrator endpoint. The `10.0.2.2` fallback is the Android
   /// emulator's alias for the host loopback; it resolves to nothing on a real
   /// handset, so anyone shipping an APK to a physical phone should bake in a
@@ -59,7 +64,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final api = ref.read(apiProvider);
     try {
       await api.setBaseUrl(_server.text);
-      await api.login(_email.text.trim(), _password.text);
+      if (_firstRun) {
+        await api.bootstrap(_email.text.trim(), _password.text);
+      } else {
+        await api.login(_email.text.trim(), _password.text);
+      }
       ref.read(sessionProvider.notifier).state++;
       widget.onSignedIn?.call();
       if (!mounted) return;
@@ -86,23 +95,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Center(
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Fleet.live,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'AF',
-                          style: TextStyle(
-                            color: Fleet.ink950,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                          ),
-                        ),
-                      ),
+                    child: Image.asset(
+                      'assets/branding/mascot.png',
+                      width: 80,
+                      height: 80,
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -113,7 +109,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Watch, talk to, and take over your agents.',
+                    _firstRun
+                        ? 'Create the first administrator.'
+                        : 'Watch, talk to, and take over your agents.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Fleet.ink400),
                   ),
@@ -139,7 +137,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     controller: _password,
                     obscureText: true,
                     onSubmitted: (_) => _submit(),
-                    decoration: const InputDecoration(labelText: 'Password'),
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      helperText:
+                          _firstRun ? 'At least 12 characters.' : null,
+                    ),
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 16),
@@ -163,9 +165,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('Sign in'),
+                        : Text(_firstRun ? 'Create administrator' : 'Sign in'),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                              _firstRun = !_firstRun;
+                              _error = null;
+                            }),
+                    child: Text(
+                      _firstRun
+                          ? '← Back to sign in'
+                          : 'First run? Create the initial administrator',
+                      style: TextStyle(color: Fleet.ink400, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     'On an Android emulator, 10.0.2.2 is the host machine.',
                     textAlign: TextAlign.center,

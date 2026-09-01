@@ -10,7 +10,7 @@ void main() {
     // bare is exactly the situation it ships into.
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
 
-    expect(find.text('AF'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
     expect(find.text('OpenAgentFleet'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });

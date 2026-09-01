@@ -133,6 +133,11 @@ final hostStatsProvider = StreamProvider<HostStats>((ref) async* {
   }
 });
 
+/// The orchestrator's own limits and load, from /healthz. Fetched once per
+/// arrival at the settings tab rather than polled — the ceiling does not move.
+final platformHealthProvider = FutureProvider<PlatformHealth>(
+    (ref) => ref.watch(apiProvider).health());
+
 /// Scheduled wakeups and inbound hooks. Polled rather than streamed: schedules
 /// change rarely, and a websocket topic for them would be more machinery than
 /// the data justifies.

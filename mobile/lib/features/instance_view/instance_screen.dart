@@ -17,9 +17,11 @@ import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../agent_chat/chat_screen.dart';
 import '../admin/bot_access_sheet.dart';
+import 'assign_task_sheet.dart';
 import 'memory_screen.dart';
 import 'model_chain_sheet.dart';
 import 'persona_sheet.dart';
+import 'task_detail_screen.dart';
 import 'voice_picker.dart';
 
 /// One machine, three views: what it looks like, what it is doing, and talking
@@ -41,7 +43,20 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
   late final TabController _tabs = TabController(length: 3, vsync: this);
 
   @override
+  void initState() {
+    super.initState();
+    // The assign-task button belongs to the Activity tab alone, so the FAB
+    // has to follow the tab selection.
+    _tabs.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _tabs.removeListener(_onTabChanged);
     _tabs.dispose();
     super.dispose();
   }
@@ -58,6 +73,22 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
     }
 
     return Scaffold(
+      // Only on the Activity tab: over Desktop it would cover the corner of
+      // the remote screen, and Chat has its own composer down there.
+      floatingActionButton: _desktopFullscreen || _tabs.index != 1
+          ? null
+          : FloatingActionButton.extended(
+              // A stopped bot cannot take work; visibly grey rather than
+              // hidden, so the control is discoverable either way.
+              onPressed: instance.isRunning
+                  ? () => AssignTaskSheet.show(context, instance)
+                  : null,
+              backgroundColor: instance.isRunning ? null : Fleet.ink700,
+              foregroundColor: instance.isRunning ? null : Fleet.ink400,
+              icon: const Icon(Icons.add_task),
+              label: Text(
+                  instance.isRunning ? 'Assign task' : 'Not running'),
+            ),
       // In full screen the app's own chrome goes too: with the title bar and
       // the tab strip still showing, "expand" only reclaimed the button row
       // and the desktop stayed a letterboxed strip.
@@ -1024,67 +1055,140 @@ class _ActivityTab extends ConsumerWidget {
                 style: TextStyle(color: Fleet.ink400)),
           );
         }
+
+        // The runs as a tree: a task started by another task is a sub-agent
+        // and belongs under its parent, indented, rather than interleaved
+        // with the top-level runs as if the operator had started it.
+        final children = <String, List<Task>>{};
+        final ids = {for (final t in list) t.id};
+        for (final t in list) {
+          if (t.parentTaskId.isNotEmpty && ids.contains(t.parentTaskId)) {
+            (children[t.parentTaskId] ??= []).add(t);
+          }
+        }
+        final rows = <({Task task, int depth})>[];
+        void place(Task t, int depth) {
+          rows.add((task: t, depth: depth));
+          for (final c in children[t.id] ?? const <Task>[]) {
+            place(c, depth + 1);
+          }
+        }
+
+        for (final t in list) {
+          // A child whose parent is missing from the list still shows, at the
+          // top level, rather than vanishing.
+          if (t.parentTaskId.isEmpty || !ids.contains(t.parentTaskId)) {
+            place(t, 0);
+          }
+        }
+
         return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: list.length,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+          itemCount: rows.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, i) {
-            final task = list[i];
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(task.goal,
-                              style: const TextStyle(fontSize: 14)),
-                        ),
-                        const SizedBox(width: 10),
-                        StateChip(
-                            state: task.state, live: task.state == 'running'),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'step ${task.step}/${task.maxSteps} · ${humanAgo(task.createdAt)}',
-                      style: TextStyle(color: Fleet.ink400, fontSize: 11),
-                    ),
-                    if (task.error.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(task.error,
-                          style: TextStyle(color: Fleet.bad, fontSize: 12)),
-                    ],
-                    if (task.result.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(task.result,
-                          style: TextStyle(color: Fleet.good, fontSize: 12)),
-                    ],
-                    if (task.isLive) ...[
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          style:
-                              TextButton.styleFrom(foregroundColor: Fleet.bad),
-                          onPressed: () async {
-                            await ref.read(apiProvider).cancelTask(task.id);
-                            ref.invalidate(tasksProvider(instanceId));
-                          },
-                          icon: const Icon(Icons.stop, size: 18),
-                          label: const Text('Stop this run'),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
+          itemBuilder: (context, i) => Padding(
+            padding: EdgeInsets.only(left: 16.0 * rows[i].depth),
+            child: _TaskCard(
+              task: rows[i].task,
+              isChild: rows[i].depth > 0,
+              instanceId: instanceId,
+            ),
+          ),
         );
       },
+    );
+  }
+}
+
+class _TaskCard extends ConsumerWidget {
+  const _TaskCard({
+    required this.task,
+    required this.isChild,
+    required this.instanceId,
+  });
+
+  final Task task;
+  final bool isChild;
+  final String instanceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Card(
+      shape: isChild
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: Fleet.live.withValues(alpha: 0.3)),
+            )
+          : null,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => TaskDetailScreen(task: task)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          if (isChild)
+                            TextSpan(
+                              text: '↳ sub-agent  ',
+                              style: TextStyle(
+                                color: Fleet.live,
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          TextSpan(text: task.goal),
+                        ],
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  StateChip(state: task.state, live: task.state == 'running'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'step ${task.step}/${task.maxSteps} · ${humanAgo(task.createdAt)}',
+                style: TextStyle(color: Fleet.ink400, fontSize: 11),
+              ),
+              if (task.error.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(task.error,
+                    style: TextStyle(color: Fleet.bad, fontSize: 12)),
+              ],
+              if (task.result.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(task.result,
+                    style: TextStyle(color: Fleet.good, fontSize: 12)),
+              ],
+              if (task.isLive) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: Fleet.bad),
+                    onPressed: () async {
+                      await ref.read(apiProvider).cancelTask(task.id);
+                      ref.invalidate(tasksProvider(instanceId));
+                    },
+                    icon: const Icon(Icons.stop, size: 18),
+                    label: const Text('Stop this run'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

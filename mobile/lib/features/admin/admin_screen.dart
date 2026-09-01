@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../financials/financials_screen.dart';
 import '../settings/providers_screen.dart';
 import 'api_keys_screen.dart';
 import 'orgs_screen.dart';
@@ -77,6 +78,13 @@ class AdminScreen extends ConsumerWidget {
             title: 'API keys',
             subtitle: 'Keys issued against this deployment, and revoking them',
             open: () => const ApiKeysScreen(),
+          ),
+          _card(
+            context,
+            icon: Icons.payments_outlined,
+            title: 'Financials',
+            subtitle: 'Token spend, cost per turn and model latency',
+            open: () => const FinancialsScreen(),
           ),
         ],
       ),

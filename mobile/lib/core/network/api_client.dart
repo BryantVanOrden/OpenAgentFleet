@@ -103,6 +103,18 @@ class ApiClient {
     await _setToken(res.data['token'] as String);
   }
 
+  /// First-run path: create the initial administrator and sign in as them.
+  /// The server refuses once any user exists, so this cannot be used to
+  /// escalate on a live deployment.
+  Future<void> bootstrap(String email, String password) async {
+    final res = await _dio.post('/api/auth/bootstrap', data: {
+      'email': email,
+      'password': password,
+    });
+    if (res.statusCode! >= 400) _fail(res);
+    await _setToken(res.data['token'] as String);
+  }
+
   Future<void> logout() => _setToken(null);
 
   // ----------------------------------------------- shared work catalog ---
@@ -260,6 +272,14 @@ class ApiClient {
     /// archetype's own, so an operator who cleared the field still gets a bot
     /// that knows what it is for.
     String systemPrompt = '',
+    /// Per-machine hardware overrides on top of the tier, e.g.
+    /// {'vcpu': 2, 'memory_mb': 4096, 'disk_gb': 20, 'gpu': true}.
+    /// Null sends nothing and the tier's own profile applies.
+    Map<String, dynamic>? override,
+    /// Network policy, e.g. {'block_local': true, 'allow': ['github.com']}.
+    /// Null sends nothing — the server's default applies, which on this
+    /// platform is unrestricted egress rather than blocked.
+    Map<String, dynamic>? egress,
   }) async {
     final data = await _post('/api/instances', {
       'name': name,
@@ -275,6 +295,8 @@ class ApiClient {
             {'name': c.name, 'method': c.method, 'spec': c.spec},
         ],
       if (systemPrompt.isNotEmpty) 'system_prompt': systemPrompt,
+      if (override != null && override.isNotEmpty) 'override': override,
+      if (egress != null) 'egress': egress,
     }) as Map;
     return Instance.fromJson(data.cast<String, dynamic>());
   }
@@ -319,6 +341,22 @@ class ApiClient {
   Future<HostStats> hostStats() async => HostStats.fromJson(
       (await _get('/api/telemetry/host') as Map).cast<String, dynamic>());
 
+  /// Fleet-lifetime token and cost totals.
+  Future<FinancialSummary> financialSummary() async =>
+      FinancialSummary.fromJson(
+          (await _get('/api/telemetry/financials') as Map)
+              .cast<String, dynamic>());
+
+  /// The most recent model round-trips, newest first.
+  Future<List<TokenTelemetryRecord>> telemetryRecords({int limit = 50}) async {
+    final data = await _get('/api/telemetry/records',
+        query: {'limit': limit}) as List? ?? const [];
+    return data
+        .map((e) =>
+            TokenTelemetryRecord.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
   /// Single frame instead of a live stream — the right default on mobile data.
   Future<String?> observe(String id) async {
     final data =
@@ -340,22 +378,50 @@ class ApiClient {
     required String instanceId,
     required String goal,
     String? skillId,
+    /// Runs the AI refinement pass over the recorded SKILL.md after a
+    /// successful execution. Null leaves the server default.
+    bool? autoRefine,
   }) async {
     final data = await _post('/api/tasks', {
       'instance_id': instanceId,
       'goal': goal,
       if (skillId != null && skillId.isNotEmpty) 'skill_id': skillId,
+      if (autoRefine != null) 'auto_refine': autoRefine,
     }) as Map;
     return Task.fromJson(data.cast<String, dynamic>());
   }
 
   Future<void> cancelTask(String id) => _post('/api/tasks/$id/cancel');
 
+  /// Every recorded step of one run, oldest first.
+  Future<List<StepRecord>> taskSteps(String id) async {
+    final data = await _get('/api/tasks/$id/steps') as List? ?? const [];
+    return data
+        .map((e) => StepRecord.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
   Future<List<Skill>> skills() async {
     final data = await _get('/api/skills') as List? ?? const [];
     return data
         .map((e) => Skill.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
+  }
+
+  /// Save an edited skill. The server recompiles the SKILL.md from the steps,
+  /// so the returned copy — not the one sent — has the current markdown.
+  Future<Skill> saveSkill(Skill s) async {
+    final data = await _put('/api/skills/${s.id}', s.toJson()) as Map;
+    return Skill.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteSkill(String id) => _delete('/api/skills/$id');
+
+  /// Run the AI refinement pass: self-heal selectors and prune noise. Slow —
+  /// it is a real model round-trip over every step.
+  Future<Skill> refineSkill(String id) async {
+    final data = await _post('/api/skills/$id/refine', const {}) as Map;
+    return Skill.fromJson(data.cast<String, dynamic>());
   }
 
   Future<void> startRecording(String instanceId, String name) =>
@@ -617,6 +683,36 @@ class ApiClient {
     return PipelineRun.fromJson(data.cast<String, dynamic>());
   }
 
+  /// Create or update a pipeline. Sending an [id] updates in place — the
+  /// server keeps the id and created_at rather than leaving a duplicate.
+  Future<WorkflowPipeline> savePipeline({
+    String id = '',
+    required String name,
+    String description = '',
+    required List<Map<String, dynamic>> nodes,
+    required List<Map<String, dynamic>> edges,
+    int maxParallel = 0,
+  }) async {
+    final data = await _post('/api/pipelines', {
+      if (id.isNotEmpty) 'id': id,
+      'name': name,
+      'description': description,
+      'nodes': nodes,
+      'edges': edges,
+      'max_parallel': maxParallel,
+    }) as Map;
+    return WorkflowPipeline.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deletePipeline(String id) => _delete('/api/pipelines/$id');
+
+  Future<List<PipelineRun>> pipelineRuns(String id) async {
+    final data = await _get('/api/pipelines/$id/runs') as List? ?? const [];
+    return data
+        .map((e) => PipelineRun.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
   // ---------------------------------------------------------------- alerts ---
 
   Future<List<Alert>> alerts({bool openOnly = false}) async {
@@ -751,6 +847,47 @@ class ApiClient {
         .toList();
   }
 
+  Future<CronTrigger> createCronTrigger({
+    required String name,
+    required String scheduleCron,
+    required String targetArchetype,
+    required String goalTemplate,
+  }) async {
+    final data = await _post('/api/triggers/cron', {
+      'name': name,
+      'schedule_cron': scheduleCron,
+      'target_archetype': targetArchetype,
+      'goal_template': goalTemplate,
+    }) as Map;
+    return CronTrigger.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteCronTrigger(String id) => _delete('/api/triggers/cron/$id');
+
+  /// Register an inbound hook. [secret] is required by the server — the
+  /// ingress endpoint takes no other authentication and starts real work, so
+  /// an unsigned webhook is refused. It is never returned again after this.
+  Future<WebhookTrigger> createWebhook({
+    required String name,
+    String token = '',
+    required String kind,
+    required String secret,
+    required String targetArchetype,
+    required String goalTemplate,
+  }) async {
+    final data = await _post('/api/webhooks', {
+      'name': name,
+      if (token.isNotEmpty) 'token': token,
+      'kind': kind,
+      'secret': secret,
+      'target_archetype': targetArchetype,
+      'goal_template': goalTemplate,
+    }) as Map;
+    return WebhookTrigger.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteWebhook(String id) => _delete('/api/webhooks/$id');
+
   // --------------------------------------------------------------- swarms ---
 
   Future<List<SwarmTeam>> swarms() async {
@@ -765,10 +902,41 @@ class ApiClient {
     return SwarmTeam.fromJson(data);
   }
 
-  Future<SwarmTeam> createSwarm(String name, String mission) async {
-    final data = await _post('/api/swarms', {'name': name, 'mission': mission})
-        as Map<String, dynamic>;
+  /// Launch a swarm. [members] pairs a real instance id with the role that
+  /// bot plays on this mission; every member is handed the mission and its
+  /// teammates' names and starts a task straight away.
+  Future<SwarmTeam> createSwarm(
+    String name,
+    String mission, {
+    List<({String instanceId, String role})> members = const [],
+  }) async {
+    final data = await _post('/api/swarms', {
+      'name': name,
+      'mission': mission,
+      if (members.isNotEmpty)
+        'members': [
+          for (final m in members)
+            {'instance_id': m.instanceId, 'role': m.role},
+        ],
+    }) as Map<String, dynamic>;
     return SwarmTeam.fromJson(data);
+  }
+
+  /// Record a verdict on a shared artifact. The reviewer is "operator" when a
+  /// person signs off — a different fact from a peer bot approving, and the
+  /// roster's approval count depends on the distinction.
+  Future<SwarmArtifact> reviewSwarmArtifact(
+    String swarmId,
+    String artifactId, {
+    required bool approved,
+    String reviewer = 'operator',
+    String notes = '',
+  }) async {
+    final data = await _post(
+      '/api/swarms/$swarmId/artifacts/$artifactId/review',
+      {'reviewer': reviewer, 'approved': approved, 'notes': notes},
+    ) as Map<String, dynamic>;
+    return SwarmArtifact.fromJson(data);
   }
 
   Future<SwarmMessage> postSwarmMessage(
@@ -952,6 +1120,86 @@ class ApiClient {
     return data
         .map((e) => AIProvider.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
+  }
+
+  // ------------------------------------------------------------------- mcp ---
+
+  Future<List<McpServer>> mcpServers() async {
+    final data = await _get('/api/mcp/servers') as List? ?? const [];
+    return data
+        .map((e) => McpServer.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Mount an MCP tool server. For stdio [command] is the subprocess to run;
+  /// for sse it is the remote URL — the server stores whichever it was told.
+  Future<McpServer> registerMcpServer({
+    required String name,
+    required String transport,
+    required String command,
+  }) async {
+    final data = await _post('/api/mcp/servers', {
+      'name': name,
+      'transport': transport,
+      'command': command,
+    }) as Map;
+    return McpServer.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteMcpServer(String id) => _delete('/api/mcp/servers/$id');
+
+  Future<List<McpTool>> mcpTools() async {
+    final data = await _get('/api/mcp/tools') as List? ?? const [];
+    return data
+        .map((e) => McpTool.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  // -------------------------------------------------- platform credentials ---
+
+  Future<List<SecretRef>> secretRefs() async {
+    final data = await _get('/api/secrets') as List? ?? const [];
+    return data
+        .map((e) => SecretRef.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Store or replace a sealed credential. The value goes up once and is
+  /// never readable back through the API.
+  Future<void> putSecretRef(String ref, String value, String note) =>
+      _put('/api/secrets/${Uri.encodeComponent(ref)}',
+          {'value': value, 'note': note});
+
+  Future<void> deleteSecretRef(String ref) =>
+      _delete('/api/secrets/${Uri.encodeComponent(ref)}');
+
+  // ---------------------------------------------------------------- health ---
+
+  /// The orchestrator's own limits and load, from /healthz.
+  Future<PlatformHealth> health() async => PlatformHealth.fromJson(
+      (await _get('/healthz') as Map).cast<String, dynamic>());
+
+  // ------------------------------------------------------ archetype packages ---
+
+  /// A portable manifest of one archetype: persona, hardware profile, this
+  /// fleet's recorded skills and MCP registrations. Credentials are never
+  /// included — the MCP environment comes across as key names only.
+  Future<Map<String, dynamic>> exportArchetype(String id) async =>
+      (await _get('/api/archetypes/$id/export') as Map).cast<String, dynamic>();
+
+  Future<ImportArchetypeResult> importArchetype({
+    required Map<String, dynamic> manifest,
+    bool overwrite = false,
+    bool createInstance = false,
+    String instanceName = '',
+  }) async {
+    final data = await _post('/api/archetypes/import', {
+      'manifest': manifest,
+      'overwrite': overwrite,
+      'create_instance': createInstance,
+      if (instanceName.isNotEmpty) 'instance_name': instanceName,
+    }) as Map;
+    return ImportArchetypeResult.fromJson(data.cast<String, dynamic>());
   }
 
   // --------------------------------------------------------------- devices ---

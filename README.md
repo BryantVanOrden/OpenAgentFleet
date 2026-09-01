@@ -1,14 +1,29 @@
-# OpenAgentFleet
+<h1 align="center">OpenAgentFleet</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
-  <br>
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/Flutter-3.24+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
-  <br>
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/Self--Hosted-100%25-8B5CF6?style=for-the-badge" alt="Self-hosted" />
+</p>
+
+<table align="center">
+  <tr>
+    <td align="right" valign="middle">
+      <a href="https://golang.org"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" /></a><br /><br />
+      <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" /></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br /><br />
+      <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.27+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" /></a>
+    </td>
+    <td align="center" valign="middle">
+      <img src="docs/images/oaf_mascot_clean.png" alt="OpenAgentFleet Mascot (Oaf)" width="150" />
+    </td>
+    <td align="left" valign="middle">
+      <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" /></a><br /><br />
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://docker.com"><img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" /></a><br /><br />
+      <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" /></a>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Linux_Desktop-Sandboxed_XFCE-E95420?style=for-the-badge&logo=linux&logoColor=white" alt="Linux Desktop" />
 </p>
 
 <p align="center">
@@ -56,6 +71,10 @@ you would. That one decision is where everything else comes from:
   a payment screen — the agent parks the task and pings your phone with the
   screen frozen at that moment. Answer from the lock screen; it resumes.
 
+<table align="center">
+<tr>
+<td>
+
 ```
   Flutter Companion App               Admin Console (React 19)
              \                                  /
@@ -72,6 +91,10 @@ you would. That one decision is where everything else comes from:
         │ noVNC Proxy │                │  Persistent Py REPL  │
         └─────────────┘                └──────────────────────┘
 ```
+
+</td>
+</tr>
+</table>
 
 ---
 

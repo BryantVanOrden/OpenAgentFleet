@@ -42,9 +42,7 @@ export default function Login({ onAuthenticated }: { onAuthenticated: (u: User) 
 
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-1 text-center">
-          <div className="mx-auto grid size-11 place-items-center rounded-xl bg-live-500 text-lg font-bold text-ink-950">
-            AF
-          </div>
+          <img src="/mascot.png" alt="Oaf" className="mx-auto size-14 object-contain" />
           <h1 className="pt-2 text-lg font-semibold">OpenAgentFleet</h1>
           <p className="text-sm text-ink-400">
             {firstRun ? "Create the first administrator" : "Sign in to the fleet console"}

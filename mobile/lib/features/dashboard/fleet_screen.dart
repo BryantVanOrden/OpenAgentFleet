@@ -5,6 +5,8 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../fleet_comms/comms_screen.dart';
+import '../skills/skills_screen.dart';
+import '../swarms/swarms_screen.dart';
 import 'provision_sheet.dart';
 import '../instance_view/instance_screen.dart';
 
@@ -34,6 +36,25 @@ class FleetScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Fleet'),
         actions: [
+          // Skills are how operators teach the fleet, so they live beside the
+          // agents rather than under Admin — using one changes nothing about
+          // who may do what.
+          IconButton(
+            tooltip: 'Skills',
+            icon: const Icon(Icons.psychology_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SkillsScreen()),
+            ),
+          ),
+          // Missions run by teams of agents live beside the agents too, and
+          // not as another bottom tab — the tab bar is deliberately tight.
+          IconButton(
+            tooltip: 'Swarms',
+            icon: const Icon(Icons.diversity_3_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SwarmsScreen()),
+            ),
+          ),
           // The agents' own conversation belongs beside the agents, not filed
           // under Vault with the credentials.
           IconButton(

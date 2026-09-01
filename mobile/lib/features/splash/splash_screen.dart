@@ -25,23 +25,10 @@ class SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: amber,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'AF',
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
+            Image.asset(
+              'assets/branding/mascot.png',
+              width: 110,
+              height: 110,
             ),
             const SizedBox(height: 24),
             const Text(

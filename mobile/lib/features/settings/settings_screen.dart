@@ -17,6 +17,7 @@ class SettingsScreen extends ConsumerWidget {
     ref.listen(tabRefreshProvider(Tabs.settings), (_, __) {
       ref.invalidate(serverVoicesProvider);
       ref.invalidate(hostStatsProvider);
+      ref.invalidate(platformHealthProvider);
       ref.invalidate(meProvider);
     });
 

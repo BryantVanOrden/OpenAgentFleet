@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(" ");
@@ -214,6 +214,173 @@ export function Modal({
         </header>
         <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
       </div>
+    </div>
+  );
+}
+
+/** Confirmation dialog. Everything destructive in the console asks through
+ *  this rather than window.confirm, so the wording can carry the consequences. */
+export function Confirm({
+  open,
+  title,
+  body,
+  confirmLabel = "Confirm",
+  danger,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  body: ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal open={open} title={title} onClose={onCancel}>
+      <div className="space-y-4">
+        <div className="text-sm whitespace-pre-wrap text-ink-300">{body}</div>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant={danger ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** One-field prompt dialog — the console's replacement for window.prompt. */
+export function PromptModal({
+  open,
+  title,
+  placeholder,
+  initial = "",
+  submitLabel = "OK",
+  onSubmit,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  placeholder?: string;
+  initial?: string;
+  submitLabel?: string;
+  onSubmit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  // Re-seed when the dialog opens for a different subject; a stale draft from
+  // the last rename otherwise appears in the next one.
+  useEffect(() => {
+    if (open) setValue(initial);
+  }, [open, initial]);
+
+  const submit = () => {
+    const v = value.trim();
+    if (v) onSubmit(v);
+  };
+
+  return (
+    <Modal open={open} title={title} onClose={onCancel}>
+      <div className="space-y-4">
+        <input
+          className={inputClass}
+          autoFocus
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        <div className="flex justify-end gap-2">
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" onClick={submit}>
+            {submitLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export interface MenuItem {
+  /** Absent only on divider rows. */
+  label?: ReactNode;
+  hint?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  divider?: boolean;
+}
+
+/** Small dropdown menu anchored to its trigger. Closes on outside click,
+ *  Escape, or choosing an item. */
+export function Menu({
+  button,
+  items,
+  align = "right",
+  className,
+}: {
+  button: ReactNode;
+  items: MenuItem[];
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className={cx("relative inline-block", className)}>
+      <div onClick={() => setOpen((o) => !o)}>{button}</div>
+      {open && (
+        <div
+          className={cx(
+            "absolute z-40 mt-1 w-64 overflow-hidden rounded-xl bg-ink-850 py-1 shadow-2xl shadow-black/40 ring-1 ring-ink-700",
+            align === "right" ? "right-0" : "left-0",
+          )}
+        >
+          {items.map((item, i) =>
+            item.divider ? (
+              <div key={i} className="my-1 border-t border-ink-800" />
+            ) : (
+              <button
+                key={i}
+                disabled={item.disabled}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick?.();
+                }}
+                className={cx(
+                  "block w-full px-3.5 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                  item.danger ? "text-bad-500 hover:bg-bad-500/10" : "text-ink-100 hover:bg-ink-800",
+                )}
+              >
+                <span className="block">{item.label}</span>
+                {item.hint && <span className="mt-0.5 block text-xs text-ink-400">{item.hint}</span>}
+              </button>
+            ),
+          )}
+        </div>
+      )}
     </div>
   );
 }

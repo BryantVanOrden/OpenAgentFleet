@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import 'pipeline_editor_screen.dart';
 import 'schedules_screen.dart';
 
 class PipelinesScreen extends ConsumerStatefulWidget {
@@ -17,6 +18,9 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
   List<WorkflowPipeline> _pipelines = [];
   bool _loading = false;
   String? _error;
+
+  /// Bumped on every reload so the runs panels re-fetch alongside the list.
+  int _reloadTick = 0;
 
   @override
   void initState() {
@@ -32,11 +36,55 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
     try {
       final api = ref.read(apiProvider);
       final list = await api.pipelines();
-      if (mounted) setState(() => _pipelines = list);
+      if (mounted) {
+        setState(() {
+          _pipelines = list;
+          _reloadTick++;
+        });
+      }
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openEditor([WorkflowPipeline? existing]) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+          builder: (_) => PipelineEditorScreen(existing: existing)),
+    );
+    if (saved == true) _load();
+  }
+
+  Future<void> _delete(WorkflowPipeline p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete "${p.name}"?'),
+        content: Text(
+          'The pipeline and its run history are removed. Anything scheduled '
+          'to trigger it will have nothing to run.',
+          style: TextStyle(color: Fleet.ink300),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(apiProvider).deletePipeline(p.id);
+      await _load();
+    } catch (err) {
+      if (mounted) setState(() => _error = '$err');
     }
   }
 
@@ -69,6 +117,11 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
     ref.listen(tabRefreshProvider(Tabs.pipelines), (_, __) => _load());
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openEditor(),
+        icon: const Icon(Icons.add),
+        label: const Text('New pipeline'),
+      ),
       appBar: AppBar(
         title: const Text('Pipelines'),
         actions: [
@@ -106,7 +159,9 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Define multi-bot DAG pipelines in the Admin Console.',
+                          'A pipeline is a set of stages and the dependencies '
+                          'between them. Each stage starts a real task on a '
+                          'real bot.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Fleet.ink400, fontSize: 12),
                         ),
@@ -115,7 +170,7 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                   itemCount: _pipelines.length,
                   itemBuilder: (ctx, i) {
                     final p = _pipelines[i];
@@ -169,13 +224,33 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
                             // line regardless of what its edges actually said.
                             _DagView(pipeline: p),
                             const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: () => _trigger(p),
-                                icon: const Icon(Icons.play_arrow, size: 18),
-                                label: const Text('Run Pipeline'),
-                              ),
+                            _RunsPanel(
+                              pipeline: p,
+                              reloadTick: _reloadTick,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: () => _trigger(p),
+                                    icon: const Icon(Icons.play_arrow, size: 18),
+                                    label: const Text('Run Pipeline'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  tooltip: 'Edit',
+                                  icon: const Icon(Icons.edit_outlined, size: 20),
+                                  onPressed: () => _openEditor(p),
+                                ),
+                                IconButton(
+                                  tooltip: 'Delete',
+                                  icon: Icon(Icons.delete_outline,
+                                      size: 20, color: Fleet.bad),
+                                  onPressed: () => _delete(p),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -183,6 +258,140 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+/// The pipeline's runs: status dot, id, and a per-state node tally — several
+/// stages genuinely run at once, so a single "current node" cannot describe a
+/// run. Fetched per pipeline and re-fetched whenever the screen reloads.
+class _RunsPanel extends ConsumerStatefulWidget {
+  const _RunsPanel({required this.pipeline, required this.reloadTick});
+
+  final WorkflowPipeline pipeline;
+  final int reloadTick;
+
+  @override
+  ConsumerState<_RunsPanel> createState() => _RunsPanelState();
+}
+
+class _RunsPanelState extends ConsumerState<_RunsPanel> {
+  List<PipelineRun> _runs = const [];
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RunsPanel old) {
+    super.didUpdateWidget(old);
+    // Rides the screen's own reload — refresh button, tab arrival, a run just
+    // triggered — rather than adding a second polling loop of its own.
+    if (old.reloadTick != widget.reloadTick ||
+        old.pipeline.id != widget.pipeline.id) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    try {
+      final runs = await ref.read(apiProvider).pipelineRuns(widget.pipeline.id);
+      runs.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+      if (mounted) {
+        setState(() {
+          _runs = runs;
+          _error = null;
+        });
+      }
+    } catch (err) {
+      if (mounted) setState(() => _error = '$err');
+    }
+  }
+
+  Color _statusColor(String status) => switch (status) {
+        'running' => Fleet.live,
+        'completed' => Fleet.good,
+        'cancelled' => Fleet.ink500,
+        _ => Fleet.bad,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Text('Could not load runs: $_error',
+          style: TextStyle(color: Fleet.bad, fontSize: 11));
+    }
+    if (_runs.isEmpty) {
+      return Text('This pipeline has not run yet.',
+          style: TextStyle(
+              color: Fleet.ink400, fontSize: 11, fontStyle: FontStyle.italic));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('RUNS',
+            style: TextStyle(
+                color: Fleet.ink400,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.7)),
+        for (final r in _runs.take(5))
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Fleet.ink950,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Fleet.ink800),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _statusColor(r.status),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(r.id,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: Fleet.ink200)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Fleet.ink800,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(r.status.toUpperCase(),
+                          style:
+                              TextStyle(fontSize: 9, color: Fleet.ink300)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Started ${humanAgo(r.startedAt)}'
+                  '${r.stateTally.entries.map((e) => ' · ${e.value} ${e.key}').join()}',
+                  style: TextStyle(color: Fleet.ink400, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -253,7 +462,12 @@ class _DagView extends StatelessWidget {
                                 style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600)),
-                            Text(n.archetypeId,
+                            Text(
+                                n.instanceId.isNotEmpty
+                                    ? 'pinned bot'
+                                    : (n.archetypeId.isEmpty
+                                        ? 'unassigned'
+                                        : n.archetypeId),
                                 style: TextStyle(
                                     color: Fleet.ink400, fontSize: 10)),
                             if (conditions[n.id] != null)

@@ -1,8 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, type ModelDescriptor, type Provider } from "../lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  COMBO_ROLES,
+  COMBO_ROLE_LABELS,
+  COMBO_ROLE_SHORT,
+  COMBO_SIMPLE_ROLES,
+  OAUTH_PROVIDER_KINDS,
+  api,
+  isSimpleCombo,
+  type ModelCombo,
+  type ModelDescriptor,
+  type Provider,
+} from "../lib/api";
+import { toast } from "../components/Toasts";
 import {
   Button,
   Card,
+  Confirm,
   Empty,
   ErrorNote,
   Field,
@@ -53,14 +66,25 @@ const KIND_HINTS: Record<Provider["kind"], { base: string; model: string; note: 
  */
 export default function Models({ role }: { role: string }) {
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [combos, setCombos] = useState<ModelCombo[]>([]);
   const [editing, setEditing] = useState<Partial<Provider> | null>(null);
   const [probes, setProbes] = useState<Record<string, { ok: boolean; error?: string }>>({});
   const [error, setError] = useState<string | null>(null);
+  /** A provider being signed into with a Google account. */
+  const [signingIn, setSigningIn] = useState<{
+    provider: Provider;
+    clientId?: string;
+    clientSecret?: string;
+  } | null>(null);
+  const [signingOut, setSigningOut] = useState<Provider | null>(null);
+  const [removing, setRemoving] = useState<Provider | null>(null);
   const readOnly = role !== "admin";
 
   const load = useCallback(async () => {
     try {
-      setProviders(await api.providers());
+      const [providerList, comboList] = await Promise.all([api.providers(), api.modelCombos()]);
+      setProviders(providerList);
+      setCombos(comboList);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -239,6 +263,18 @@ export default function Models({ role }: { role: string }) {
                         text only
                       </span>
                     )}
+                    {/* A connection set to sign in but never signed into looks
+                        configured and fails every request; say so on the row. */}
+                    {p.auth_mode === "oauth" && !p.signed_in && (
+                      <span className="rounded bg-warn-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-warn-500">
+                        SIGN IN
+                      </span>
+                    )}
+                    {p.auth_mode === "oauth" && p.signed_in && (
+                      <span className="rounded bg-cool-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-cool-500">
+                        ACCOUNT
+                      </span>
+                    )}
                     {!p.enabled ? (
                       <span className="rounded bg-ink-800 px-1.5 py-0.5 text-[11px] text-ink-400">
                         disabled
@@ -275,18 +311,24 @@ export default function Models({ role }: { role: string }) {
                   </Button>
                   {!readOnly && (
                     <>
+                      {/* Offered by engine rather than by stored auth mode: a
+                          connection saved with a key can still be signed into,
+                          and hiding the option until it was already OAuth meant
+                          it never appeared at all. */}
+                      {OAUTH_PROVIDER_KINDS.has(p.kind) &&
+                        (p.signed_in ? (
+                          <Button size="sm" onClick={() => setSigningOut(p)}>
+                            Sign out
+                          </Button>
+                        ) : (
+                          <Button size="sm" onClick={() => setSigningIn({ provider: p })}>
+                            Sign in
+                          </Button>
+                        ))}
                       <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
                         Edit
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={async () => {
-                          if (!confirm(`Remove ${p.name}?`)) return;
-                          await api.deleteProvider(p.id);
-                          await load();
-                        }}
-                      >
+                      <Button size="sm" variant="danger" onClick={() => setRemoving(p)}>
                         Remove
                       </Button>
                     </>
@@ -297,6 +339,14 @@ export default function Models({ role }: { role: string }) {
           })}
         </div>
       )}
+
+      <CombosSection
+        combos={combos}
+        providers={providers}
+        readOnly={readOnly}
+        onChanged={load}
+        onError={setError}
+      />
 
       <Card title="How the chain behaves">
         <ul className="space-y-1.5 text-xs text-ink-400">
@@ -323,8 +373,697 @@ export default function Models({ role }: { role: string }) {
           setEditing(null);
           await load();
         }}
+        onSignIn={async (saved, clientId, clientSecret) => {
+          // The edit modal saves first, then hands the saved connection here —
+          // a sign-in needs somewhere to store its result, so a brand-new
+          // connection has to exist before the flow starts.
+          setEditing(null);
+          await load();
+          setSigningIn({ provider: saved, clientId, clientSecret });
+        }}
         onError={setError}
       />
+
+      <Confirm
+        open={removing !== null}
+        title={`Remove ${removing?.name ?? ""}?`}
+        body={
+          "Bots pointed at this connection fall back to the next one that works, " +
+          "so nothing stops thinking — but any bot that named it specifically " +
+          "loses that preference."
+        }
+        confirmLabel="Remove"
+        danger
+        onCancel={() => setRemoving(null)}
+        onConfirm={async () => {
+          const p = removing!;
+          setRemoving(null);
+          try {
+            await api.deleteProvider(p.id);
+            await load();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
+
+      <Confirm
+        open={signingOut !== null}
+        title={`Sign out of ${signingOut?.name ?? ""}?`}
+        body={
+          "The stored sign-in is deleted from the server vault and the connection " +
+          "goes back to using an API key. Bots pointed at it fall through to the " +
+          "next connection until you sign in again."
+        }
+        confirmLabel="Sign out"
+        danger
+        onCancel={() => setSigningOut(null)}
+        onConfirm={async () => {
+          const p = signingOut!;
+          setSigningOut(null);
+          try {
+            await api.providerSignOut(p.id);
+            toast({ tone: "good", title: `Signed out of ${p.name}` });
+            await load();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
+
+      {signingIn && (
+        <SignInModal
+          provider={signingIn.provider}
+          initialClientId={signingIn.clientId}
+          initialClientSecret={signingIn.clientSecret}
+          onClose={() => setSigningIn(null)}
+          onDone={async () => {
+            toast({ tone: "good", title: `Signed in to ${signingIn.provider.name}` });
+            setSigningIn(null);
+            await load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- combinations ---
+
+/**
+ * Combinations: which model does what. A combination assigns providers to
+ * roles — the model that reads the screen need not be the one that reasons
+ * about it — and is selectable anywhere a single provider is, including inside
+ * a bot's fallback chain.
+ */
+function CombosSection({
+  combos,
+  providers,
+  readOnly,
+  onChanged,
+  onError,
+}: {
+  combos: ModelCombo[];
+  providers: Provider[];
+  readOnly: boolean;
+  onChanged: () => Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const [editing, setEditing] = useState<ModelCombo | null | "new">(null);
+  const [deleting, setDeleting] = useState<ModelCombo | null>(null);
+
+  const modelOf = (providerId: string) =>
+    providers.find((p) => p.id === providerId)?.model ?? "—";
+
+  return (
+    <Card
+      title="Model combinations"
+      action={
+        !readOnly && (
+          <Button size="sm" onClick={() => setEditing("new")}>
+            + New combination
+          </Button>
+        )
+      }
+    >
+      {combos.length === 0 ? (
+        <p className="text-xs text-ink-400">
+          Pair a model that sees with one that reasons, then use the pair in a bot's model list.
+        </p>
+      ) : (
+        <ul className="divide-y divide-ink-800">
+          {combos.map((c) => {
+            const summary = Object.entries(c.roles)
+              .map(([role, pid]) => `${COMBO_ROLE_SHORT[role] ?? role}: ${modelOf(pid)}`)
+              .join(" · ");
+            return (
+              <li key={c.id} className="flex items-center gap-3 py-2">
+                <button
+                  className="min-w-0 flex-1 rounded-lg py-1 text-left hover:bg-ink-850"
+                  onClick={() => !readOnly && setEditing(c)}
+                  title={readOnly ? undefined : "Edit combination"}
+                >
+                  <span className="block truncate text-sm text-ink-100">
+                    {c.name}
+                    <span className="text-ink-400"> — {summary}</span>
+                  </span>
+                  {c.description && (
+                    <span className="block truncate text-xs text-ink-400">{c.description}</span>
+                  )}
+                </button>
+                {!readOnly && (
+                  <Button size="sm" variant="danger" onClick={() => setDeleting(c)}>
+                    Delete
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {editing !== null && (
+        <ComboModal
+          existing={editing === "new" ? null : editing}
+          providers={providers}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await onChanged();
+          }}
+          onError={onError}
+        />
+      )}
+
+      <Confirm
+        open={deleting !== null}
+        title={`Delete "${deleting?.name ?? ""}"?`}
+        body="Any bot chain naming this combination loses that entry and falls through to the next."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setDeleting(null)}
+        onConfirm={async () => {
+          const c = deleting!;
+          setDeleting(null);
+          try {
+            await api.deleteModelCombo(c.id);
+            await onChanged();
+          } catch (err) {
+            onError(err instanceof Error ? err.message : String(err));
+          }
+        }}
+      />
+    </Card>
+  );
+}
+
+/**
+ * Build a combination: which model does what.
+ *
+ * Simple is a brain and a pair of hands — the split that matters most, since
+ * reading a screen and reasoning about it reward completely different models.
+ * Advanced exposes every role for when summarising a long thread should not
+ * cost what planning does.
+ */
+function ComboModal({
+  existing,
+  providers,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  existing: ModelCombo | null;
+  providers: Provider[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const [name, setName] = useState(existing?.name ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [roles, setRoles] = useState<Record<string, string>>({ ...existing?.roles });
+  const [advanced, setAdvanced] = useState(existing ? !isSimpleCombo(existing) : false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const visibleRoles: readonly string[] = advanced ? COMBO_ROLES : COMBO_SIMPLE_ROLES;
+
+  /** The hands must be able to see. A text-only model here produces an agent
+   *  that is skipped on every turn carrying a screenshot, which looks exactly
+   *  like an agent doing nothing. */
+  const choicesFor = (role: string) =>
+    role === "vision" ? providers.filter((p) => p.vision) : providers;
+
+  const save = async () => {
+    const cleaned = Object.fromEntries(
+      Object.entries(roles).filter(([k, v]) => v && visibleRoles.includes(k)),
+    );
+    if (!name.trim()) {
+      setError("Give the combination a name.");
+      return;
+    }
+    if (Object.keys(cleaned).length === 0) {
+      setError("Assign at least one role.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.saveModelCombo({
+        id: existing?.id,
+        name: name.trim(),
+        description: description.trim(),
+        roles: cleaned,
+      });
+      await onSaved();
+    } catch (err) {
+      setBusy(false);
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      onError(message);
+    }
+  };
+
+  return (
+    <Modal open title={existing ? "Edit combination" : "New combination"} onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-xs text-ink-400">
+          Send each kind of thinking to the model suited to it.
+        </p>
+
+        <Field label="Name">
+          <input
+            className={inputClass}
+            placeholder="e.g. Fast eyes, deep brain"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
+
+        <Field label="What it is for (optional)">
+          <input
+            className={inputClass}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </Field>
+
+        <div>
+          <div className="flex gap-1 rounded-lg bg-ink-900 p-1 ring-1 ring-ink-700">
+            {[false, true].map((adv) => (
+              <button
+                key={String(adv)}
+                type="button"
+                onClick={() => setAdvanced(adv)}
+                className={cx(
+                  "flex-1 rounded-md px-3 py-1.5 text-sm transition-colors",
+                  advanced === adv ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100",
+                )}
+              >
+                {adv ? "Advanced" : "Simple"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-ink-400">
+            {advanced
+              ? "Every role separately. Anything you leave unset falls back within this combination before the chain moves on."
+              : "A brain and a pair of hands. The other roles follow them."}
+          </p>
+        </div>
+
+        {providers.length === 0 ? (
+          <p className="text-xs text-warn-500">No AI connections yet — add one first.</p>
+        ) : (
+          visibleRoles.map((role) => {
+            const choices = choicesFor(role);
+            const selected = roles[role] ?? "";
+            return (
+              <div key={role}>
+                <div className="mb-1.5 text-xs font-semibold text-ink-300">
+                  {COMBO_ROLE_LABELS[role] ?? role}
+                </div>
+                {choices.length === 0 ? (
+                  <p className="text-xs text-warn-500">
+                    {role === "vision"
+                      ? "No connection can see the screen — add one with vision."
+                      : "No connections available."}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRoles((r) => {
+                          const next = { ...r };
+                          delete next[role];
+                          return next;
+                        })
+                      }
+                      className={cx(
+                        "rounded-full px-2.5 py-1 text-xs ring-1 ring-inset transition-colors",
+                        !selected
+                          ? "bg-live-500/15 text-live-500 ring-live-500/40"
+                          : "bg-ink-900 text-ink-300 ring-ink-600 hover:text-ink-100",
+                      )}
+                    >
+                      Unset
+                    </button>
+                    {choices.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setRoles((r) => ({ ...r, [role]: p.id }))}
+                        className={cx(
+                          "rounded-full px-2.5 py-1 text-xs ring-1 ring-inset transition-colors",
+                          selected === p.id
+                            ? "bg-live-500/15 text-live-500 ring-live-500/40"
+                            : "bg-ink-900 text-ink-300 ring-ink-600 hover:text-ink-100",
+                        )}
+                      >
+                        {p.name} · {p.model}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+
+        <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={busy} onClick={save}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ sign-in ---
+
+/**
+ * Sign in to a provider with a Google account.
+ *
+ * Uses your own OAuth client, registered in Google Cloud Console — a
+ * self-hosted app has no identity registered with Google. The browser flow
+ * opens the consent page in a new tab and polls the server for the outcome;
+ * the code-on-another-device flow is kept as a fallback. The refresh token
+ * never reaches this console — the server only ever reports whether the
+ * sign-in succeeded.
+ */
+function SignInModal({
+  provider,
+  initialClientId,
+  initialClientSecret,
+  onClose,
+  onDone,
+}: {
+  provider: Provider;
+  initialClientId?: string;
+  initialClientSecret?: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [clientId, setClientId] = useState(initialClientId || provider.oauth_client_id || "");
+  const [clientSecret, setClientSecret] = useState(initialClientSecret ?? "");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [copied, setCopied] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  /** 'setup' collects the client; 'web' waits on the consent tab; 'code' shows
+   *  the device code. */
+  const [phase, setPhase] = useState<"setup" | "web" | "code">("setup");
+  const [userCode, setUserCode] = useState("");
+  const [verifyUrl, setVerifyUrl] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+  };
+
+  useEffect(() => stopPolling, []);
+
+  useEffect(() => {
+    // Where Google must send the browser back, as the server itself reports
+    // it. It has to be registered on the OAuth client exactly, so it is shown
+    // to copy rather than described. Falls back to the console's own origin,
+    // which is right whenever the server is not behind a different public URL.
+    api
+      .oauthRedirectUri()
+      .then(setRedirectUri)
+      .catch(() => setRedirectUri(`${window.location.origin}/api/providers/oauth/callback`));
+  }, []);
+
+  const copy = (text: string, which: string) => {
+    void navigator.clipboard.writeText(text);
+    setCopied(which);
+    setTimeout(() => setCopied((c) => (c === which ? "" : c)), 2000);
+  };
+
+  /** Browser sign-in: open the consent page in a new tab and poll the server
+   *  for the outcome. */
+  const startWeb = async () => {
+    if (!clientId.trim()) {
+      setError("An OAuth client ID is required.");
+      return;
+    }
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await api.startAuthCodeSignIn(provider.id, {
+        client_id: clientId.trim(),
+        client_secret: clientSecret.trim(),
+      });
+      window.open(res.authorize_url, "_blank", "noopener");
+      setPhase("web");
+      setStarting(false);
+
+      const startedAt = Date.now();
+      stopPolling();
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await api.authCodeSignInStatus(res.state);
+          if (status.status === "signed_in") {
+            stopPolling();
+            onDone();
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // The pending entry can be briefly invisible around the exchange;
+          // that is not a verdict, so keep polling through it.
+          if (message.includes("no sign-in is in progress") && Date.now() - startedAt < 16 * 60_000)
+            return;
+          stopPolling();
+          setPhase("setup");
+          setError(message);
+        }
+        if (Date.now() - startedAt > 16 * 60_000) {
+          stopPolling();
+          setPhase("setup");
+          setError("The sign-in took too long. Start it again.");
+        }
+      }, 2000);
+    } catch (err) {
+      setStarting(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  /** Device-code fallback, for approving on another machine. */
+  const startCode = async () => {
+    if (!clientId.trim()) {
+      setError("An OAuth client ID is required.");
+      return;
+    }
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await api.startDeviceSignIn(provider.id, {
+        client_id: clientId.trim(),
+        client_secret: clientSecret.trim(),
+      });
+      setUserCode(res.user_code);
+      setVerifyUrl(res.verification_url);
+      setPhase("code");
+      setStarting(false);
+
+      const interval = Math.min(30, Math.max(3, res.interval || 5)) * 1000;
+      stopPolling();
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await api.deviceSignInStatus(provider.id);
+          if (status.status === "signed_in") {
+            stopPolling();
+            onDone();
+          }
+        } catch (err) {
+          // A declined or expired sign-in is terminal; stop polling and say so
+          // rather than retrying every few seconds forever.
+          stopPolling();
+          setPhase("setup");
+          setUserCode("");
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      }, interval);
+    } catch (err) {
+      setStarting(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={`Sign in to ${provider.name}`}
+      onClose={() => {
+        stopPolling();
+        onClose();
+      }}
+    >
+      <div className="space-y-4">
+        {phase === "code" ? (
+          <>
+            <p className="text-sm text-ink-300">Open the page below and enter this code:</p>
+            <div className="text-center font-mono text-3xl font-bold tracking-[0.3em] select-text">
+              {userCode}
+            </div>
+            <div className="text-center">
+              <Button size="sm" onClick={() => copy(userCode, "code")}>
+                {copied === "code" ? "Copied" : "Copy code"}
+              </Button>
+            </div>
+            <div className="text-center">
+              <a
+                href={verifyUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-sm text-live-500 hover:underline"
+              >
+                Open Google sign-in ↗
+              </a>
+              <p className="mt-1 font-mono text-xs break-all text-ink-400 select-text">{verifyUrl}</p>
+            </div>
+            <p className="text-xs text-ink-400">Waiting for you to approve…</p>
+          </>
+        ) : phase === "web" ? (
+          <>
+            <p className="text-sm text-ink-300">
+              A Google consent page opened in a new tab. Approve it there — this dialog closes
+              itself the moment the server receives the sign-in.
+            </p>
+            <p className="text-xs text-ink-400">Waiting for you to approve…</p>
+            <div className="text-right">
+              <Button
+                size="sm"
+                onClick={() => {
+                  stopPolling();
+                  setPhase("setup");
+                }}
+              >
+                Cancel and start over
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-xs leading-relaxed text-ink-400">
+              Uses your own OAuth client, created in Google Cloud Console. Your own client is the
+              supported way to do this — borrowing another product's credentials to inherit its
+              subscription breaks whenever they rotate. It does NOT use a Gemini or Antigravity
+              subscription — those bind to their own apps.
+            </p>
+
+            <ol className="space-y-2 text-xs text-ink-300">
+              <li>
+                1. Create a Web application OAuth client —{" "}
+                <a
+                  href="https://console.cloud.google.com/apis/credentials"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-live-500 hover:underline"
+                >
+                  Open Google Cloud credentials ↗
+                </a>
+              </li>
+              <li>
+                2. Add this as an authorised redirect URI:
+                <button
+                  type="button"
+                  onClick={() => copy(redirectUri, "redirect")}
+                  className="mt-1 flex w-full items-center gap-2 rounded-lg bg-ink-950 px-2.5 py-2 text-left ring-1 ring-ink-700 hover:ring-ink-500"
+                  title="Copy to clipboard"
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-200">
+                    {redirectUri || "…"}
+                  </span>
+                  <span className={cx("text-xs", copied === "redirect" ? "text-good-500" : "text-ink-400")}>
+                    {copied === "redirect" ? "✓ copied" : "copy"}
+                  </span>
+                </button>
+              </li>
+              <li>3. Paste the client ID and secret below</li>
+            </ol>
+
+            <Field label="OAuth client ID">
+              <input
+                className={inputClass}
+                placeholder="….apps.googleusercontent.com"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+              />
+            </Field>
+            <Field label="Client secret" hint="Sealed into the server vault with the sign-in.">
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="off"
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+              />
+            </Field>
+
+            <div className="space-y-2">
+              <Button variant="primary" className="w-full" disabled={starting} onClick={startWeb}>
+                {starting ? "Starting…" : "Sign in with Google"}
+              </Button>
+              <button
+                type="button"
+                disabled={starting}
+                onClick={startCode}
+                className="block w-full text-center text-xs text-ink-400 hover:text-ink-100 disabled:opacity-40"
+              >
+                Use a code on another device instead
+              </button>
+            </div>
+          </>
+        )}
+
+        <ErrorNote error={error} onDismiss={() => setError(null)} />
+      </div>
+    </Modal>
+  );
+}
+
+/** The exact redirect URI to register on the OAuth client, copy-to-clipboard.
+ *  Stated by the server rather than derived here — a mismatch is the single
+ *  most common way an OAuth setup fails. */
+function RedirectUriHelper() {
+  const [uri, setUri] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api
+      .oauthRedirectUri()
+      .then(setUri)
+      .catch(() => setUri(`${window.location.origin}/api/providers/oauth/callback`));
+  }, []);
+
+  return (
+    <div>
+      <div className="mb-1 text-xs text-ink-400">
+        Add this as an authorised redirect URI on the OAuth client:
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard.writeText(uri);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        className="flex w-full items-center gap-2 rounded-lg bg-ink-900 px-2.5 py-2 text-left ring-1 ring-ink-700 hover:ring-ink-500"
+        title="Copy to clipboard"
+      >
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-200">
+          {uri || "…"}
+        </span>
+        <span className={cx("text-xs", copied ? "text-good-500" : "text-ink-400")}>
+          {copied ? "✓ copied" : "copy"}
+        </span>
+      </button>
     </div>
   );
 }
@@ -333,11 +1072,13 @@ function EngineModal({
   provider,
   onClose,
   onSaved,
+  onSignIn,
   onError,
 }: {
   provider: Partial<Provider> | null;
   onClose: () => void;
   onSaved: () => void;
+  onSignIn: (saved: Provider, clientId: string, clientSecret: string) => void;
   onError: (m: string) => void;
 }) {
   const [draft, setDraft] = useState<Partial<Provider> & { api_key?: string }>({});
@@ -348,9 +1089,17 @@ function EngineModal({
   const [reason, setReason] = useState<string | undefined>();
   const [discovering, setDiscovering] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The OAuth client, collected here so "Save and sign in" can hand it to the
+  // sign-in dialog without asking twice.
+  const [oauthClientId, setOauthClientId] = useState("");
+  const [oauthClientSecret, setOauthClientSecret] = useState("");
 
   useEffect(() => {
-    if (provider) setDraft({ ...provider });
+    if (provider) {
+      setDraft({ ...provider });
+      setOauthClientId(provider.oauth_client_id ?? "");
+      setOauthClientSecret("");
+    }
   }, [provider]);
 
   useEffect(() => {
@@ -387,6 +1136,35 @@ function EngineModal({
 
   const set = (patch: Partial<Provider> & { api_key?: string }) =>
     setDraft((d) => ({ ...d, ...patch }));
+
+  const canSignIn = OAUTH_PROVIDER_KINDS.has(draft.kind ?? "");
+  const authMode = canSignIn ? (draft.auth_mode ?? "api_key") : "api_key";
+
+  /**
+   * Save the connection, then sign in to it. A sign-in needs somewhere to
+   * store its result, so a brand-new connection has to exist first.
+   *
+   * Deliberately no model check: you cannot list an engine's models until you
+   * are authenticated to it, so requiring one before signing in is a deadlock.
+   * A placeholder gets the connection saved; the real list appears the moment
+   * the sign-in lands.
+   */
+  const saveAndSignIn = async () => {
+    setBusy(true);
+    try {
+      const saved = await api.saveProvider({
+        ...draft,
+        auth_mode: "oauth",
+        model: draft.model?.trim() || "gemini-2.0-flash",
+        name: draft.name?.trim() || `${draft.kind} · ${draft.model?.trim() || "gemini-2.0-flash"}`,
+      });
+      onSignIn(saved, oauthClientId.trim(), oauthClientSecret.trim());
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Modal open title={provider.id ? "Edit engine" : "Add engine"} onClose={onClose} wide>
@@ -442,6 +1220,106 @@ function EngineModal({
             placeholder={hint.base}
           />
         </Field>
+
+        {canSignIn && (
+          <div className="space-y-2">
+            <div className="text-xs font-medium tracking-wide text-ink-300 uppercase">
+              How to authenticate
+            </div>
+            <div className="flex gap-1 rounded-lg bg-ink-900 p-1 ring-1 ring-ink-700">
+              {(
+                [
+                  ["api_key", "API key"],
+                  ["oauth", "Sign in with Google"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => set({ auth_mode: mode })}
+                  className={cx(
+                    "flex-1 rounded-md px-3 py-1.5 text-sm transition-colors",
+                    authMode === mode
+                      ? "bg-ink-700 text-ink-100"
+                      : "text-ink-400 hover:text-ink-100",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Which to pick is not obvious, and picking the harder one by
+                mistake sends you through a console detour you did not need. */}
+            <p className="text-xs leading-relaxed text-ink-400">
+              {authMode === "oauth"
+                ? "Signing in needs an OAuth client you register yourself, because a " +
+                  "self-hosted app has no identity registered with Google. Worth it only " +
+                  "for Vertex or an organisation account. It does NOT use a Gemini or " +
+                  "Antigravity subscription — those bind to their own apps."
+                : "Simplest: a free key from Google AI Studio. Two clicks, no console, no " +
+                  "OAuth client to register."}
+            </p>
+            {authMode === "api_key" && (
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-block text-xs text-live-500 hover:underline"
+              >
+                Open AI Studio — get a free key ↗
+              </a>
+            )}
+            {authMode === "oauth" && (
+              <div className="space-y-3 rounded-lg bg-ink-950 p-3 ring-1 ring-ink-800">
+                {draft.signed_in ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-ink-300">Signed in with a Google account.</p>
+                    <Button type="button" size="sm" disabled={busy} onClick={saveAndSignIn}>
+                      Sign in again
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <RedirectUriHelper />
+                    <Field label="OAuth client ID">
+                      <input
+                        className={inputClass}
+                        placeholder="….apps.googleusercontent.com"
+                        value={oauthClientId}
+                        onChange={(e) => setOauthClientId(e.target.value)}
+                      />
+                    </Field>
+                    <Field
+                      label="Client secret"
+                      hint="Sealed into the server vault with the sign-in."
+                    >
+                      <input
+                        className={inputClass}
+                        type="password"
+                        autoComplete="off"
+                        value={oauthClientSecret}
+                        onChange={(e) => setOauthClientSecret(e.target.value)}
+                      />
+                    </Field>
+                    {/* The button is here rather than only in the row's
+                        actions: telling someone to save, close, find the row
+                        and press Sign in is not offering a sign-in, it is
+                        describing one. */}
+                    <Button
+                      type="button"
+                      variant="primary"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={saveAndSignIn}
+                    >
+                      Save and sign in with Google
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <Field
           label="Model"
@@ -502,7 +1380,7 @@ function EngineModal({
           </div>
         </Field>
 
-        {draft.kind !== "ollama" && (
+        {draft.kind !== "ollama" && authMode === "api_key" && (
           <Field
             label="API key"
             hint={

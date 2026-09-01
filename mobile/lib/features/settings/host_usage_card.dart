@@ -54,6 +54,16 @@ class HostUsageCard extends ConsumerWidget {
                   style: TextStyle(color: Fleet.bad, fontSize: 12)),
               data: _Body.new,
             ),
+            const Divider(height: 20),
+            // The orchestrator's own figures, from /healthz — its instance
+            // ceiling and event bus rather than the box it runs on.
+            ref.watch(platformHealthProvider).when(
+                  loading: () => Text('Reading platform health...',
+                      style: TextStyle(color: Fleet.ink300, fontSize: 12)),
+                  error: (e, _) => Text('Could not read /healthz: $e',
+                      style: TextStyle(color: Fleet.bad, fontSize: 12)),
+                  data: _PlatformRows.new,
+                ),
           ],
         ),
       ),
@@ -127,6 +137,51 @@ class _Body extends StatelessWidget {
     const gb = 1024 * 1024 * 1024;
     if (bytes >= gb) return '${(bytes / gb).toStringAsFixed(1)} GB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+  }
+}
+
+/// Platform figures rendered as a compact grid of label/value pairs.
+class _PlatformRows extends StatelessWidget {
+  const _PlatformRows(this.h);
+  final PlatformHealth h;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = [
+      ('Live instances', '${h.liveInstances} / ${h.maxInstances}'),
+      ('Console clients', '${h.wsSubscribers}'),
+      ('Events dropped', '${h.eventsDropped}'),
+      ('Status', h.status),
+    ];
+    return Row(
+      children: [
+        for (final (label, value) in entries)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label.toUpperCase(),
+                    style: TextStyle(
+                        color: Fleet.ink400,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4)),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      // Dropped events mean some client rendered a stale
+                      // picture; that deserves a colour, not just a number.
+                      color: label == 'Events dropped' && h.eventsDropped > 0
+                          ? Fleet.warn
+                          : Fleet.ink100,
+                    )),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 }
 
