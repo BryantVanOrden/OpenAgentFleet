@@ -202,6 +202,12 @@ class _ModelChainSheetState extends ConsumerState<ModelChainSheet> {
               // downwards lands one place short without the adjustment. This
               // is the bot's model fallback order, where one place short means
               // a different model answers.
+              //
+              // Flutter ≥3.42 deprecates onReorder for onReorderItem (which
+              // does this adjustment itself), but onReorderItem does not exist
+              // on the 3.41 SDK this app still builds with — migrate both
+              // call sites together when the floor moves.
+              // ignore: deprecated_member_use
               onReorder: (oldIndex, newIndex) => setState(() {
                 if (newIndex > oldIndex) newIndex -= 1;
                 _chain.insert(newIndex, _chain.removeAt(oldIndex));

@@ -248,6 +248,10 @@ class _ProvidersScreenState extends ConsumerState<ProvidersScreen> {
           child: ReorderableListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             itemCount: _providers.length,
+            // Deprecated on Flutter ≥3.42 in favour of onReorderItem, which the
+            // 3.41 SDK this app still builds with does not have — see the note
+            // in model_chain_sheet.dart; migrate both together.
+            // ignore: deprecated_member_use
             onReorder: _reorder,
             itemBuilder: (_, i) => _tile(_providers[i], i),
           ),
