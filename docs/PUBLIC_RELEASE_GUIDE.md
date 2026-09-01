@@ -27,29 +27,37 @@ When you are ready to make the repository public:
 
 ## 📦 3. Publishing Python SDK & `fleetctl` to PyPI
 
-The Python SDK in [`sdk/python/`](../sdk/python/) is configured and ready for packaging:
+The Python SDK in [`sdk/python/`](../sdk/python/) publishes itself through
+**PyPI Trusted Publishing** — the OIDC scheme where PyPI trusts a specific
+GitHub Actions workflow instead of an API token, so there is no token to
+create, store, rotate or leak.
 
-### Step 1: Install Build Tools
-```bash
-pip install --upgrade build twine
-```
+### Step 1: Register the pending publisher on pypi.org (one time)
+Log in to pypi.org, then **Your account → Publishing → Add a new pending
+publisher** with exactly:
 
-### Step 2: Build Distribution Wheel & Source Tarball
-```bash
-cd sdk/python
-python -m build
-```
-This generates `dist/agentfleet-0.1.0-py3-none-any.whl` and `dist/agentfleet-0.1.0.tar.gz`.
+| Field | Value |
+|---|---|
+| PyPI project name | `agentfleet` |
+| Owner | `BryantVanOrden` |
+| Repository name | `AgentFleet` |
+| Workflow name | `publish-pypi.yml` |
+| Environment name | `pypi` |
 
-### Step 3: Test Upload to TestPyPI (Optional)
-```bash
-twine upload --repository testpypi dist/*
-```
+This *claims* the `agentfleet` name: the first publish from that workflow
+creates the project and you become its owner.
 
-### Step 4: Official Production Release to PyPI
-```bash
-twine upload dist/*
-```
+### Step 2: Create the GitHub environment (one time)
+**Repo → Settings → Environments → New environment** named `pypi`. Optionally
+add yourself as a required reviewer so every publish needs a click of approval.
+
+### Step 3: Publish
+Publishing a GitHub release runs
+[`.github/workflows/publish-pypi.yml`](../.github/workflows/publish-pypi.yml)
+automatically; it builds the sdist and wheel, runs `twine check`, installs the
+wheel and runs the SDK test suite against the exact artifact, then uploads.
+It can also be run by hand from the **Actions** tab (workflow_dispatch).
+
 Once uploaded, users worldwide can install with:
 ```bash
 pip install agentfleet

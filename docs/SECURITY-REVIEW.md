@@ -1,10 +1,13 @@
 # Security review — new agent capabilities
 
-> **Status: historical snapshot, superseded in part.** This is a point-in-time
-> review, kept as a record of what was found and why. Several of its findings
-> have since been addressed and its description of the code is no longer current
-> in those places. Read the "What has changed since" section below before acting
-> on anything here. For the current model, see [SECURITY.md](SECURITY.md).
+> **Status: an internal pre-release review, superseded in part.** This was
+> written against a mid-development tree, before the first public release, and
+> is kept as a record of what was found and why — publishing the findings
+> against our own code is part of the project's honesty contract. Several of
+> its findings have since been addressed and its description of the code is no
+> longer current in those places. Read the "What has changed since" section
+> below before acting on anything here. For the current model, see
+> [SECURITY.md](SECURITY.md).
 
 Scope: the `python` / `spawn_agent` / `mount_tool` / `unmount_tool` / `call_tool` /
 `deep_search` / set-of-marks additions, the sandbox-side REPL, the new HTTP routes
@@ -14,8 +17,8 @@ this one.
 
 ## What has changed since
 
-Verified against the tree at v1.1.0. Findings not listed here were not re-checked
-and should be assumed to still stand. **The v1.2.0 additions — the work
+Verified against a later pre-release tree. Findings not listed here were not
+re-checked and should be assumed to still stand. **The subsequent additions — the work
 catalog and its file browser, the relay, demonstration frames sent to the
 vision model, and the orchestrator's write-into-a-sandbox path — have not
 been through a review of this kind.** For what those surfaces do and where

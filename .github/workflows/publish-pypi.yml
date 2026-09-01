@@ -1,0 +1,53 @@
+# Publishes the Python SDK to PyPI via Trusted Publishing (OIDC).
+#
+# No API token exists anywhere in this repository or its secrets — PyPI trusts
+# this specific workflow in this specific repository, configured on the PyPI
+# side under Publishing → "Add a pending publisher" (project: agentfleet,
+# owner: BryantVanOrden, repository: AgentFleet, workflow: publish-pypi.yml,
+# environment: pypi). That beats a long-lived token in every way that matters:
+# nothing to leak, nothing to rotate, and the grant is scoped to exactly this
+# file.
+name: Publish SDK to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # the OIDC token IS the credential
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build sdk/python --outdir dist/
+
+      - name: Sanity-check the artifacts
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine check dist/*
+
+      # The SDK's own tests, against the exact artifact being published rather
+      # than the source tree — a packaging mistake (missing module, wrong
+      # entry point) fails here instead of on the first user's machine.
+      - name: Install the wheel and run the test suite against it
+        run: |
+          python -m pip install dist/*.whl
+          python -c "import agentfleet; from agentfleet.cli import main; print('import + entry point OK, version', getattr(agentfleet, '__version__', 'n/a'))"
+          cd sdk/python && python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

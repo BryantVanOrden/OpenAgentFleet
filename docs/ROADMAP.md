@@ -29,16 +29,16 @@ answers.
 artifact storage on filesystem or S3/MinIO; in-process event bus with WebSocket
 fan-out.
 
-**Phase 5 (v1.1.0) — organisations and access.** RBAC grew past the three
+**Phase 5 — organisations and access.** RBAC grew past the three
 platform roles into organisations (departments) with their own members and org
 roles, plus per-bot permission grants and an endpoint that reports a caller's
 effective permissions rather than making each client re-derive them.
 
-**Phase 5 (v1.1.0) — model combinations.** Role-based routing: a named mapping
+**Phase 5 — model combinations.** Role-based routing: a named mapping
 from `vision` / `reasoning` / `chat` / `summarize` / `refine` to providers, usable
 anywhere a single provider was usable, so a bot's fallback chain can mix the two.
 
-**Phase 5 (v1.1.0) — pipelines, comms and custom tools.** Multi-bot DAG
+**Phase 5 — pipelines, comms and custom tools.** Multi-bot DAG
 pipelines that survive an orchestrator restart; conversations with membership and
 sender identity; per-bot named chat sessions; and archetype tool selection with
 operator-supplied custom tool recipes.

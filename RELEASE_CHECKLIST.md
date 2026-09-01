@@ -21,22 +21,19 @@ each release after that.
 ---
 
 ### 3. Publish the Python SDK to PyPI
-The SDK is not on PyPI yet, so `pip install agentfleet` does not work. Until this
-step is done, the README and the quickstart scripts install it from the repo with
+
+Publishing is automated with **PyPI Trusted Publishing** — no API token exists
+anywhere. `.github/workflows/publish-pypi.yml` builds the sdist and wheel, runs
+`twine check`, installs the wheel and runs the test suite against it, then
+publishes via OIDC. It fires when a GitHub release is published (or manually
+from the Actions tab).
+
+One-time setup on pypi.org (already done if `agentfleet` shows a pending
+publisher): **Your account → Publishing → Add a pending publisher** with
+project `agentfleet`, owner `BryantVanOrden`, repository `AgentFleet`,
+workflow `publish-pypi.yml`, environment `pypi`. Until the SDK is on PyPI, the
+README and quickstart scripts install it from the repo with
 `pip install -e ./sdk/python`.
-
-```bash
-cd sdk/python
-
-# 1. Install build tools
-pip install --upgrade build twine
-
-# 2. Build sdist and wheel packages
-python -m build
-
-# 3. Upload to PyPI (requires PyPI API Token)
-python -m twine upload dist/*
-```
 
 ---
 
@@ -50,8 +47,8 @@ To build the Linux desktop bundle, the Windows `.exe` and the Android APK:
    `RUN_HEAVY_BUILDS`.) Alternatively, run the workflow manually from the Actions
    tab with **Force heavy cross-platform builds** ticked, which sets the same
    condition for one run without leaving it on for every push.
-2. **Push the tag.** `git tag -a v1.2.0 -m "AgentFleet v1.2.0" && git push
-   origin v1.2.0`. The workflow triggers on `tags: [ 'v*' ]`, takes the version
+2. **Push the tag.** `git tag -a v1.0.0 -m "AgentFleet v1.0.0" && git push
+   origin v1.0.0`. The workflow triggers on `tags: [ 'v*' ]`, takes the version
    from the tag it was built for, and creates the release.
 
 Two things about this workflow are still worth knowing:

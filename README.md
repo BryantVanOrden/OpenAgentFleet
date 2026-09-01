@@ -24,7 +24,7 @@
 <p align="center"><em>A real run, recorded uncut from the console and played at 8× speed: the goal is typed, a <strong>local</strong> vision model<br>
 (qwen3.8-27b over Ollama — no cloud, no API key) opens Firefox on its own desktop with <strong>shell access disabled</strong>,<br>
 navigates to Hacker News, reads the #1 story, and reports it. Sixteen GUI actions, zero cuts —<br>
-the real-time recording is attached to <a href="https://github.com/BryantVanOrden/AgentFleet/releases/tag/v1.3.0">the release</a>.</em></p>
+the real-time recording is attached to <a href="https://github.com/BryantVanOrden/AgentFleet/releases/tag/v1.0.0">the release</a>.</em></p>
 
 <p align="center">
   <img src="docs/images/desktop-live-dark.png" alt="An agent's own desktop, streaming live into the console: Firefox open on its sandboxed XFCE desktop, with the task panel and teach-by-demonstration controls beside it" width="920">
@@ -187,37 +187,28 @@ you would. That one decision is where everything else comes from:
 
 ### Design limits, stated plainly
 
-Everything the previous versions of this section listed as partly built has
-since been built — the MCP bridge speaks all three capability groups
-(tools, resources, prompts) and refreshes its catalogue on the server's own
-`list_changed` announcement; swarm planning is a real barrier when a swarm is
-created with `plan_first`; pipeline runs survive a restart and resume from
-their last settled node; model pricing is fetched daily (with the built-in
-list-price table as the offline fallback, and the source reported in the
-financial summary); and HubSpot and Salesforce webhooks are parsed against
-their real schemas with their real authentication.
+This project's habit is to say what a feature does not do in the same breath
+as shipping it, so the boundaries live here rather than waiting to be
+discovered. Two capabilities come with context worth knowing:
 
-Semantic memory now ships by default, closing what used to be this section's
-first entry: the compose stack includes a small local embedding sidecar
-(model2vec `potion-base-8M`, ~30 MB, CPU-only, weights baked into the image so
-air-gapped fleets get it too), so a fleet with no embedding-capable provider —
-Anthropic-only, or none configured yet — still gets semantic recall rather
-than keyword matching. Configured providers that can embed are preferred for
-quality; `/api/memory/fleet` reports which scheme is live, and
-`EMBED_BASE_URL=off` restores the old fallback deliberately. Search remains a
-linear scan over the working set (2,000 records) — deliberate, and fine at
-this size.
+- **Semantic memory ships by default.** The compose stack includes a small
+  local embedding sidecar (model2vec `potion-base-8M`, ~30 MB, CPU-only,
+  weights baked into the image so air-gapped fleets get it too), so a fleet
+  with no embedding-capable provider — Anthropic-only, or none configured yet
+  — still gets semantic recall rather than keyword matching. Configured
+  providers that can embed are preferred for quality; `/api/memory/fleet`
+  reports which scheme is live, and `EMBED_BASE_URL=off` selects the hashed
+  keyword fallback deliberately. Search is a linear scan over the working set
+  (2,000 records) — deliberate, and fine at this size.
+- **The QEMU tier is a real virtual machine.** `"driver": "qemu"` on instance
+  create boots the sandbox behind a hardware(-emulated) boundary — the guest
+  disk is converted from the container image at build time (`make
+  sandbox-vm`), so the VM runs byte-for-byte the same agentd and desktop as
+  the container tier and cannot drift from it. KVM-accelerated when the host
+  has `/dev/kvm`; TCG software emulation otherwise (same guest, slower boot,
+  and the runner logs which it chose).
 
-And the QEMU driver exists now, closing the last entry this section carried:
-`"driver": "qemu"` on instance create boots the sandbox as a **real virtual
-machine** — the guest disk is converted from the container image at build time
-(`make sandbox-vm`), so the VM runs byte-for-byte the same agentd and desktop
-as the container tier and cannot drift from it. KVM-accelerated when the host
-has `/dev/kvm`; TCG software emulation otherwise (same guest, slower boot, and
-the runner logs which it chose).
-
-What remains are the VM driver's own stated boundaries, not absences —
-fail-closed where it matters:
+The VM driver's own boundaries, fail-closed where it matters:
 
 - **Egress policies are refused on the qemu driver.** nftables programs the
   container's network namespace, and a guest's traffic tunnels through SLIRP

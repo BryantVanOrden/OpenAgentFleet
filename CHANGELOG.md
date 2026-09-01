@@ -1,10 +1,71 @@
 # Changelog
 
-Notable changes to AgentFleet. Dates are release dates; the format is loosely
+Notable changes to AgentFleet. The format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 
-## [Unreleased]
+## [1.0.0] — 2026-09-01
+
+**The first public release.** Everything below this section is the pre-release
+development log — kept, because documenting what was broken and how it was
+found is part of what this project is. The version numbers inside it were
+internal milestones on a private repository, not published releases; 1.0.0 is
+the first version anyone outside could install.
+
+What ships in 1.0.0:
+
+- **Sandboxed desktops.** Each agent gets a disposable Ubuntu/XFCE desktop —
+  a hardened container by default, or a **real virtual machine** with
+  `"driver": "qemu"` (guest disk converted from the container image, KVM when
+  the host has it). Cgroup limits, no swap, optional nftables egress policy,
+  sudo gated by the setuid bit and revocable at runtime.
+- **A perceive-decide-act loop** over screenshots, Set-of-Marks badges and the
+  AT-SPI accessibility tree, with per-model coordinate-space calibration,
+  perceptual-hash stall detection, and a 33-action vocabulary where the
+  parser, the runner and the prompt provably agree.
+- **Watch and take over.** Every desktop streams live into the console over
+  noVNC; click the stream and you are driving. Auditors get a genuinely
+  view-only second VNC server. The README's demo is a real uncut run.
+- **Teaching by demonstration**, compiled into editable `SKILL.md` procedures
+  that agents follow and refine after successful runs.
+- **Escalation like an employee**: a CAPTCHA, MFA prompt or stall parks the
+  task and pings the phone app with the screen frozen at that moment.
+- **Models**: Ollama, OpenAI, Anthropic, Gemini, Antigravity and any
+  OpenAI-compatible gateway behind one interface, with fallback chains,
+  role-based model combinations, live model discovery, and per-bot chains.
+- **MCP client**: JSON-RPC 2.0 over stdio and Streamable HTTP — tools,
+  resources and prompts, with catalogues refreshed on the server's own
+  `list_changed` announcement. Agents reach all three through `call_mcp`.
+- **Fleet collaboration**: peer messaging over a durable bus, a shared work
+  catalog, swarms with an enforced planning phase (`plan_first`) and peer
+  review of artifacts, and parallel DAG pipelines with conditional branches
+  whose runs survive an orchestrator restart.
+- **Semantic memory by default**: a local embedding sidecar in the compose
+  stack, provider embeddings preferred when configured, and
+  `/api/memory/fleet` reporting which scheme is live.
+- **Cost telemetry** with live pricing fetched daily (offline fallback table,
+  provenance reported), cached-token discounts, durable across deploys.
+- **Webhooks that know their senders**: GitHub, Stripe (real signature
+  schemes, replay-bounded), HubSpot (v3/v1), Salesforce outbound messages
+  (SOAP, org-id checked, Ack returned) — plus cron triggers.
+- **Voice**: a Pocket-TTS sidecar giving every agent, the console and the
+  phone the same six voices; the agent's `speak` action plays in the console.
+- **A Python SDK and `fleetctl` CLI**, archetype packages
+  (`.agentfleet.yaml`), organisations/departments/per-bot permissions, API
+  keys, and a Flutter companion app for Android, iOS, macOS, Linux and
+  Windows.
+
+MIT licensed. The README's *Design limits, stated plainly* section is the
+honest boundary list, and keeping it truthful outranks making it short.
+
+---
+
+# Pre-release development log
+
+Internal milestones from the private repository, newest first. Version
+numbers below were never published.
+
+## [unreleased at the time]
 
 ### The QEMU driver is real
 
@@ -370,7 +431,7 @@ made `call_mcp` and `speak` unreachable, and it is invisible in review.
 - `SECURITY-REVIEW.md` carried a duplicated F10 finding.
 
 
-## [1.2.0] — 2026-08-30
+## [internal milestone 1.2.0] — 2026-08-30
 
 Seventy-two commits since the 1.1.0 notes were written. Where v1.1.0 was about
 several of each thing, this is about the agents producing something you can
@@ -706,7 +767,7 @@ real push would not.
 
 ---
 
-## [1.1.0] — 2026-08-29
+## [internal milestone 1.1.0] — 2026-08-29
 
 Eighty-two commits since v1.0.0. The theme is that v1.0.0 was built for one operator
 and one bot at a time, and this release is about several of each: departments
@@ -965,13 +1026,12 @@ documents had described things that were never built. See
 
 ---
 
-## [1.0.0] — 2026-08-28
+## [internal milestone 1.0.0] — 2026-08-28
 
-First public release. Sandboxed Linux desktops on Docker with cgroup limits and
+The first end-to-end working tree. Sandboxed Linux desktops on Docker with cgroup limits and
 nftables egress policy; a perceive-decide-act agent loop over a fallback chain of
 model providers; teaching by demonstration compiled into `SKILL.md`; escalation
 to a human on a stalled screen; an AES-256-GCM credential vault; a React admin
 console and a Flutter companion app.
 
-[1.1.0]: https://github.com/BryantVanOrden/AgentFleet/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BryantVanOrden/AgentFleet/releases/tag/v1.0.0

@@ -8,6 +8,7 @@ backend/dist/
 # admin
 admin/node_modules/
 admin/dist/
+sdk/python/dist/
 
 # mobile
 # android/ and ios/ ARE committed — the app does not build without them.
