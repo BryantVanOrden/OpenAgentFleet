@@ -14,7 +14,9 @@ an agent needs a human.
   a real virtual machine with `"driver": "qemu"` — the guest disk is converted
   from the container image at build time, so the VM runs byte-for-byte the
   same stack and cannot drift. KVM when the host has it; software emulation
-  otherwise.
+  otherwise. Egress policies on the VM tier are enforced in the runner's
+  network namespace — where even a root agent inside the guest cannot flush
+  them.
 - **Watch, take over, teach.** Live noVNC streams, interactive takeover, and
   record-by-demonstration: do a task once and it compiles into an editable
   `SKILL.md` the agent follows and refines.
@@ -47,11 +49,11 @@ an agent needs a human.
 ## The honesty contract
 
 The README carries a section called *Design limits, stated plainly*. It says
-what each capability does not do — egress policies are refused (fail-closed)
-on the VM tier, memory search is a linear scan sized to its working set, and
-so on. Keeping that section truthful outranks keeping it short; if you catch
-the docs claiming something the code does not do, that is the bug we most
-want filed.
+what each capability does not do — the VM tier has no GPU passthrough yet,
+memory search is an exact scan sized (and benchmarked) to its working set,
+and so on. Keeping that section truthful outranks keeping it short; if you
+catch the docs claiming something the code does not do, that is the bug we
+most want filed.
 
 ## Getting started
 

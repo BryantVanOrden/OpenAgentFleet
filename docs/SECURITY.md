@@ -133,12 +133,17 @@ bar. Precision about what this does and does not buy:
 - **The runner container is not hardened like a sandbox** — its only process
   is QEMU, it holds `/dev/kvm` when the host provides it, and it has no shell
   surface an agent can reach.
-- **Egress policies are refused on this driver**, fail-closed. nftables
-  programs the container netns; the guest's traffic tunnels through SLIRP
-  underneath it, so a policy would look applied and bind nothing. Instances
-  that need one stay on the docker driver until the VM enforces policy
-  natively (guest-side nftables driven from the kernel cmdline is the planned
-  shape).
+- **Egress policies are enforced in the runner's netns**, and that placement
+  is stronger than the container tier's. Every connection the guest opens is
+  a SLIRP socket owned by the QEMU process in the runner, dialled to the
+  destination the guest asked for — so `vm-entrypoint.sh` runs the same
+  `egress.sh` the container tier uses, before QEMU starts, fail-closed (no
+  policy, no boot). The rules sit where no code path from inside the guest
+  can reach them: root in the guest can flush the guest's own tables and the
+  policy does not move. The `EGRESS_*` variables are deliberately absent
+  from the kernel-cmdline whitelist — the guest is never told its policy.
+  SLIRP's IPv6 is disabled (`ipv6=off`) for parity with the v4-only sandbox
+  network.
 - **Without `/dev/kvm`** (Docker Desktop, most CI) the guest runs under TCG
   software emulation: the isolation property is the same, the boot takes
   minutes, and the runner logs which mode it chose.
@@ -223,10 +228,17 @@ what closes that gap. Do not run genuinely hostile code here.
 
 ## Egress policy
 
-`egress.sh` programs nftables inside the sandbox's own network namespace:
+`egress.sh` programs nftables in the network namespace it runs in — the
+sandbox container's own netns on the docker driver, the VM runner's on the
+qemu driver (where QEMU's SLIRP sockets originate every guest connection):
 
 - A non-empty allow-list is exclusive: everything else is dropped, and that
   includes a blanket drop of all IPv6.
+- Replies to connections opened *to* the sandbox — the orchestrator's health
+  polls, the console's VNC stream — are accepted statefully
+  (`ct state established,related`), ahead of the allow-list's final drop.
+  Outbound restrictions lose nothing: a connection the agent initiates is
+  judged at its first packet.
 - `block_local` drops RFC1918, link-local and CGNAT ranges over IPv4, which is
   what stops an agent reaching your LAN, your database, or a cloud metadata
   endpoint. Read the IPv4 qualifier literally — see the limitations below.
@@ -260,8 +272,12 @@ Limitations, stated plainly:
   the easy path, and on an instance without sudo the cleared setuid bit removes
   the agent's ordinary route to root — but neither is the kernel-level backstop
   that `no-new-privileges` used to provide, and the policy is not tamper-proof by
-  construction. Moving it out of the container's netns (host-side rules on the
-  sandbox bridge, or a real egress proxy) is what would make it so.
+  construction. Moving it out of the agent's reach is what makes it so — and the
+  **qemu driver already has exactly that**: its policy lives in the runner's
+  netns, which no code path from inside the guest can touch. For workloads where
+  a tamper-proof egress policy is the requirement, use `"driver": "qemu"`; on
+  the docker driver, host-side rules on the sandbox bridge or a real egress
+  proxy remain the alternatives.
 
 Note also that egress filtering is **off by default**. With no policy on the
 instance, `entrypoint.sh` skips `egress.sh` entirely and the sandbox can reach

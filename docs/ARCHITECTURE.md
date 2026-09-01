@@ -29,6 +29,8 @@ One binary, one process, several concerns kept in separate packages:
 
 The Docker driver speaks the engine's REST API directly rather than through the official SDK. The surface needed is small — create, start, stop, pause, inspect, stats, exec, network — and avoiding the SDK keeps the dependency graph at five direct modules, which matters for something that holds a socket with root-equivalent authority.
 
+The QEMU driver (`"driver": "qemu"` at create) reuses that same container path: the runner is an ordinary container whose only process is QEMU, booting a guest disk converted from the sandbox image at build time (`make sandbox-vm`). QEMU's SLIRP port forwards put agentd and both VNC servers on the runner's own address, so health checks, the desktop proxy and addressing are identical for both drivers — and egress policy is programmed in the runner's netns, which every guest connection must traverse and no code path inside the guest can reach.
+
 ### Sandbox (`sandbox/`)
 
 An Ubuntu image running, under supervisord in dependency order:

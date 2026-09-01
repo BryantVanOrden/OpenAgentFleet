@@ -17,8 +17,15 @@ What ships in 1.0.0:
 - **Sandboxed desktops.** Each agent gets a disposable Ubuntu/XFCE desktop —
   a hardened container by default, or a **real virtual machine** with
   `"driver": "qemu"` (guest disk converted from the container image, KVM when
-  the host has it). Cgroup limits, no swap, optional nftables egress policy,
-  sudo gated by the setuid bit and revocable at runtime.
+  the host has it). Cgroup limits, no swap, optional nftables egress policy —
+  enforced on the VM tier in the *runner's* netns, where even a root agent
+  inside the guest cannot flush it — and sudo gated by the setuid bit,
+  revocable at runtime. Late in the release the egress path got two fixes
+  found by testing from inside a policied sandbox: replies to inbound
+  connections are now accepted statefully (allow-list-only policies used to
+  kill the very health check that admits an instance), and the policy no
+  longer flushes Docker's embedded-DNS NAT rules (name resolution inside
+  policied sandboxes silently died with them).
 - **A perceive-decide-act loop** over screenshots, Set-of-Marks badges and the
   AT-SPI accessibility tree, with per-model coordinate-space calibration,
   perceptual-hash stall detection, and a 33-action vocabulary where the
@@ -42,7 +49,9 @@ What ships in 1.0.0:
   whose runs survive an orchestrator restart.
 - **Semantic memory by default**: a local embedding sidecar in the compose
   stack, provider embeddings preferred when configured, and
-  `/api/memory/fleet` reporting which scheme is live.
+  `/api/memory/fleet` reporting which scheme is live. The working set is
+  50,000 records, benchmarked at that size (~55 ms per exact scan on a
+  4-core dev box; the benchmark ships in the tree).
 - **Cost telemetry** with live pricing fetched daily (offline fallback table,
   provenance reported), cached-token discounts, durable across deploys.
 - **Webhooks that know their senders**: GitHub, Stripe (real signature
@@ -87,11 +96,12 @@ QEMU's port forwards put agentd and both VNC servers on the runner's own
 address, so the orchestrator's health checks, desktop proxy and addressing
 are identical for both drivers.
 
-Stated boundaries, fail-closed where it matters: egress policies are refused
-on this driver (nftables programs the container netns; the guest's traffic
-tunnels through SLIRP underneath it — a policy would look applied and bind
-nothing); no GPU on the VM tier yet; and the console's launch dialog does not
-offer the driver field yet — it is API-only.
+Stated boundaries at this milestone, fail-closed where it mattered: egress
+policies were refused on this driver (nftables programmed the container
+netns; the guest's traffic tunnelled through SLIRP underneath it — a policy
+would look applied and bind nothing; runner-netns enforcement landed just
+before 1.0.0); no GPU on the VM tier; and the console's launch dialog does
+not offer the driver field yet — it is API-only.
 
 ### The demo video is real
 

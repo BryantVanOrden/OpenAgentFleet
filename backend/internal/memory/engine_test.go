@@ -55,3 +55,24 @@ func TestVectorMemoryEngine(t *testing.T) {
 		t.Errorf("expected top result to be mem-comp-crm, got %s", crmResults[0].ID)
 	}
 }
+
+func TestContainsFold(t *testing.T) {
+	cases := []struct {
+		s, sub string
+		want   bool
+	}{
+		{"Registry Mirror SYNC", "mirror sync", true},
+		{"registry mirror sync", "MIRROR", false}, // sub must arrive pre-lowered
+		{"registry mirror sync", "mirror", true},
+		{"short", "much longer than s", false},
+		{"anything", "", true},
+		{"edge at the END", "end", true},
+		{"Ｕｎｉｃｏｄｅ", "ｕｎｉｃｏｄｅ", false}, // non-ASCII compared verbatim, as before
+		{"", "x", false},
+	}
+	for _, c := range cases {
+		if got := containsFold(c.s, c.sub); got != c.want {
+			t.Errorf("containsFold(%q, %q) = %v, want %v", c.s, c.sub, got, c.want)
+		}
+	}
+}

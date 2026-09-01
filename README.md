@@ -198,8 +198,12 @@ discovered. Two capabilities come with context worth knowing:
   — still gets semantic recall rather than keyword matching. Configured
   providers that can embed are preferred for quality; `/api/memory/fleet`
   reports which scheme is live, and `EMBED_BASE_URL=off` selects the hashed
-  keyword fallback deliberately. Search is a linear scan over the working set
-  (2,000 records) — deliberate, and fine at this size.
+  keyword fallback deliberately. Search is an exact linear scan over the
+  working set — brute force is what vector search *is* at this scale, with
+  none of an approximate index's recall loss — sized at 50,000 records and
+  benchmarked at that size (~55 ms per query on a modest 4-core box, against
+  agent steps that each cost seconds of inference; the benchmark ships in
+  `backend/internal/memory/engine_bench_test.go`).
 - **The QEMU tier is a real virtual machine.** `"driver": "qemu"` on instance
   create boots the sandbox behind a hardware(-emulated) boundary — the guest
   disk is converted from the container image at build time (`make
@@ -210,12 +214,15 @@ discovered. Two capabilities come with context worth knowing:
 
 The VM driver's own boundaries, fail-closed where it matters:
 
-- **Egress policies are refused on the qemu driver.** nftables programs the
-  container's network namespace, and a guest's traffic tunnels through SLIRP
-  underneath it — so an instance that asks for an egress policy on this driver
-  is rejected at create rather than coming up looking restricted while being
-  open. Use the docker driver for policied instances until the VM enforces
-  them natively.
+- **Egress policies are enforced on the qemu driver — in the runner, where
+  the guest can't reach them.** Every connection the guest opens leaves
+  through QEMU's SLIRP sockets in the runner container's network namespace,
+  dialled to the destination the guest asked for, so the same nftables
+  program the container tier uses is applied there before QEMU starts
+  (fail-closed: if the policy can't be programmed, the VM doesn't boot). This
+  placement is *stronger* than the container tier's: an agent with root
+  inside the guest can flush its own tables all day and never touch the
+  policy.
 - **No GPU on the VM tier.** `vfio-pci` passthrough is roadmap; the container
   tier's GPU request (with its no-runtime fallback) is unchanged.
 - **Container-grade isolation remains the default.** The docker driver is the

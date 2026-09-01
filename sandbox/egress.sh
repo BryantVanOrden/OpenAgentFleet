@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Programs the sandbox's own network namespace with nftables.
+# Programs the network namespace it runs in with nftables.
+#
+# Two homes, one policy. On the docker driver this is the sandbox container's
+# own netns. On the qemu driver it is the VM RUNNER's netns — every connection
+# the guest makes leaves through QEMU's SLIRP sockets there, dialled to the
+# same destination address the guest asked for, so filtering the runner's
+# output sees exactly the guest's egress. That placement is also what makes
+# the policy tamper-proof from inside: an agent with root in the guest can
+# flush the guest's own tables all it likes and never touch these rules.
 #
 # EGRESS_ALLOW  comma-separated hosts/CIDRs. Non-empty means allow-list only.
 # EGRESS_DENY   comma-separated hosts/CIDRs to drop.
@@ -27,7 +35,13 @@ resolve() {
     getent ahostsv4 "$host" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
-nft flush ruleset
+# Replace OUR table only — never `flush ruleset`. Docker programs its embedded
+# DNS (127.0.0.11) with NAT rules inside this same netns, and flushing the
+# whole ruleset silently destroyed them: every policied sandbox came up with
+# "DNS stays open" true for the packets and false for the resolver, because
+# getent asks 127.0.0.11 and nothing was left to forward it. Found by testing
+# resolution inside a policied sandbox rather than reading the rules.
+nft delete table inet agentfleet 2>/dev/null || true
 
 nft add table inet agentfleet
 nft add chain inet agentfleet output '{ type filter hook output priority 0; policy accept; }'
@@ -37,6 +51,15 @@ nft add chain inet agentfleet output '{ type filter hook output priority 0; poli
 nft add rule inet agentfleet output oifname lo accept
 nft add rule inet agentfleet output udp dport 53 accept
 nft add rule inet agentfleet output tcp dport 53 accept
+
+# Replies to connections someone else opened to us — the orchestrator's health
+# polls, the console's VNC stream, agentd API calls. Without this, allow-list
+# mode's final drop ate the reply packets of the very health check that decides
+# whether the instance ever comes up: an allow-only policy meant a sandbox that
+# provisioned, restricted itself, and was then declared dead for answering
+# nobody. Outbound restrictions lose nothing — a connection the agent initiates
+# is NEW at its first packet, which is where the daddr rules below judge it.
+nft add rule inet agentfleet output ct state established,related accept
 
 if [[ "$BLOCK_LOCAL" == "true" ]]; then
     # The container's own /16 is left reachable so the orchestrator can still

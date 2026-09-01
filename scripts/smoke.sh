@@ -145,6 +145,16 @@ fi
 state=$(printf '%s' "$out" | jget state)
 [[ "$state" == "running" ]] && ok "reached state=running" || bad "state=$state (expected running)"
 
+# DNS must survive the egress policy. It didn't, once: egress.sh flushed the
+# whole ruleset, which took Docker's embedded-DNS NAT rules with it, and every
+# policied sandbox came up unable to resolve anything. The rules LOOKED right —
+# only asking the resolver from inside catches this class of break.
+if docker exec "af-${INSTANCE_ID:0:12}" getent ahostsv4 example.com >/dev/null 2>&1; then
+    ok "DNS resolves inside the policied sandbox"
+else
+    bad "DNS is dead inside the policied sandbox — the egress policy broke the resolver"
+fi
+
 # ------------------------------------------------------------- 5. perception ---
 
 step "5. The agent can see"

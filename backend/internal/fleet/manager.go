@@ -149,14 +149,15 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		return nil, fmt.Errorf("%w: unknown driver %q (use docker or qemu)", ErrInvalidRequest, req.Driver)
 	}
 	if profile.Driver == protocol.DriverQEMU {
-		// Fail closed on egress: nftables policy is programmed in the
-		// container's netns, and a QEMU guest's traffic leaves through SLIRP
-		// inside the runner — the policy would not see it. An instance that
-		// asked to be restricted must not come up unrestricted.
-		if len(req.Egress.Allow) > 0 || len(req.Egress.Deny) > 0 || req.Egress.BlockLocal {
-			return nil, fmt.Errorf("%w: egress policies are not enforced inside the qemu tier yet; "+
-				"use the docker driver for instances that need one", ErrInvalidRequest)
-		}
+		// Egress policies are enforced in the RUNNER's netns, not the guest's:
+		// every connection the guest opens is a SLIRP socket owned by QEMU in
+		// the runner, dialled to the guest's intended destination, so the same
+		// nftables program the container tier uses (vm-entrypoint runs the same
+		// egress.sh, fail-closed) sees exactly the guest's traffic — and sits
+		// where even a root agent inside the VM cannot flush it. The EGRESS_*
+		// variables reach the runner through buildEnv like any container, and
+		// are deliberately absent from the kernel-cmdline whitelist: the guest
+		// has no business knowing its own policy.
 		profile.Image = vmImageFor(profile.Image)
 	}
 

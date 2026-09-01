@@ -408,15 +408,33 @@ if grep -q '^sandbox-vm:' Makefile 2>/dev/null; then
 else
   bad "no make target builds the VM image"
 fi
-# The fail-closed contract: an egress policy on the qemu driver is refused
-# rather than silently unenforced.
-refused=$(api POST /api/instances '{"name":"vm-egress-probe","tier":"micro","driver":"qemu","egress":{"block_local":true}}')
-if has "$refused" 'not enforced inside the qemu tier'; then
-  ok "an egress policy on the qemu driver is refused, fail-closed"
+# Egress on the qemu driver is ENFORCED, in the runner's netns: the guest's
+# only way out is QEMU's SLIRP sockets there, and vm-entrypoint programs the
+# same egress.sh the container tier uses before QEMU starts. The create that
+# used to be refused must now be accepted, and the runner container must carry
+# the nftables table — checked directly, because "accepted" without rules is
+# exactly the silent-unenforcement this check exists to catch.
+policied=$(api POST /api/instances '{"name":"vm-egress-probe","tier":"micro","driver":"qemu","egress":{"block_local":true}}')
+vmid=$(printf '%s' "$policied" | sed -n 's/.*"id":"\([a-f0-9-]*\)".*/\1/p')
+if [ -n "$vmid" ]; then
+  ok "a policied qemu instance is accepted (egress enforced in the runner)"
+  CLEANUP+=("curl -sS -X DELETE '$BASE/api/instances/$vmid' -H 'Authorization: Bearer $TOKEN'")
+  # The runner container appears within a few seconds of the create; the rules
+  # are programmed before QEMU starts, so no need to wait out the guest boot.
+  vmctr="af-$(printf '%s' "$vmid" | cut -c1-12)"
+  rules=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    rules=$(docker exec "$vmctr" nft list table inet agentfleet 2>/dev/null || true)
+    [ -n "$rules" ] && break
+    sleep 2
+  done
+  if has "$rules" 'ct state established,related accept' && has "$rules" 'drop'; then
+    ok "the runner netns carries the nftables policy (stateful accept + drops present)"
+  else
+    bad "no nftables policy visible in the qemu runner $vmctr"
+  fi
 else
-  bad "a policied qemu instance was not refused: $(printf '%s' "$refused" | head -c 160)"
-  rid=$(printf '%s' "$refused" | sed -n 's/.*"id":"\([a-f0-9-]*\)".*/\1/p')
-  [ -n "$rid" ] && CLEANUP+=("curl -sS -X DELETE '$BASE/api/instances/$rid' -H 'Authorization: Bearer $TOKEN'")
+  bad "a policied qemu instance was refused or failed: $(printf '%s' "$policied" | head -c 160)"
 fi
 if docker image inspect agentfleet/sandbox:latest-vm >/dev/null 2>&1; then
   ok "agentfleet/sandbox:latest-vm is built locally"

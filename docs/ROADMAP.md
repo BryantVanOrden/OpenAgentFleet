@@ -54,10 +54,11 @@ operator-supplied custom tool recipes.
   agentd and desktop and cannot drift. KVM-accelerated when the host has
   `/dev/kvm`, TCG software emulation otherwise (same guest, slow boot — the
   runner logs which). Copy-on-write already: each boot runs a qcow2 overlay
-  over the pristine base disk. Still ahead, in honesty order:
-  - **Egress policies inside the VM** — refused (fail-closed) on this driver
-    today, because nftables programs the container netns and the guest's
-    traffic tunnels through SLIRP underneath it.
+  over the pristine base disk. Egress policies are enforced on this driver —
+  in the runner's netns, where QEMU's SLIRP sockets originate every guest
+  connection and where no code path from inside the guest can flush the
+  rules; the same `egress.sh` as the container tier, applied before QEMU
+  starts, fail-closed. Still ahead, in honesty order:
   - **`vfio-pci` GPU passthrough** — the VM tier has no GPU story yet.
   - **Whole-machine snapshot/rewind** — workspace-level `snapshot`/`rollback`
     still ship on both drivers; VM disk snapshots do not.

@@ -24,10 +24,15 @@ type Store interface {
 	DeleteMemory(ctx context.Context, id string) error
 }
 
-// hydrateLimit caps what is loaded back on boot. Search is a linear scan over
-// the working set, so the whole point of the index is that it stays small
-// enough to scan; older memories remain in the table.
-const hydrateLimit = 2000
+// hydrateLimit caps what is loaded back on boot. Search is a deliberate exact
+// linear scan over the working set — brute force is what vector search IS at
+// this scale, with none of an approximate index's recall loss or build cost.
+// The cap is measured, not assumed: BenchmarkSearchScoped in
+// engine_bench_test.go scans the full working set at this size in ~55ms per
+// query on a modest 4-core dev box (~72ms on the degraded no-embedder path),
+// against agent steps that each cost seconds of model inference. Records past
+// the cap remain in the table.
+const hydrateLimit = 50000
 
 // vectorDim must match computeBagOfWordsVector; a stored embedding of any other
 // length is from a different hashing scheme and gets recomputed on load.
@@ -66,6 +71,16 @@ type Engine struct {
 	// so it is re-embedded rather than scored against nonsense.
 	embedder   Embedder
 	embedModel string
+
+	// hashedFallback caches the bag-of-words vector of records whose stored
+	// embedding lives in another model's space. Without it, every query made
+	// while the embedder is unreachable re-hashes every real-embedded record
+	// in the working set — invisible at 2,000 records, a per-query stall at
+	// 50,000. Keyed by record ID; entries die with the record and are dropped
+	// when its text changes. Its own mutex, because the search path holds
+	// only the engine's read lock.
+	hashMu         sync.Mutex
+	hashedFallback map[string][]float32
 }
 
 // SetEmbedder attaches a real embedding backend and re-embeds what is already
@@ -236,8 +251,35 @@ var GlobalEngine = NewEngine()
 
 func NewEngine() *Engine {
 	return &Engine{
-		memories: make(map[string]protocol.MemoryRecord),
+		memories:       make(map[string]protocol.MemoryRecord),
+		hashedFallback: make(map[string][]float32),
 	}
+}
+
+// cachedHash returns the record's bag-of-words vector, computing it at most
+// once per record text. Correct to cache because embedText depends only on
+// title, content and tags — StoreMemory invalidates on any rewrite, and
+// re-embedding changes the vector, never the text.
+func (e *Engine) cachedHash(m protocol.MemoryRecord) []float32 {
+	e.hashMu.Lock()
+	defer e.hashMu.Unlock()
+	if e.hashedFallback == nil {
+		// Engines are also built as struct literals in tests; the cache must
+		// not be the reason such an engine panics on first search.
+		e.hashedFallback = make(map[string][]float32)
+	}
+	if v, ok := e.hashedFallback[m.ID]; ok {
+		return v
+	}
+	v := computeBagOfWordsVector(embedText(m))
+	e.hashedFallback[m.ID] = v
+	return v
+}
+
+func (e *Engine) dropCachedHash(id string) {
+	e.hashMu.Lock()
+	delete(e.hashedFallback, id)
+	e.hashMu.Unlock()
 }
 
 // AttachStore makes the index durable: what the fleet has already learned is
@@ -302,6 +344,8 @@ func (e *Engine) StoreMemory(ctx context.Context, mem protocol.MemoryRecord) err
 	// cannot happen under the lock — every recall in the fleet would wait on it.
 	mem.Embedding = computeBagOfWordsVector(embedText(mem))
 	e.memories[mem.ID] = mem
+	// An upsert may have rewritten the text this record's cached hash came from.
+	e.dropCachedHash(mem.ID)
 	st, log, emb := e.store, e.log, e.embedder
 	// Unlocked explicitly rather than by defer: the database round trip below
 	// has to happen outside the lock, or every recall in the fleet waits on it.
@@ -401,8 +445,12 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 		allowed[ns] = true
 	}
 
+	// Scored by ID, not by record: at working-set scale, copying every
+	// candidate's full record into the slice was the single largest cost of a
+	// search — tens of megabytes of copying per query, none of it read until
+	// the top-K fetch at the end.
 	type scoredMemory struct {
-		mem   protocol.MemoryRecord
+		id    string
 		score float64
 	}
 	// The hashed vector for the query, computed lazily: it is only needed if
@@ -410,8 +458,8 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 	var fallbackVec []float32
 	qLower := strings.ToLower(strings.TrimSpace(query))
 
-	var scored []scoredMemory
-	for _, m := range e.memories {
+	scored := make([]scoredMemory, 0, 512)
+	for id, m := range e.memories {
 		if !unrestricted && !allowed[m.Namespace] && m.Namespace != "global" {
 			continue
 		}
@@ -433,9 +481,10 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 			if m.EmbedModel != "" || len(hashed) != vectorDim {
 				// This memory's stored vector is from another space, so it
 				// cannot be used; the text is re-hashed to compare like with
-				// like. A linear scan already reads every record, so this costs
-				// no extra pass.
-				hashed = computeBagOfWordsVector(embedText(m))
+				// like — once, through the cache, because at working-set scale
+				// re-hashing everything per query is the real cost, not the
+				// scan.
+				hashed = e.cachedHash(m)
 			}
 			score = cosineSimilarity(fallbackVec, hashed)
 		}
@@ -443,15 +492,16 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 		// A literal match beats any similarity score. Kept from the original
 		// implementation: an agent recalling an exact error string or a hostname
 		// wants that record, and no embedding ranks a verbatim quote reliably
-		// above a topical near-miss.
+		// above a topical near-miss. containsFold rather than
+		// Contains(ToLower(...)): lowering a copy of every record's content on
+		// every query is allocation the scan cannot afford at working-set scale.
 		if qLower != "" &&
-			(strings.Contains(strings.ToLower(m.Title), qLower) ||
-				strings.Contains(strings.ToLower(m.Content), qLower)) {
+			(containsFold(m.Title, qLower) || containsFold(m.Content, qLower)) {
 			score += 0.5
 		}
 
 		if score > 0.1 {
-			scored = append(scored, scoredMemory{mem: m, score: score})
+			scored = append(scored, scoredMemory{id: id, score: score})
 		}
 	}
 
@@ -461,9 +511,48 @@ func (e *Engine) SearchScoped(ctx context.Context, namespaces []string, query st
 
 	out := make([]protocol.MemoryRecord, 0, limit)
 	for i := 0; i < len(scored) && i < limit; i++ {
-		out = append(out, scored[i].mem)
+		out = append(out, e.memories[scored[i].id])
 	}
 	return out
+}
+
+// containsFold reports whether s contains sub under ASCII case folding,
+// without allocating. sub must already be lower-case (the caller lowers the
+// query once). Non-ASCII bytes are compared verbatim — the same behaviour a
+// lowered-ASCII Contains had, minus the two string copies per record per
+// query.
+func containsFold(s, sub string) bool {
+	if len(sub) == 0 {
+		return true
+	}
+	if len(s) < len(sub) {
+		return false
+	}
+	first := sub[0]
+	firstUp := first
+	if first >= 'a' && first <= 'z' {
+		firstUp = first - ('a' - 'A')
+	}
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if c := s[i]; c != first && c != firstUp {
+			continue
+		}
+		match := true
+		for j := 1; j < len(sub); j++ {
+			c := s[i+j]
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != sub[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 // AutoIndexTask converts a successfully executed task trajectory into a fleet episodic memory.
@@ -584,6 +673,7 @@ func (e *Engine) Forget(ctx context.Context, id string) bool {
 	delete(e.memories, id)
 	st, log := e.store, e.log
 	e.mu.Unlock()
+	e.dropCachedHash(id)
 
 	if existed && st != nil {
 		if err := st.DeleteMemory(ctx, id); err != nil && log != nil {

@@ -7,6 +7,22 @@ log() { echo "[vm] $*"; }
 VM_VCPUS="${VM_VCPUS:-2}"
 VM_MEMORY_MB="${VM_MEMORY_MB:-3072}"
 
+# Egress policy, enforced HERE rather than in the guest. Every connection the
+# guest opens becomes a socket owned by the QEMU process in this container's
+# netns, dialled to the destination the guest asked for — so the same nftables
+# program the container tier uses constrains the guest exactly, and a root
+# agent inside the VM cannot flush rules it cannot see. Runs before QEMU so no
+# guest packet ever races the policy, and fails the boot rather than booting
+# open: an instance that asked to be restricted must not come up unrestricted.
+if [[ -n "${EGRESS_ALLOW:-}${EGRESS_DENY:-}${EGRESS_BLOCK_LOCAL:-}" ]]; then
+    if /usr/local/bin/egress.sh; then
+        log "egress policy applied in the runner netns"
+    else
+        log "FATAL: egress policy could not be applied"
+        exit 1
+    fi
+fi
+
 # Acceleration is detected, not configured. /dev/kvm is granted by the
 # orchestrator when the host has it; TCG software emulation is the fallback
 # that keeps the driver usable on hosts without nested virtualisation (Docker
@@ -46,8 +62,10 @@ rm -f "$ENV_FILE"
 # every container interface so the orchestrator reaches the guest at this
 # container's address exactly as it reaches a container-tier sandbox. The
 # guest's addresses are SLIRP's fixed defaults; vm-init configures them
-# statically.
-NET_ARGS=(-netdev "user,id=n0,hostfwd=tcp:0.0.0.0:7900-:7900,hostfwd=tcp:0.0.0.0:6901-:6901,hostfwd=tcp:0.0.0.0:6902-:6902"
+# statically. ipv6=off for parity with the container tier: the sandbox
+# network is v4-only and egress.sh resolves v4 addresses, so SLIRP's built-in
+# v6 prefix would be a route around the policy that the container never had.
+NET_ARGS=(-netdev "user,id=n0,ipv6=off,hostfwd=tcp:0.0.0.0:7900-:7900,hostfwd=tcp:0.0.0.0:6901-:6901,hostfwd=tcp:0.0.0.0:6902-:6902"
           -device virtio-net-pci,netdev=n0)
 
 log "booting guest: ${VM_VCPUS} vcpu, ${VM_MEMORY_MB} MB"

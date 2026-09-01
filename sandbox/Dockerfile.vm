@@ -53,14 +53,19 @@ RUN mkdir -p /vm \
     && cp /boot/initrd.img-* /vm/initrd
 
 # ---- stage 3: the runner ----------------------------------------------------
+# nftables and iproute2 are for the egress policy: guest traffic leaves through
+# QEMU's SLIRP sockets in THIS container's netns, so this is where the policy
+# is enforced — the same egress.sh the container tier runs, applied where the
+# guest cannot reach it.
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        qemu-system-x86 qemu-utils curl ca-certificates \
+        qemu-system-x86 qemu-utils curl ca-certificates nftables iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /vm /vm
 COPY vm-entrypoint.sh /usr/local/bin/vm-entrypoint.sh
-RUN chmod +x /usr/local/bin/vm-entrypoint.sh
+COPY egress.sh /usr/local/bin/egress.sh
+RUN chmod +x /usr/local/bin/vm-entrypoint.sh /usr/local/bin/egress.sh
 
 # The same ports as the container tier, forwarded into the guest by QEMU, so
 # the orchestrator's addressing, health checks and desktop proxy are identical
