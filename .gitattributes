@@ -1,0 +1,14 @@
+# Line endings.
+#
+# Shell scripts are COPYd into Linux images verbatim, and a CRLF shebang is
+# "/usr/bin/env: bash\r: No such file or directory" -- the sandbox crash-loops
+# at boot. Git on Windows checks text files out with CRLF by default, so any
+# Windows contributor who rebuilds the image ships that crash unless these
+# files are pinned to LF.
+* text=auto
+*.sh text eol=lf
+sandbox/tools.conf text eol=lf
+sandbox/supervisord.conf text eol=lf
+sandbox/firefox-policies.json text eol=lf
+sandbox/Dockerfile* text eol=lf
+Makefile text eol=lf

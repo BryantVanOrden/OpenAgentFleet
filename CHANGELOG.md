@@ -6,6 +6,30 @@ semantic versioning.
 
 ## [Unreleased]
 
+### The README shows the product now
+
+The hero is a live capture of what the pitch actually is: one agent's own XFCE
+desktop streaming into the console, Firefox open, with the task panel and the
+teach-by-demonstration recorder beside it — and the caption saying the true
+thing, that clicking the stream takes over the agent's mouse and keyboard. A
+companion-app section shows the phone screens. All of it is reproducible:
+`make screenshots` (console), `make hero-shot` (the live desktop),
+`make app-screenshots` (the Flutter app, captured from its web build — added
+for the capture tooling; the shipped platforms are unchanged).
+
+Taking the screenshots found two real bugs, which is the argument for taking
+them from a running system rather than mocking:
+
+- **Firefox's "Welcome to Firefox" terms modal was not suppressed.** The
+  sandbox ships an enterprise policy file precisely to keep first-run dialogs
+  away from agents, but `SkipTermsOfUse` was nested inside `UserMessaging`,
+  where Firefox silently ignores it — it is a top-level policy. Every fresh
+  sandbox opened its first page under a modal the agent had to click through.
+- **The app's Pipelines screen described the old engine.** Conditions were
+  badged "not enforced" in warning orange and the caption said stages run one
+  at a time — both true when written, both false since the engine was rebuilt.
+  A screen understating the product is the same defect as one overstating it.
+
 ### Relicensed to MIT
 
 The project moves from PolyForm Noncommercial 1.0.0 to the MIT License —

@@ -334,14 +334,33 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		}
 	}
 
-	ci, err := m.docker.InspectContainer(ctx, cid)
-	if err != nil {
-		return err
-	}
-	// Still checked, because a container with no address on the sandbox
-	// network is genuinely broken -- but the URLs are built from the alias.
-	if ip := ci.IPOn(m.cfg.SandboxNetwork); ip == "" {
-		return fmt.Errorf("container has no address on %s", m.cfg.SandboxNetwork)
+	// The address check is a poll, not a single inspect. Inspecting in the
+	// same breath as /start races the engine's network attach: under load
+	// (an image build churning, several sandboxes starting at once) the first
+	// inspect can see an empty IP on a container that is perfectly healthy a
+	// second later. That race marked instances `error` at birth and left the
+	// reconciler to flip them back to `running` — and failed the smoke test's
+	// provisioning step outright, because smoke reads the create response
+	// rather than waiting for reconciliation. A missing address is still
+	// treated as genuinely broken; it just gets ten seconds to exist first.
+	var ci *ContainerInspect
+	addrDeadline := time.Now().Add(10 * time.Second)
+	for {
+		ci, err = m.docker.InspectContainer(ctx, cid)
+		if err != nil {
+			return err
+		}
+		if ip := ci.IPOn(m.cfg.SandboxNetwork); ip != "" {
+			break
+		}
+		if time.Now().After(addrDeadline) {
+			return fmt.Errorf("container has no address on %s after 10s", m.cfg.SandboxNetwork)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	inst.AgentdURL, inst.VNCURL, inst.VNCViewURL = urlsFor(inst)
 	if m.cfg.PublishPorts {

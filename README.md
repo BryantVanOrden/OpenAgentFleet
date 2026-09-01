@@ -9,11 +9,40 @@
 </p>
 
 <p align="center">
-  <strong>Self-hosted platform for autonomous computer-use agents.</strong><br>
-  Spin up isolated Linux desktops, record tasks by demonstration, let AI workers execute and continually self-improve, and get alerted on your phone when human judgment is required.
+  <strong>Self-hosted computer-use agents. Every agent gets its own Linux desktop.</strong><br>
+  Watch them work live in your browser — and click into the screen to take over at any moment.<br>
+  Your hardware, your models, phone alerts when an agent needs a human.
 </p>
 
+<p align="center">
+  <img src="docs/images/desktop-live-dark.png" alt="An agent's own desktop, streaming live into the console: Firefox open on its sandboxed XFCE desktop, with the task panel and teach-by-demonstration controls beside it" width="920">
+</p>
+
+<p align="center"><em>This is one agent's desktop — a real XFCE session in a hardened container, streaming live.<br>
+It is <strong>interactive</strong>: click the stream and you are driving its mouse and keyboard; let go and the agent carries on.<br>
+Do a task yourself once with the recorder on, and it compiles into a skill the agent can repeat.</em></p>
+
 ---
+
+## Why this exists
+
+Most agent frameworks give a model some tools. AgentFleet gives each model a
+**computer** — a disposable Linux desktop it perceives through screenshots and
+an accessibility tree, and drives with a mouse and keyboard, exactly the way
+you would. That one decision is where everything else comes from:
+
+- **You can see what it's doing.** Every agent's desktop streams into the
+  console over noVNC. No log-file archaeology — you watch the cursor move.
+- **You can take over, any time.** The stream is interactive for operators.
+  Agent stuck on a weird dialog? Click, fix it, let go. Want to teach it the
+  task instead? Do it once with the recorder on — keystrokes, clicks and the
+  accessible element behind each one become a `SKILL.md` the agent follows.
+- **It runs on your machines, against your models.** Point it at Ollama on
+  your own GPU and nothing ever leaves the building; a run costs $0.00. Cloud
+  models plug in behind the same interface with per-turn cost accounting.
+- **It escalates like an employee, not a cron job.** A CAPTCHA, an MFA prompt,
+  a payment screen — the agent parks the task and pings your phone with the
+  screen frozen at that moment. Answer from the lock screen; it resumes.
 
 ```
   Flutter Companion App               Admin Console (React 19)
@@ -302,13 +331,33 @@ caveats worth stating rather than discovering:
 
 ## What it looks like
 
-Screenshots of the running console, regenerated with `make screenshots`.
+Real screenshots of a running fleet — console (`make screenshots`), live desktop
+(`make hero-shot`), and the companion app (`make app-screenshots`).
 
 <p align="center">
   <img src="docs/images/fleet-dark-amber.png" alt="Fleet dashboard" width="900">
 </p>
 
 <p align="center"><em>The fleet: every machine, its hardware envelope, and what its agent is doing right now.</em></p>
+
+### The companion app
+
+The same fleet from your pocket, on Android, iOS, macOS, Linux and Windows:
+live CPU/memory per bot, pipelines, the shared vault, and the alerts that let
+you unblock an agent from wherever you are.
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/images/app-fleet-dark.png" alt="Fleet on the phone"></td>
+    <td width="33%"><img src="docs/images/app-pipelines-dark.png" alt="Pipelines on the phone"></td>
+    <td width="33%"><img src="docs/images/app-alerts-dark.png" alt="Alerts on the phone"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><strong>Fleet</strong> — every bot, live meters</sub></td>
+    <td align="center"><sub><strong>Pipelines</strong> — stages, branches, one-tap run</sub></td>
+    <td align="center"><sub><strong>Alerts</strong> — what needs a human (nothing, ideally)</sub></td>
+  </tr>
+</table>
 
 <table>
   <tr>

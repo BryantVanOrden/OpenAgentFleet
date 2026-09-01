@@ -957,12 +957,12 @@ class WorkflowPipeline {
       );
 
   /// Stages grouped into dependency layers: nothing in layer 0 depends on
-  /// anything else, layer 1 waits on layer 0, and so on. This describes the
-  /// dependency structure, not the execution schedule — the engine runs stages
-  /// one at a time in topological order, so a layer is a set of stages whose
-  /// relative order does not matter, not a set that runs at once. With no edges
-  /// the pipeline is a straight line, which is what the flat list used to imply
-  /// for every pipeline whether it was true or not.
+  /// anything else, layer 1 waits on layer 0, and so on. A layer is also how
+  /// the engine schedules now — stages whose dependencies have settled run
+  /// concurrently, bounded by the pipeline's max_parallel — so the picture and
+  /// the execution finally agree. With no edges the pipeline is a straight
+  /// line, which is what the flat list used to imply for every pipeline
+  /// whether it was true or not.
   List<List<PipelineNode>> get layers {
     if (edges.isEmpty) return nodes.map((n) => [n]).toList();
 

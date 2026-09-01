@@ -8,14 +8,14 @@
     "DisableAppUpdate": true,
     "DontCheckDefaultBrowser": true,
     "NoDefaultBookmarks": true,
+    "SkipTermsOfUse": true,
     "UserMessaging": {
       "WhatsNew": false,
       "ExtensionRecommendations": false,
       "FeatureRecommendations": false,
       "UrlbarInterventions": false,
       "SkipOnboarding": true,
-      "MoreFromMozilla": false,
-      "SkipTermsOfUse": true
+      "MoreFromMozilla": false
     },
     "FirefoxHome": {
       "Highlights": false,
