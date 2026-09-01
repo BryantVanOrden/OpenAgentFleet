@@ -152,6 +152,23 @@ func (r *Registry) BestEmbedder(ctx context.Context) (Embedder, error) {
 			return emb, nil
 		}
 	}
+
+	// The floor: the local embedding sidecar the compose stack ships by
+	// default. It exists precisely for the fleet none of the above matched —
+	// Anthropic-only, or no providers configured yet — so semantic recall is
+	// the baseline rather than a reward for picking the right vendor. Probed
+	// like the providers are, and skipped with the same honesty when a
+	// deployment chose not to run it.
+	probeCtx, cancel := context.WithTimeout(ctx, EmbedTimeout)
+	defer cancel()
+	if emb, err := newLocalEmbedder(probeCtx); err == nil {
+		if _, err := emb.Embed(probeCtx, []string{"agentfleet embedding probe"}); err == nil {
+			return emb, nil
+		}
+	} else if r.log != nil {
+		r.log.Debug("embedding sidecar not available", "err", err)
+	}
+
 	return nil, ErrNoEmbedder
 }
 

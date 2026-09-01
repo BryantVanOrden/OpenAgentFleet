@@ -188,20 +188,20 @@ list-price table as the offline fallback, and the source reported in the
 financial summary); and HubSpot and Salesforce webhooks are parsed against
 their real schemas with their real authentication.
 
-What remains below is not unfinished work but the platform's honest limits —
-properties of the world or deliberate trades, stated here rather than left to
-be discovered:
+Semantic memory now ships by default, closing what used to be this section's
+first entry: the compose stack includes a small local embedding sidecar
+(model2vec `potion-base-8M`, ~30 MB, CPU-only, weights baked into the image so
+air-gapped fleets get it too), so a fleet with no embedding-capable provider —
+Anthropic-only, or none configured yet — still gets semantic recall rather
+than keyword matching. Configured providers that can embed are preferred for
+quality; `/api/memory/fleet` reports which scheme is live, and
+`EMBED_BASE_URL=off` restores the old fallback deliberately. Search remains a
+linear scan over the working set (2,000 records) — deliberate, and fine at
+this size.
 
-- **Embeddings need a provider that has them.** Episodic memory uses real
-  embeddings when a configured provider can produce them — Ollama, OpenAI, or
-  Gemini — and falls back to a 128-dimension hashed bag of words otherwise,
-  which only matches when the query reuses the memory's own words.
-  `/api/memory/fleet` reports which one is in use. A fleet on Anthropic alone
-  gets the fallback, because Anthropic has no embedding API — that is a fact
-  about Anthropic, not a missing feature here. Search is a linear scan over
-  the working set (2,000 records), which is deliberate and fine at this size;
-  there is no ANN index behind it, and at this scale one would be slower to
-  build than to not need.
+What remains below is the platform's one honest limit — a property of the
+design, stated here rather than left to be discovered:
+
 - **`developer-heavy` is a container, not a VM.** `make sandbox-dev` builds
   the image the tier asks for — compilers, Rust, Go, and the GPU loader hints
   — but it shares the host kernel like every container. The QEMU driver that

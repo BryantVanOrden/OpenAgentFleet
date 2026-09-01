@@ -13,7 +13,7 @@ One binary, one process, several concerns kept in separate packages:
 | `connectors`  | Normalises chat completion across OpenAI, Anthropic, Gemini, Antigravity, Ollama and OpenAI-compatible gateways; owns the fallback chain and role-based routing through model combinations |
 | `pipeline`    | Multi-bot DAG workflows. Independent stages run concurrently (bounded); each edge carries a condition that decides whether its downstream stage runs or is skipped |
 | `swarm`       | Shared-blackboard swarms. Starts a real task per member and routes artifacts through peer review |
-| `memory`      | Episodic memory behind `remember` and `recall`, private per bot plus a shared fleet pool. Real embeddings when a provider offers them, a hashed keyword index otherwise |
+| `memory`      | Episodic memory behind `remember` and `recall`, private per bot plus a shared fleet pool. Semantic by default: provider embeddings when configured, the local embedding sidecar otherwise, the hashed keyword index only when both are absent |
 | `mcp`         | Model Context Protocol client: JSON-RPC 2.0 over stdio or Streamable HTTP, with tool discovery and invocation |
 | `voice`       | Client for the text-to-speech sidecar, shared by the API and the agent loop |
 | `schedule`    | Cron parsing and the trigger scheduler                                |

@@ -54,6 +54,7 @@ services:
       # container runtime injects is glibc-linked, so it cannot execute.
       HOST_GPU_STATS_FILE: /hostfs/run/agentfleet/gpu-stats.csv
       TTS_BASE_URL: ${TTS_BASE_URL:-http://tts:8080}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-http://embed:8081}
       ARTIFACT_BACKEND: ${ARTIFACT_BACKEND:-fs}
       ARTIFACT_DIR: /var/lib/agentfleet/artifacts
       S3_ENDPOINT: http://minio:9000
@@ -84,6 +85,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Started, not healthy: the api must boot fine without the sidecar (it
+      # retries the probe), but starting them together removes the common race.
+      embed:
+        condition: service_started
     ports:
       - "${API_PORT:-8080}:8080"
     networks: [control, sandbox]
@@ -92,6 +97,19 @@ services:
   # Text to speech. Optional: with the service absent the API reports voices as
   # unavailable and the app falls back to the phone's own synthesiser, so a
   # deployment that does not want a ~2 GB image can simply not run it.
+  # Embedding sidecar: the floor under semantic memory. Small (model2vec
+  # potion-base-8M, ~30 MB of weights baked into the image), CPU-only, and a
+  # default service on purpose — it is what makes a fleet with no
+  # embedding-capable provider (Anthropic-only, or none yet) still get semantic
+  # recall instead of the hashed keyword fallback. Providers that can embed are
+  # preferred when configured; remove this service or set EMBED_BASE_URL=off to
+  # run without it.
+  embed:
+    build:
+      context: ./embed
+    networks: [control]
+    restart: unless-stopped
+
   tts:
     build:
       context: ./tts

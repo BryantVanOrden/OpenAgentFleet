@@ -6,6 +6,27 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Semantic memory ships by default
+
+The last feature-shaped entry in the design-limits list is gone: the compose
+stack now includes a local embedding sidecar (`embed/`, model2vec
+potion-base-8M — ~30 MB of static embeddings baked into the image, CPU-only,
+no network needed at runtime), and the orchestrator falls back to it when no
+configured provider can embed. A fleet on Anthropic alone, or with no
+providers at all, gets semantic recall out of the box: "sign in to the billing
+portal" now finds "logged into the invoicing site with the shared credential"
+(cosine 0.32 against 0.05 for an unrelated sentence, measured on the live
+sidecar) — the exact case the hashed keyword index could never match.
+Provider embeddings still win on quality when configured;
+`EMBED_BASE_URL=off` restores the keyword fallback deliberately, and
+`/api/memory/fleet` reports whichever scheme is live.
+
+Bringing it up found a boot race: the api probed for an embedder exactly once
+at startup, and the sidecar loads its model a few seconds slower — so the
+fleet stayed on the keyword index until the next api restart while a healthy
+sidecar sat unused. The probe now retries over three minutes, and compose
+starts the sidecar before the api.
+
 ### The partly-built list is now empty of unbuilt features
 
 The five buildable items in the README's "What is partly built" section are

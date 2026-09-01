@@ -89,11 +89,13 @@ Once public, you can feature:
 Two honesty notes for whoever writes the announcement, because both have a
 specific caveat that is easy to overstate:
 
-- **Memory** uses real embeddings *when an embedding-capable provider is
-  configured* (Ollama, OpenAI or Gemini) and a hashed keyword index otherwise.
-  `/api/memory/fleet` reports which. Do not describe it flatly as "vector
-  memory" — a fleet on Anthropic alone gets the keyword index, because Anthropic
-  has no embedding API.
-- **The README's "What is partly built"** section is the list to check before
-  claiming anything. It is kept current deliberately; the announcement should not
-  contradict it.
+- **Memory** is semantic by default: a local embedding sidecar ships in the
+  compose stack, and configured providers that can embed (Ollama, OpenAI,
+  Gemini) are preferred over it for quality. "Vector memory" is now a fair
+  description; `/api/memory/fleet` still reports the live scheme, and only a
+  deployment that removes the sidecar *and* has no embedding provider falls
+  back to the keyword index.
+- **The README's "Design limits, stated plainly"** section (formerly "What is
+  partly built" — everything buildable on that list has been built) is the list
+  to check before claiming anything. It is kept current deliberately; the
+  announcement should not contradict it.

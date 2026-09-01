@@ -133,25 +133,40 @@ func (s *Server) attachMemoryEmbedder(ctx context.Context) {
 	if s.models == nil {
 		return
 	}
-	probe, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
 
-	emb, err := s.models.BestEmbedder(probe)
-	if err != nil {
-		if errors.Is(err, connectors.ErrNoEmbedder) {
-			s.logger().Info("no embedding-capable provider configured; " +
-				"episodic memory keeps its hashed keyword index")
+	// Retried, not probed once. The embedding sidecar and the api start
+	// together, and the sidecar loads its model a few seconds slower — a
+	// single probe at boot lost that race and left the fleet on the keyword
+	// index until the next api restart, with the sidecar sitting there healthy
+	// the whole time. Six attempts over ~three minutes covers a slow sidecar
+	// and a provider configured moments after boot; after that the fleet
+	// genuinely has no embedder and the fallback message is true.
+	const attempts = 6
+	for i := 0; i < attempts; i++ {
+		probe, cancel := context.WithTimeout(ctx, 45*time.Second)
+		emb, err := s.models.BestEmbedder(probe)
+		cancel()
+
+		if err == nil {
+			s.logger().Info("episodic memory using real embeddings", "model", emb.Model())
+			// Not bound to the probe context, which is already cancelled: the
+			// re-embed of the existing index runs well past this function.
+			memory.GlobalEngine.SetEmbedder(context.WithoutCancel(ctx), emb)
 			return
 		}
-		s.logger().Warn("could not choose an embedding provider; "+
-			"episodic memory keeps its hashed keyword index", "err", err)
-		return
+		if !errors.Is(err, connectors.ErrNoEmbedder) {
+			s.logger().Warn("could not choose an embedding provider; "+
+				"episodic memory keeps its hashed keyword index", "err", err)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
 	}
-
-	s.logger().Info("episodic memory using real embeddings", "model", emb.Model())
-	// Not bound to the probe context, which is about to be cancelled: the
-	// re-embed of the existing index runs well past this function.
-	memory.GlobalEngine.SetEmbedder(context.WithoutCancel(ctx), emb)
+	s.logger().Info("no embedding-capable provider or sidecar answered; " +
+		"episodic memory keeps its hashed keyword index")
 }
 
 // RunCronScheduler fires due triggers once a minute until ctx is cancelled.
