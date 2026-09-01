@@ -1,26 +1,29 @@
 # AgentFleet Python SDK & `fleetctl` CLI
 
-Official Python SDK and command-line management client for **AgentFleet**, the hard-sandboxed autonomous multi-agent operating system.
+Official Python SDK and command-line management client for
+[**AgentFleet**](https://github.com/BryantVanOrden/AgentFleet) — the
+self-hosted platform for autonomous computer-use agents, where every agent
+gets its own disposable Linux desktop that streams live into your browser.
 
 ---
 
 ## 📦 Installation
 
-From this repository — the SDK is **not on PyPI yet** (see the release
-checklist), so `pip install agentfleet` does not install this project and, if
-that name is ever registered by someone else, would install code that is not
-ours. Install from the source you can read:
+```bash
+pip install agentfleet
+```
+
+That gives you the `agentfleet` package and the `fleetctl` CLI. To work from
+source instead:
 
 ```bash
 git clone https://github.com/BryantVanOrden/AgentFleet.git
 pip install -e AgentFleet/sdk/python
 ```
 
-Or from a checkout:
-```bash
-cd sdk/python
-pip install -e .
-```
+The SDK is a client — it talks to an AgentFleet orchestrator. To run one,
+see the [main README](https://github.com/BryantVanOrden/AgentFleet#readme)
+(`make up` is the whole quickstart).
 
 ---
 

@@ -253,12 +253,14 @@ revisions of this table carried its own numbers, and they were wrong.
 
 ## Python SDK and the `fleetctl` CLI
 
-A Python client and command-line utility live in `sdk/python`. They are not on
-PyPI yet, so install from the repository:
+A Python client and command-line utility, published on PyPI as
+[`agentfleet`](https://pypi.org/project/agentfleet/):
 
 ```bash
-pip install -e ./sdk/python
+pip install agentfleet
 ```
+
+Or from a checkout, `pip install -e ./sdk/python`.
 
 ### Python
 ```python
