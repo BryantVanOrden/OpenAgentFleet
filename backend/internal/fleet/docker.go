@@ -211,6 +211,12 @@ type ContainerInspect struct {
 		} `json:"Networks"`
 		Ports map[string][]portBind `json:"Ports"`
 	} `json:"NetworkSettings"`
+	// Labels are read to confirm a container belongs to the instance about to
+	// adopt it, so reconciliation can never bind a row to somebody else's
+	// sandbox on a name collision.
+	Config struct {
+		Labels map[string]string `json:"Labels"`
+	} `json:"Config"`
 }
 
 // IPOn returns the container address on a named network.
