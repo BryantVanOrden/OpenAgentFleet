@@ -23,6 +23,8 @@ import {
   type User,
 } from "../lib/api";
 import { useEvents } from "../lib/events";
+import { Markdown } from "../lib/markdown";
+import { speakable } from "../lib/speakable";
 import { toast } from "../components/Toasts";
 import {
   Ago,
@@ -1360,6 +1362,57 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  /** Read replies aloud, off by default — the phone app's toggle, mirrored.
+   *  The audio element and blob URL are owned here so switching messages or
+   *  unmounting never leaks or double-plays. */
+  const [speakReplies, setSpeakReplies] = useState(false);
+  const lastSpokenId = useRef("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const speakReply = useCallback(
+    async (body: string) => {
+      // The voice models get the voice-safe rewrite, never raw markdown.
+      const text = speakable(body);
+      if (!text) return;
+      try {
+        const url = await voiceApi.speak(
+          text,
+          instance.voice || undefined,
+          instance.voice_speed || undefined,
+        );
+        audioRef.current?.pause();
+        const el = new Audio(url);
+        audioRef.current = el;
+        el.onended = el.onerror = () => URL.revokeObjectURL(url);
+        await el.play();
+      } catch {
+        // No sidecar (or it failed): the browser voice beats silence.
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+        }
+      }
+    },
+    [instance.voice, instance.voice_speed],
+  );
+
+  useEffect(() => {
+    if (!speakReplies || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.role === "user" || last.id === lastSpokenId.current) return;
+    lastSpokenId.current = last.id;
+    void speakReply(last.body);
+  }, [messages, speakReplies, speakReply]);
+
+  // A voice that outlives its tab is a haunting, not a feature.
+  useEffect(
+    () => () => {
+      audioRef.current?.pause();
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    },
+    [],
+  );
+
   /** Where the last-open chat is remembered, per bot. Coming back to an agent
    *  should return you to the conversation you were having with it. */
   const lastChatKey = useMemo(() => `agentfleet.chat.last.${instanceId}`, [instanceId]);
@@ -1471,6 +1524,23 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
           <span className="truncate text-sm font-semibold text-ink-100">{chatTitle || "Chat"}</span>
           <span className="text-xs text-ink-500">▾</span>
         </button>
+        <Button
+          size="sm"
+          variant={speakReplies ? "primary" : "subtle"}
+          onClick={() => {
+            // Arm without replaying the backlog: whatever is already on
+            // screen has been read with eyes.
+            lastSpokenId.current = messages[messages.length - 1]?.id ?? "";
+            setSpeakReplies((v) => !v);
+            if (speakReplies) {
+              audioRef.current?.pause();
+              if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+            }
+          }}
+          title={speakReplies ? "Stop reading replies aloud" : "Read replies aloud"}
+        >
+          {speakReplies ? "🔊" : "🔇"}
+        </Button>
         {!readOnly && (
           <Button size="sm" onClick={() => void startNewChat()}>
             + New chat
@@ -1498,9 +1568,9 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
             <div key={m.id} className={cx("flex", mine ? "justify-end" : "justify-start")}>
               <div
                 className={cx(
-                  "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap",
+                  "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm",
                   mine
-                    ? "bg-live-500/15 text-ink-100 ring-1 ring-inset ring-live-500/30"
+                    ? "bg-live-500/15 whitespace-pre-wrap text-ink-100 ring-1 ring-inset ring-live-500/30"
                     : "bg-ink-800 text-ink-200",
                 )}
               >
@@ -1509,7 +1579,7 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
                     ☑ Proposed plan
                   </div>
                 )}
-                {m.body}
+                {mine ? m.body : <Markdown text={m.body} />}
                 {isOpenPlan && !readOnly && (
                   <div className="mt-2.5 flex gap-2">
                     <Button

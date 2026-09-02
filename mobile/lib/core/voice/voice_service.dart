@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../network/api_client.dart';
+import 'speakable.dart';
 
 /// Speech in and out, on device.
 ///
@@ -174,7 +175,10 @@ class VoiceService {
   }
 
   Future<void> speak(String text) async {
-    final trimmed = text.trim();
+    // Every caller hands over raw chat text, so the voice-safe rewrite lives
+    // here rather than at each call site: markdown structure out, numbers as
+    // words in. See speakable.dart for what and why.
+    final trimmed = speakable(text).trim();
     if (trimmed.isEmpty) return;
 
     if (_api != null && _serverVoice != null) {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/markdown/markdown_lite.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
@@ -536,11 +537,21 @@ class _BubbleState extends ConsumerState<_Bubble> {
                     ),
                     const SizedBox(height: 6),
                   ],
-                  // Selectable: quoting what an agent said, into a task or a
-                  // bug report, is a normal thing to want and there was no way
-                  // to do it.
-                  SelectableText(message.body,
-                      style: const TextStyle(fontSize: 14, height: 1.35)),
+                  // Agents answer in markdown, so agent bubbles render it;
+                  // the operator's own words stay exactly as typed. Wrapped in
+                  // a SelectionArea because quoting what an agent said, into a
+                  // task or a bug report, is a normal thing to want.
+                  if (mine)
+                    SelectableText(message.body,
+                        style: const TextStyle(fontSize: 14, height: 1.35))
+                  else
+                    SelectionArea(
+                      child: MarkdownLite(
+                        message.body,
+                        baseStyle:
+                            const TextStyle(fontSize: 14, height: 1.35),
+                      ),
+                    ),
                   // Only an unanswered plan offers the buttons; once approved
                   // or discarded it is history, and re-approving would start
                   // the same work twice.

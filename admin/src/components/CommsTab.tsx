@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Markdown } from "../lib/markdown";
 import {
   BROADCAST_ID,
   OPERATOR_ID,
@@ -850,7 +851,7 @@ function MessageRow({ message }: { message: PeerMessage }) {
           <span aria-hidden>⇊</span>
           COMPACTED{n > 0 ? ` · ${n} messages` : ""}
         </div>
-        <p className="text-sm whitespace-pre-wrap text-ink-200 select-text">{message.content}</p>
+        <Markdown text={message.content} className="text-sm text-ink-200 select-text" />
       </div>
     );
   }
@@ -879,9 +880,7 @@ function MessageRow({ message }: { message: PeerMessage }) {
           </span>
           <span className="text-[10px] text-ink-500">{relative(message.created_at)}</span>
         </div>
-        <p className="mt-1 text-sm whitespace-pre-wrap text-ink-100 select-text">
-          {message.content}
-        </p>
+        <Markdown text={message.content} className="mt-1 text-sm text-ink-100 select-text" />
       </div>
     </div>
   );

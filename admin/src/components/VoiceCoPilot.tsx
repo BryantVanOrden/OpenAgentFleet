@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
+import { speakable } from "../lib/speakable";
 import { ErrorNote, Modal, cx } from "./ui";
 
 export interface VoiceOption {
@@ -196,10 +197,13 @@ export default function VoiceCoPilot({
    * there is no sidecar to ask -- with the fallback said out loud in the
    * transcript, so nobody mistakes the OS voice for the product again.
    */
-  const speakAloud = async (text: string, voiceId: string) => {
+  const speakAloud = async (rawText: string, voiceId: string) => {
     setIsSpeaking(true);
     const now = new Date().toLocaleTimeString();
-    setConversation((prev) => [...prev, { sender: "bot", text, time: now }]);
+    // The transcript shows what was said as written; the voice model gets the
+    // voice-safe rewrite — markdown structure stripped, numbers as words.
+    setConversation((prev) => [...prev, { sender: "bot", text: rawText, time: now }]);
+    const text = speakable(rawText);
 
     // Anything still playing is stale the moment there is something newer to
     // say, and two overlapping utterances are unintelligible.

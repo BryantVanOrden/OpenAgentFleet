@@ -68,6 +68,7 @@ jobs:
           cd admin
           npm ci
           npm run build
+          npm test
 
       - name: Set up Flutter for Fast Analysis
         uses: subosito/flutter-action@v2

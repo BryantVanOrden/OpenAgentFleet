@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/markdown/markdown_lite.dart';
 import '../../core/models.dart';
 import '../../core/theme/theme.dart';
 
@@ -59,8 +60,10 @@ class MessageTile extends StatelessWidget {
             const SizedBox(height: 6),
             // Selectable: quoting what an agent said, into a task or a bug
             // report, is a normal thing to want and there was no way to do it.
-            SelectableText(message.content,
-                style: const TextStyle(fontSize: 13, height: 1.35)),
+            SelectionArea(
+              child: MarkdownLite(message.content,
+                  baseStyle: const TextStyle(fontSize: 13, height: 1.35)),
+            ),
           ],
         ),
       );
@@ -118,8 +121,12 @@ class MessageTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 5),
-                  SelectableText(message.content,
-                      style: const TextStyle(fontSize: 13, height: 1.35)),
+                  // Agents write markdown into the bus like they do in chat.
+                  SelectionArea(
+                    child: MarkdownLite(message.content,
+                        baseStyle:
+                            const TextStyle(fontSize: 13, height: 1.35)),
+                  ),
                 ],
               ),
             ),
