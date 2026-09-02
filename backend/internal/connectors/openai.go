@@ -3,12 +3,16 @@ package connectors
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/image/webp"
 
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
@@ -49,6 +53,11 @@ type oaRequest struct {
 	ResponseFormat *struct {
 		Type string `json:"type"`
 	} `json:"response_format,omitempty"`
+	// ChatTemplateKwargs is how a self-hosted gateway is told to skip a
+	// reasoning model's thinking pass. It is not part of the OpenAI API, so it
+	// is only ever set for the openai-compatible kind -- api.openai.com
+	// refuses a request carrying an argument it does not recognise.
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 type oaResponse struct {
@@ -96,10 +105,11 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 			parts = append(parts, oaContent{Type: "text", Text: m.Text})
 		}
 		img := oaContent{Type: "image_url"}
+		imgB64, imgMime := pngIfWebP(m.Image, mimeOr(m.ImageMime))
 		img.ImageURL = &struct {
 			URL    string `json:"url"`
 			Detail string `json:"detail,omitempty"`
-		}{URL: "data:" + mimeOr(m.ImageMime) + ";base64," + m.Image, Detail: "high"}
+		}{URL: "data:" + imgMime + ";base64," + imgB64, Detail: "high"}
 		parts = append(parts, img)
 		body.Messages = append(body.Messages, oaMessage{Role: m.Role, Content: parts})
 	}
@@ -107,6 +117,16 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 		body.ResponseFormat = &struct {
 			Type string `json:"type"`
 		}{Type: "json_object"}
+	}
+	// A reasoning model asked for a short answer spends the whole budget
+	// thinking and returns empty content, which every caller reads as an
+	// unhealthy provider -- the 8-token health probe fails against it
+	// permanently. Request.DisableThinking exists to prevent exactly that, but
+	// until now only the native Ollama connector honoured it, so the flag was
+	// silently dropped here and the retry in Registry.complete could never
+	// change the outcome.
+	if req.DisableThinking && c.p.Kind == protocol.ProviderCompatible {
+		body.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
 	}
 
 	start := time.Now()
@@ -193,4 +213,37 @@ func trim(b []byte) string {
 		return string(b[:max]) + "..."
 	}
 	return string(b)
+}
+
+// pngIfWebP re-encodes a WebP frame as PNG on the way to the model.
+//
+// The agent loop captures WebP because it is the cheapest thing to put in a
+// prompt, and api.openai.com accepts it. Several self-hosted gateways that
+// speak this same wire format do not: a llama.cpp server answers
+// 400 "Failed to load image or audio file" and the whole task fails with
+// "every model provider failed", which reads as a broken model rather than an
+// unsupported container. Transcoding here keeps that decision local to the
+// request — the artifact store still keeps the original WebP, so the audit
+// trail and the recorder are untouched.
+//
+// Anything that does not decode is passed through unchanged rather than
+// dropped: a provider that understands the original is better served by it
+// than by an error.
+func pngIfWebP(b64, mime string) (string, string) {
+	if b64 == "" || !strings.EqualFold(mime, "image/webp") {
+		return b64, mime
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return b64, mime
+	}
+	img, err := webp.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return b64, mime
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return b64, mime
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes()), "image/png"
 }
