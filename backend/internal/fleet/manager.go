@@ -395,6 +395,25 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		}
 	}
 
+	// Record the container before the slow part of provisioning, not after.
+	//
+	// Everything below -- polling for an address, waiting for agentd, applying
+	// the sudo decision, probing every declared tool -- runs for tens of
+	// seconds, and the runtime id used to be written only in the final
+	// UpdateInstance. A crash or a host reboot inside that window left a row
+	// stuck in `provisioning` with an empty runtime_id while its container ran
+	// perfectly: Reconcile skips rows it cannot name, so the row never
+	// recovered, and Delete only removes a container it can name, so deleting
+	// the row leaked the sandbox. Writing it here closes the window.
+	//
+	// Not fatal on failure: adoptOrphan recovers the association from the
+	// container's deterministic name, and that is the path rows written before
+	// this change take.
+	if err := m.db.UpdateInstance(ctx, inst); err != nil {
+		m.log.Error("could not record the sandbox id before provisioning",
+			"instance", inst.ID, "err", err)
+	}
+
 	// The address check is a poll, not a single inspect. Inspecting in the
 	// same breath as /start races the engine's network attach: under load
 	// (an image build churning, several sandboxes starting at once) the first
@@ -710,12 +729,19 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if inst.Runtime != "" {
-		if err := m.docker.RemoveContainer(ctx, inst.Runtime); err != nil {
-			var de *DockerError
-			if !asDockerError(err, &de) || !de.NotFound() {
-				return err
-			}
+	// Fall back to the deterministic name when the id was never recorded.
+	// Without this, deleting a row that died mid-provision removed the record
+	// and left its sandbox running with nothing referring to it -- an
+	// unreachable container holding a tier's worth of RAM until the host was
+	// rebooted.
+	target := inst.Runtime
+	if target == "" {
+		target = sandboxHost(inst)
+	}
+	if err := m.docker.RemoveContainer(ctx, target); err != nil {
+		var de *DockerError
+		if !asDockerError(err, &de) || !de.NotFound() {
+			return err
 		}
 	}
 	m.releasePortsFor(inst)
@@ -788,7 +814,7 @@ func (m *Manager) Reconcile(ctx context.Context) {
 		return
 	}
 	for _, inst := range instances {
-		if inst.Runtime == "" {
+		if inst.Runtime == "" && !m.adoptOrphan(ctx, &inst) {
 			continue
 		}
 		ci, err := m.docker.InspectContainer(ctx, inst.Runtime)
@@ -839,6 +865,43 @@ func (m *Manager) Reconcile(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// adoptOrphan reattaches an instance to the sandbox it created but never
+// recorded, and reports whether inst.Runtime now names a real container.
+//
+// Provisioning creates the container before it can persist the id, so a crash
+// or a host reboot in between leaves a row with no runtime_id pointing at a
+// container that is running and healthy. The container name is derived from
+// the instance id, so it can be found again without any stored state -- which
+// is what makes the row recoverable at all.
+//
+// The instance label is checked before adopting. The name is only the first
+// twelve characters of a uuid, and binding a row to another bot's desktop
+// because two ids shared a prefix would be far worse than leaving it stuck.
+func (m *Manager) adoptOrphan(ctx context.Context, inst *protocol.Instance) bool {
+	if len(inst.ID) < 12 {
+		return false
+	}
+	name := sandboxHost(inst)
+	ci, err := m.docker.InspectContainer(ctx, name)
+	if err != nil || ci == nil || ci.ID == "" {
+		return false
+	}
+	if got := ci.Config.Labels["agentfleet.instance"]; got != inst.ID {
+		m.log.Warn("not adopting a sandbox that belongs to another instance",
+			"instance", inst.ID, "container", name, "labelled", got)
+		return false
+	}
+	m.log.Info("adopting a sandbox this instance created but never recorded",
+		"instance", inst.ID, "container", ci.ID[:12])
+	inst.Runtime = ci.ID
+	if err := m.db.UpdateInstance(ctx, inst); err != nil {
+		m.log.Error("could not record the adopted sandbox",
+			"instance", inst.ID, "err", err)
+		return false
+	}
+	return true
 }
 
 // WatchStats samples every running instance on an interval and publishes the
