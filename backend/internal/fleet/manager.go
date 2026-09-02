@@ -44,14 +44,40 @@ func NewManager(cfg *config.Config, db *store.Store, log *slog.Logger) (*Manager
 	if err := dc.EnsureNetwork(ctx, cfg.SandboxNetwork, false); err != nil {
 		return nil, fmt.Errorf("sandbox network: %w", err)
 	}
-	return &Manager{
+	m := &Manager{
 		cfg:    cfg,
 		docker: dc,
 		db:     db,
 		log:    log,
 		tiers:  DefaultTiers(cfg.SandboxImage),
 		ports:  map[int]bool{},
-	}, nil
+	}
+	// The lease map lives in memory, so a restart forgets every port a live
+	// sandbox is still bound to — and the next provision leases one of them,
+	// which the engine refuses with "port is already allocated". Rehydrated
+	// from the published_* labels of every stored instance: stopped containers
+	// keep their configured bindings and rebind them on Start, so their leases
+	// count too, and rows only leave the table when the sandbox is deleted.
+	if cfg.PublishPorts {
+		if insts, err := db.ListInstances(ctx); err != nil {
+			log.Warn("port leases not rehydrated; provisioning may collide "+
+				"with running sandboxes until they are deleted", "err", err)
+		} else {
+			m.markLeases(insts)
+		}
+	}
+	return m, nil
+}
+
+// markLeases re-marks the host ports recorded on instances as taken.
+func (m *Manager) markLeases(insts []protocol.Instance) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range insts {
+		for _, p := range publishedPorts(insts[i].Labels) {
+			m.ports[p] = true
+		}
+	}
 }
 
 func (m *Manager) Tiers() []protocol.TierProfile { return m.tiers }
@@ -214,7 +240,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 	return inst, nil
 }
 
-func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.TierProfile) error {
+func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.TierProfile) (retErr error) {
 	// Reduce the tier to something this host will admit. DefaultTiers has always
 	// said the profiles are advisory and that this happens; until now nothing
 	// did it, so asking for more CPUs than the host has was a hard 400 from the
@@ -320,12 +346,23 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 			Capabilities: [][]string{{"gpu", "compute", "utility", "graphics"}},
 		}}
 	}
+	var leased []int
 	if m.cfg.PublishPorts {
 		vnc, agentd := m.leasePort(), m.leasePort()
+		leased = []int{vnc, agentd}
 		spec.HostConfig.PortBindings = map[string][]portBind{
 			portKey(PortNoVNC):  {{HostIP: "127.0.0.1", HostPort: strconv.Itoa(vnc)}},
 			portKey(PortAgentd): {{HostIP: "127.0.0.1", HostPort: strconv.Itoa(agentd)}},
 		}
+		// A boot that fails past this point never writes the published_*
+		// labels, so nothing would ever release these two leases — each failed
+		// provision would quietly shrink the port range for the life of the
+		// process.
+		defer func() {
+			if retErr != nil {
+				m.releasePorts(leased)
+			}
+		}()
 	}
 
 	cid, err := m.docker.CreateContainer(ctx, containerName, spec)
@@ -446,6 +483,13 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	if m.cfg.PublishPorts {
 		if hp := ci.HostPort(portKey(PortNoVNC)); hp != "" {
 			inst.Labels = withLabel(inst.Labels, "published_vnc", "http://127.0.0.1:"+hp)
+		}
+		// Recorded for the same reason as the VNC port: these labels are the
+		// lease ledger — releasePortsFor and the boot-time rehydration both
+		// read them. The agentd binding used to go unrecorded, so its lease
+		// outlived every deleted sandbox.
+		if hp := ci.HostPort(portKey(PortAgentd)); hp != "" {
+			inst.Labels = withLabel(inst.Labels, "published_agentd", "http://127.0.0.1:"+hp)
 		}
 	}
 
@@ -1022,18 +1066,37 @@ func (m *Manager) leasePort() int {
 	return 0 // let the engine pick
 }
 
-func (m *Manager) releasePortsFor(inst *protocol.Instance) {
-	if inst.Labels == nil {
-		return
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, v := range inst.Labels {
+// publishedLabelPrefix marks the labels this manager itself writes to record
+// a host-port binding. Only these participate in lease bookkeeping: labels
+// are also caller-supplied at create, and parsing every value for a ":port"
+// tail let a user label like "contact: room:6901" release a port some other
+// live sandbox was bound to.
+const publishedLabelPrefix = "published_"
+
+func publishedPorts(labels map[string]string) []int {
+	var out []int
+	for k, v := range labels {
+		if !strings.HasPrefix(k, publishedLabelPrefix) {
+			continue
+		}
 		if i := strings.LastIndex(v, ":"); i >= 0 {
 			if p, err := strconv.Atoi(v[i+1:]); err == nil {
-				delete(m.ports, p)
+				out = append(out, p)
 			}
 		}
+	}
+	return out
+}
+
+func (m *Manager) releasePortsFor(inst *protocol.Instance) {
+	m.releasePorts(publishedPorts(inst.Labels))
+}
+
+func (m *Manager) releasePorts(ports []int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range ports {
+		delete(m.ports, p)
 	}
 }
 
