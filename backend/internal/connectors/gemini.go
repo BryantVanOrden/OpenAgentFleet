@@ -80,6 +80,19 @@ func (c *gemini) Complete(ctx context.Context, req Request) (*Response, error) {
 	if req.JSONOnly {
 		body.GenerationConfig.ResponseMimeType = "application/json"
 	}
+	// Gemini 2.5+ models think by default and their thoughts spend
+	// maxOutputTokens, so a tiny budget (the 8-token health probe) comes back
+	// with empty text and reads as a dead provider. There is no portable way
+	// to switch the pass off: thinkingConfig.thinkingBudget=0 is rejected by
+	// 2.5-pro, the whole field is rejected by pre-2.5 models, and 3.x moved to
+	// thinking_level — every spelling is a 400 on some model an operator can
+	// legitimately pick. So the flag buys headroom instead: enough budget that
+	// the answer survives the thinking spend. The callers that set
+	// DisableThinking (the probe, the empty-completion retry) want an answer,
+	// not an economy.
+	if req.DisableThinking && body.GenerationConfig.MaxOutputTokens < 512 {
+		body.GenerationConfig.MaxOutputTokens = 512
+	}
 	if req.System != "" {
 		body.SystemInstruction = &gmContent{Parts: []gmPart{{Text: req.System}}}
 	}
@@ -166,8 +179,10 @@ func (c *gemini) Complete(ctx context.Context, req Request) (*Response, error) {
 		text += p.Text
 	}
 	if strings.TrimSpace(text) == "" {
-		return nil, fmt.Errorf("%s: empty completion (finish reason %s)",
-			c.p.Name, out.Candidates[0].FinishReason)
+		// Wrapped so Registry.complete's retry can recognise it; bare strings
+		// here made that retry Ollama-only.
+		return nil, fmt.Errorf("%s: %w (finish reason %s)",
+			c.p.Name, ErrEmptyCompletion, out.Candidates[0].FinishReason)
 	}
 	return &Response{
 		Text:         text,

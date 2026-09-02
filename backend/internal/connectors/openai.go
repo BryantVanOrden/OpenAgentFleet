@@ -163,12 +163,15 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 	if out.Error != nil {
 		return nil, fmt.Errorf("%s: %s", c.p.Name, out.Error.Message)
 	}
+	// Both wrapped so Registry.complete's retry-without-thinking can recognise
+	// them. Bare strings here meant the retry — whose whole point is a
+	// reasoning model that thought its budget away — fired only for Ollama.
 	if len(out.Choices) == 0 {
-		return nil, fmt.Errorf("%s: empty completion", c.p.Name)
+		return nil, fmt.Errorf("%s: %w", c.p.Name, ErrEmptyCompletion)
 	}
 	if strings.TrimSpace(out.Choices[0].Message.Content) == "" {
-		return nil, fmt.Errorf("%s: empty completion (finish_reason %s)",
-			c.p.Name, out.Choices[0].FinishReason)
+		return nil, fmt.Errorf("%s: %w (finish_reason %s)",
+			c.p.Name, ErrEmptyCompletion, out.Choices[0].FinishReason)
 	}
 	return &Response{
 		Text:         out.Choices[0].Message.Content,

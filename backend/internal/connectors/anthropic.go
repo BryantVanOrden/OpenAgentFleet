@@ -105,6 +105,27 @@ func (c *anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		body.Messages = append(body.Messages, msg)
 	}
 
+	// Anthropic has no response_format, so strict JSON is asked for the way
+	// the API itself recommends: prefill the assistant turn with "{" and the
+	// model can only continue the object. The brace is stitched back onto the
+	// response below, so callers see the same complete JSON every other
+	// connector returns. Until this, JSONOnly was silently dropped here — the
+	// same class of bug as the DisableThinking flag only Ollama honoured.
+	prefilled := false
+	if req.JSONOnly && len(body.Messages) > 0 &&
+		body.Messages[len(body.Messages)-1].Role == RoleUser {
+		body.Messages = append(body.Messages, anMessage{
+			Role:    RoleAssistant,
+			Content: []anBlock{{Type: "text", Text: "{"}},
+		})
+		prefilled = true
+	}
+
+	// req.DisableThinking is deliberately a no-op here: Anthropic's thinking
+	// pass is opt-in per request and this connector never opts in, so there is
+	// nothing to disable — unlike Gemini and self-hosted gateways, where
+	// models think by default and the flag has to actively suppress it.
+
 	start := time.Now()
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -155,7 +176,13 @@ func (c *anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		}
 	}
 	if strings.TrimSpace(text) == "" {
-		return nil, fmt.Errorf("%s: empty completion (stop_reason %s)", c.p.Name, out.StopReason)
+		// Wrapped so Registry.complete's retry can recognise it. A bare string
+		// here meant the retry fired only for Ollama, whose connector was the
+		// one that wrapped.
+		return nil, fmt.Errorf("%s: %w (stop_reason %s)", c.p.Name, ErrEmptyCompletion, out.StopReason)
+	}
+	if prefilled {
+		text = "{" + text
 	}
 	// Anthropic keeps cache reads and writes out of input_tokens, so the prompt
 	// total has to be reassembled to mean the same thing it means for every

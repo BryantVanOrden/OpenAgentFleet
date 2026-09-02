@@ -367,8 +367,10 @@ func TestOllamaSurfacesABodyLevelError(t *testing.T) {
 
 // --------------------------------------------------------------- anthropic ---
 
+// The visionRequest is JSONOnly, so the assistant turn is prefilled with "{"
+// and the model returns the CONTINUATION — no opening brace of its own.
 const anOK = `{"model":"claude-sonnet-4-5",
-	"content":[{"type":"text","text":"{\"action\":"},{"type":"text","text":"\"done\"}"}],
+	"content":[{"type":"text","text":"\"action\":"},{"type":"text","text":"\"done\"}"}],
 	"stop_reason":"end_turn","usage":{"input_tokens":300,"output_tokens":12}}`
 
 func TestAnthropicRequestShape(t *testing.T) {
@@ -395,11 +397,14 @@ func TestAnthropicRequestShape(t *testing.T) {
 
 	// The system prompt is a TOP-LEVEL field, not a message.
 	wantStr(t, cp, "system", "You are a computer-use agent.")
+	// JSONOnly rides as an assistant prefill: the user turn, then "{".
 	msgs, _ := dig(cp.body, "messages")
 	arr, ok := msgs.([]any)
-	if !ok || len(arr) != 1 {
-		t.Fatalf("messages = %#v, want exactly one user message", msgs)
+	if !ok || len(arr) != 2 {
+		t.Fatalf("messages = %#v, want the user message plus the JSON prefill", msgs)
 	}
+	wantStr(t, cp, "messages.1.role", "assistant")
+	wantStr(t, cp, "messages.1.content.0.text", "{")
 	for i := range arr {
 		if role, _ := dig(cp.body, "messages."+strconv.Itoa(i)+".role"); role == "system" {
 			t.Error("the system prompt leaked into the messages array")
@@ -417,7 +422,8 @@ func TestAnthropicRequestShape(t *testing.T) {
 	wantNum(t, cp, "max_tokens", 512)
 	wantNum(t, cp, "temperature", 0.25)
 
-	// Text blocks are concatenated in order.
+	// Text blocks are concatenated in order, with the prefilled brace
+	// stitched back on so callers see complete JSON.
 	if resp.Text != `{"action":"done"}` {
 		t.Errorf("Text = %q", resp.Text)
 	}
