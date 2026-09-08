@@ -404,6 +404,12 @@ Real screenshots of a running fleet — console (`make screenshots`), live deskt
 (`make hero-shot`), and the companion app (`make app-screenshots`).
 
 <p align="center">
+  <img src="docs/images/chat-dark-amber.png" alt="The fleet chat: one conversation with every agent, Oaf's system notes, and slash commands" width="900">
+</p>
+
+<p align="center"><em>The home screen is one chat with the whole fleet. Say what you want done and the bots divide it up; type <code>/</code> for commands; Oaf narrates what the platform did.</em></p>
+
+<p align="center">
   <img src="docs/images/fleet-dark-amber.png" alt="Fleet dashboard" width="900">
 </p>
 

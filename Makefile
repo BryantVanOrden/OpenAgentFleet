@@ -55,6 +55,11 @@ app-screenshots: ## Recapture the companion-app screenshots from the Flutter web
 	cd mobile && flutter build web --release
 	@docker run --rm --network agentfleet_control -v "$(CURDIR)/scripts:/scripts:ro" -v "$(CURDIR)/mobile/build/web:/appweb:ro" -v "$(CURDIR)/docs/images:/out" -e APP_URL=http://localhost:8099 -e API_URL=http://api:8080 -e AF_EMAIL="$${SHOT_EMAIL:-demo@agentfleet.local}" -e AF_PASSWORD="$${SHOT_PASSWORD:-agentfleet-demo-1234}" -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 mcr.microsoft.com/playwright:v1.49.1-noble sh -c 'python3 -m http.server 8099 -d /appweb >/dev/null 2>&1 & sleep 2 && mkdir -p /tmp/pw && cd /tmp/pw && npm i --silent --no-audit --no-fund playwright@1.49.1 >/dev/null 2>&1 && cp /scripts/app-screenshots.mjs . && xvfb-run -a node app-screenshots.mjs'
 
+.PHONY: app-chat-e2e
+app-chat-e2e: ## Drive the companion app's fleet chat end to end from the web build (quick chip, palette, /help)
+	cd mobile && flutter build web --release
+	@docker run --rm --network agentfleet_control -v "$(CURDIR)/scripts:/scripts:ro" -v "$(CURDIR)/mobile/build/web:/appweb:ro" -v "$(CURDIR)/docs/images:/out" -e APP_URL=http://localhost:8099 -e AF_EMAIL="$${SHOT_EMAIL:-demo@agentfleet.local}" -e AF_PASSWORD="$${SHOT_PASSWORD:-agentfleet-demo-1234}" -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 mcr.microsoft.com/playwright:v1.49.1-noble sh -c 'python3 -m http.server 8099 -d /appweb >/dev/null 2>&1 & sleep 2 && mkdir -p /tmp/pw && cd /tmp/pw && npm i --silent --no-audit --no-fund playwright@1.49.1 >/dev/null 2>&1 && cp /scripts/app-chat-e2e.mjs . && xvfb-run -a node app-chat-e2e.mjs'
+
 .PHONY: hero-shot
 hero-shot: ## Recapture the README hero (a live agent desktop). Needs INSTANCE_ID=<running instance>
 	@test -n "$(INSTANCE_ID)" || (echo "INSTANCE_ID is required: a running instance with something on screen" && exit 1)

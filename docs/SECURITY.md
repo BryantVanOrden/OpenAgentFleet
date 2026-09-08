@@ -431,6 +431,31 @@ key for a hosted server, a bearer token for an HTTP one). It is stored in the
 database, never returned by the API — `GET /api/mcp/servers` reports the key names
 only — and is excluded from exported archetype packages.
 
+## The fleet chat
+
+The home screen is one conversation with every agent, and three new things
+can happen from it.
+
+- **Slash commands** (`httpapi/fleet_commands.go`). `POST /api/fleet/command`
+  is operator-gated at the route and re-checks per-bot permissions inside:
+  starting work needs `chat` on that bot, pausing or resuming needs `edit`,
+  provisioning needs `create`. Results that changed something are written
+  into the broadcast channel as `system` notes from "Oaf"; agents never
+  answer that kind, so a note cannot start a conversation.
+- **`ASK <bot>: …` in a private chat** (`httpapi/peer_ask.go`). A
+  model-authored line becomes a real peer message to a colleague. The text
+  the model was looking at — the screenshot included — is untrusted, so a
+  hostile page can in principle talk a bot into asking a colleague
+  something. The blast radius is the one `message_peer` already has, and it
+  is bounded the same way: the recipient treats it as a peer message, never
+  as an instruction from you.
+- **Marathon continuation** (`agent/marathon.go`). A run that never says done
+  keeps going in fresh windows, spending model tokens the whole time.
+  `AGENT_MARATHON_MAX_WINDOWS` is the cap and defaults to unbounded, because
+  "until it is done" is what was asked for; the `progress` alert at every
+  boundary and `/stop @bot` are the operator's controls. Nothing stops a run
+  on cost alone.
+
 ## Agent-authored apps
 
 The shared work catalog lets an agent publish an *app* — one HTML document —

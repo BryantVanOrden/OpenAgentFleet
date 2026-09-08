@@ -161,6 +161,17 @@ make sandbox-vm
 # accepted, the runner's netns carries the nftables rules, the image exists.
 ```
 
+The fleet chat has three layers of test. `go test ./internal/httpapi` covers
+the command parser, the catalogue's integrity (every verb dispatched and
+documented), the bot resolvers and the `ASK <bot>:` parser; `verify-features`
+exercises `GET /api/fleet/commands` and `POST /api/fleet/command` against the
+running stack; and `make app-chat-e2e` drives the phone's chat from the Flutter
+web build (a quick chip, the command panel, `/help`). Marathon continuation is
+pinned in `go test ./internal/agent` (policy, handover, prompt block); the live
+check is a task created with a tiny `max_steps` (3) on a running bot — its
+state should become `continued`, a successor with `params.window = 2` should
+appear, and a `progress` alert should be filed.
+
 `verify-features` registers a real MCP server in a container and calls a tool on
 it, checks that pipeline conditions and cycles are rejected at save, that a swarm
 refuses members that are not real instances, and that a Stripe delivery signed
