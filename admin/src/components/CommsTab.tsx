@@ -841,27 +841,10 @@ function ConversationView({
  *  participant's remark. */
 function MessageRow({ message }: { message: PeerMessage }) {
   const mine = !message.from_instance_id;
-  const summary = message.kind === "summary";
 
-  if (summary) {
-    const n = compactedCount(message);
-    return (
-      <div className="rounded-lg border border-cool-500/35 bg-ink-850 px-3 py-2.5">
-        <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-cool-500">
-          <span aria-hidden>⇊</span>
-          COMPACTED{n > 0 ? ` · ${n} messages` : ""}
-        </div>
-        <Markdown text={message.content} className="text-sm text-ink-200 select-text" />
-      </div>
-    );
-  }
+  if (message.kind === "summary") return <SummaryRow message={message} />;
 
-  const kindTone =
-    message.kind === "delegation"
-      ? "bg-warn-500/15 text-warn-500"
-      : message.kind === "question"
-        ? "bg-cool-500/15 text-cool-500"
-        : "bg-ink-800 text-ink-300";
+  const kindTone = kindChipClass(message.kind);
 
   return (
     <div className={cx("flex", mine ? "justify-end" : "justify-start")}>
@@ -875,13 +858,37 @@ function MessageRow({ message }: { message: PeerMessage }) {
           <span className="truncate text-xs font-bold text-ink-100">
             {message.from_instance_name || "Operator"}
           </span>
-          <span className={cx("rounded px-1.5 py-px text-[9px] uppercase", kindTone)}>
-            {message.kind}
-          </span>
+          <span className={kindTone}>{message.kind}</span>
           <span className="text-[10px] text-ink-500">{relative(message.created_at)}</span>
         </div>
         <Markdown text={message.content} className="mt-1 text-sm text-ink-100 select-text" />
       </div>
+    </div>
+  );
+}
+
+/** The kind chip beside a sender's name. Shared with the fleet chat so a
+ *  delegation looks the same wherever it is read. */
+export function kindChipClass(kind: string): string {
+  const tone =
+    kind === "delegation"
+      ? "bg-warn-500/15 text-warn-500"
+      : kind === "question"
+        ? "bg-cool-500/15 text-cool-500"
+        : "bg-ink-800 text-ink-300";
+  return cx("rounded px-1.5 py-px text-[9px] uppercase", tone);
+}
+
+/** A compaction marker: reads as a line across the thread, not as a remark. */
+export function SummaryRow({ message }: { message: PeerMessage }) {
+  const n = compactedCount(message);
+  return (
+    <div className="rounded-lg border border-cool-500/35 bg-ink-850 px-3 py-2.5">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-cool-500">
+        <span aria-hidden>⇊</span>
+        COMPACTED{n > 0 ? ` · ${n} messages` : ""}
+      </div>
+      <Markdown text={message.content} className="text-sm text-ink-200 select-text" />
     </div>
   );
 }

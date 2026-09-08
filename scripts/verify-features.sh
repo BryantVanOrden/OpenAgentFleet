@@ -442,6 +442,34 @@ else
   note "agentfleet/sandbox:latest-vm not built yet — run: make sandbox-vm"
 fi
 
+# ----------------------------------------------------------------- fleet chat ---
+
+head "10. fleet chat commands"
+cat_out=$(api GET /api/fleet/commands)
+if has "$cat_out" '"name":"help"' && has "$cat_out" '"name":"mission"' && has "$cat_out" '"name":"task"'; then
+  ok "the command catalogue lists help, task and mission"
+else
+  bad "command catalogue incomplete: $(printf '%s' "$cat_out" | head -c 160)"
+fi
+help_out=$(api POST /api/fleet/command '{"text":"/help"}')
+if has "$help_out" '"ok":true' && has "$help_out" '/mission'; then
+  ok "/help executes and documents /mission"
+else
+  bad "/help did not execute: $(printf '%s' "$help_out" | head -c 160)"
+fi
+bogus=$(api POST /api/fleet/command '{"text":"/frobnicate"}')
+if has "$bogus" '"ok":false' && has "$bogus" '/help'; then
+  ok "an unknown command fails honestly and points at /help"
+else
+  bad "unknown command handling: $(printf '%s' "$bogus" | head -c 160)"
+fi
+bots_out=$(api POST /api/fleet/command '{"text":"/bots"}')
+if has "$bots_out" '"ok":true'; then
+  ok "/bots answers"
+else
+  bad "/bots failed: $(printf '%s' "$bots_out" | head -c 160)"
+fi
+
 # -------------------------------------------------------------------- summary ---
 
 echo

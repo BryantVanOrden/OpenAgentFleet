@@ -38,6 +38,7 @@ import {
   Modal,
   PromptModal,
   StateBadge,
+  WindowChip,
   cx,
   inputClass,
 } from "../components/ui";
@@ -2010,8 +2011,9 @@ function TaskList({
           <StateBadge state={t.state} live={t.state === "running"} />
         </div>
         <div className="mt-1 flex items-center justify-between font-mono text-[11px] text-ink-500">
-          <span>
+          <span className="flex items-center gap-1.5">
             step {t.step}/{t.max_steps}
+            <WindowChip window={t.params?.window} />
           </span>
           <Ago at={t.created_at} />
         </div>

@@ -26,6 +26,21 @@ What ships in 1.0.0:
   kill the very health check that admits an instance), and the policy no
   longer flushes Docker's embedded-DNS NAT rules (name resolution inside
   policied sandboxes silently died with them).
+- **One chat with the whole fleet** as the home screen of both clients:
+  plain text goes to the running bots, who divide the work between
+  themselves over the peer bus (claims, handoffs, name-ordered replies);
+  `/` commands are parsed and executed server-side from one catalogue, so
+  the console and the phone offer identical verbs. Missions are folded into
+  it — `/mission <goal>` teams every free bot by archetype, plan-first, with
+  peer-reviewed artifacts — and the separate Mission Control / Swarms
+  screens are gone. In a bot's private chat, an `ASK <bot>: …` line becomes a
+  real question to that colleague.
+- **Marathon runs.** The step budget is a checkpoint, not a kill switch: an
+  unfinished window summarises itself and continues in a fresh task
+  (`continued` state, linked by `params.continuation_of`), bounded only by
+  `AGENT_MARATHON_MAX_WINDOWS` (default unbounded), with a progress alert at
+  every boundary. Agents are told a goal is done only once they have seen it
+  work on screen.
 - **A perceive-decide-act loop** over screenshots, Set-of-Marks badges and the
   AT-SPI accessibility tree, with per-model coordinate-space calibration,
   perceptual-hash stall detection, and a 33-action vocabulary where the

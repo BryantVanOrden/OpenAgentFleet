@@ -274,6 +274,8 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
         'failed' => Icons.error_outline,
         'completed' => Icons.check_circle_outline,
         'resource' => Icons.memory_outlined,
+        // A marathon moved on to its next step-window: news, not a problem.
+        'progress' => Icons.update,
         _ => Icons.info_outline,
       };
 }

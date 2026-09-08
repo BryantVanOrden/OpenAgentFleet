@@ -95,6 +95,7 @@ async function main() {
 
   // ---- the signed-in console ----
   const pages = [
+    ["chat", "/", "text=Fleet chat"],
     ["fleet", "/fleet", "text=Fleet"],
     ["engines", "/models", "text=AI engines"],
     ["skills", "/skills", "text=Skills"],

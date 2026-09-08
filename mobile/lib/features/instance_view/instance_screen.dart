@@ -15,6 +15,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/window_chip.dart';
 import '../agent_chat/chat_screen.dart';
 import '../admin/bot_access_sheet.dart';
 import 'assign_task_sheet.dart';
@@ -1156,9 +1157,16 @@ class _TaskCard extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(
-                'step ${task.step}/${task.maxSteps} · ${humanAgo(task.createdAt)}',
-                style: TextStyle(color: Fleet.ink400, fontSize: 11),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'step ${task.step}/${task.maxSteps} · ${humanAgo(task.createdAt)}',
+                      style: TextStyle(color: Fleet.ink400, fontSize: 11),
+                    ),
+                  ),
+                  WindowChip(task.window),
+                ],
               ),
               if (task.error.isNotEmpty) ...[
                 const SizedBox(height: 8),

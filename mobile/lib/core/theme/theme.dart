@@ -118,7 +118,9 @@ class FleetColors extends ThemeExtension<FleetColors> {
         'running' || 'succeeded' => good,
         'provisioning' || 'queued' => live,
         'awaiting_human' => warn,
-        'paused' => cool,
+        // A marathon's step-window closed and the agent carried on in a new
+        // task: not a failure, not still running here. Same tone as paused.
+        'paused' || 'continued' => cool,
         'error' || 'failed' => bad,
         _ => ink400,
       };

@@ -150,6 +150,7 @@ class Task {
     this.error = '',
     this.result = '',
     this.parentTaskId = '',
+    this.params = const {},
   });
 
   final String id;
@@ -166,6 +167,18 @@ class Task {
   /// task the operator (or a trigger) started directly.
   final String parentTaskId;
 
+  /// Free-form settings the run was started with. Kept as the raw map: the
+  /// server adds keys faster than a phone needs to know about them, and the
+  /// two the app renders are read through [window] and [continuationOf].
+  final Map<String, dynamic> params;
+
+  /// Which step-window of a marathon this task is. 0 for an ordinary run.
+  int get window => (params['window'] as num?)?.toInt() ?? 0;
+
+  /// The task this one carried on from, when a marathon's step-window closed
+  /// and the agent kept going in a fresh task. Empty otherwise.
+  String get continuationOf => '${params['continuation_of'] ?? ''}';
+
   bool get isLive =>
       state == 'running' || state == 'queued' || state == 'awaiting_human';
 
@@ -181,6 +194,57 @@ class Task {
         error: j['error'] as String? ?? '',
         result: j['result'] as String? ?? '',
         parentTaskId: j['parent_task_id'] as String? ?? '',
+        params: ((j['params'] as Map?) ?? const {}).cast<String, dynamic>(),
+      );
+}
+
+/// A slash command the orchestrator understands, from GET /api/fleet/commands.
+class FleetCommand {
+  const FleetCommand({
+    required this.name,
+    required this.usage,
+    this.description = '',
+    this.mutates = false,
+  });
+
+  /// The bare name, without the leading slash — "status", not "/status".
+  final String name;
+
+  /// How to type it, e.g. `/mission <goal>`. Inserted into the composer.
+  final String usage;
+  final String description;
+
+  /// Whether running it changes something, as opposed to reporting.
+  final bool mutates;
+
+  factory FleetCommand.fromJson(Map<String, dynamic> j) => FleetCommand(
+        name: (j['name'] as String? ?? '').replaceFirst(RegExp(r'^/'), ''),
+        usage: j['usage'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+        mutates: j['mutates'] as bool? ?? false,
+      );
+}
+
+/// What running a slash command produced. [body] is markdown.
+class FleetCommandResult {
+  const FleetCommandResult({
+    required this.command,
+    required this.ok,
+    required this.title,
+    required this.body,
+  });
+
+  final String command;
+  final bool ok;
+  final String title;
+  final String body;
+
+  factory FleetCommandResult.fromJson(Map<String, dynamic> j) =>
+      FleetCommandResult(
+        command: j['command'] as String? ?? '',
+        ok: j['ok'] as bool? ?? false,
+        title: j['title'] as String? ?? '',
+        body: j['body'] as String? ?? '',
       );
 }
 

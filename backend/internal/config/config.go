@@ -69,6 +69,13 @@ type Config struct {
 	StepTimeout    time.Duration
 	StallThreshold int     // identical observations before intervening
 	StallDelta     float64 // fraction of changed pixels considered "movement"
+	// Marathon lets a run continue past its step budget in fresh windows,
+	// each carrying a summary of the last, until the agent itself says done
+	// or fails. MarathonMaxWindows bounds the chain; 0 is unbounded — the
+	// operator asked for days, and every boundary files a progress alert
+	// they can cancel from.
+	Marathon           bool
+	MarathonMaxWindows int
 	ScreenshotMaxW int
 
 	// CoordSpace is the coordinate convention the vision model answers in.
@@ -119,6 +126,8 @@ func Load() (*Config, error) {
 		StepTimeout:           time.Duration(envInt("AGENT_STEP_TIMEOUT_SEC", 120)) * time.Second,
 		StallThreshold:        envInt("AGENT_STALL_THRESHOLD", 3),
 		StallDelta:            envFloat("AGENT_STALL_DELTA", 0.02),
+		Marathon:              envBool("AGENT_MARATHON", true),
+		MarathonMaxWindows:    envInt("AGENT_MARATHON_MAX_WINDOWS", 0),
 		ScreenshotMaxW:        envInt("AGENT_SCREENSHOT_MAX_WIDTH", 1280),
 		CoordSpace:            env("AGENT_COORD_SPACE", "auto"),
 		AllowShell:            envBool("ALLOW_SHELL", true),

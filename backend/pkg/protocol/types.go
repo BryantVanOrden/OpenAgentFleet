@@ -151,6 +151,10 @@ const (
 	TaskSucceeded     TaskState = "succeeded"
 	TaskFailed        TaskState = "failed"
 	TaskCancelled     TaskState = "cancelled"
+	// TaskContinued is a step window that closed with the work unfinished and
+	// the agent carrying straight on in a fresh task — see ParamContinuationOf
+	// on its successor. Neither a success nor a failure: a chapter break.
+	TaskContinued TaskState = "continued"
 )
 
 // Task is one unit of autonomous work assigned to an instance.
@@ -860,6 +864,10 @@ const (
 	AlertCompleted  AlertKind = "completed"
 	AlertBudget     AlertKind = "budget"
 	AlertResource   AlertKind = "resource"
+	// AlertProgress is informational: a marathon run closed one window and
+	// opened the next. Never needs a reply; it exists so a run that goes on
+	// for days is visible — and cancellable — rather than silent.
+	AlertProgress AlertKind = "progress"
 )
 
 // Alert is a push-notifiable event that may require an operator response.
@@ -1000,3 +1008,17 @@ func ValidWorkKind(kind string) bool {
 // ask a person is almost never the right move: nobody is waiting to answer,
 // and each wait holds up everyone downstream.
 const ParamHandoff = "handoff"
+
+// Marathon continuation. A step budget is a checkpoint, not a kill switch:
+// when a window closes unfinished the agent summarises where it got to and
+// resumes in a new task carrying that summary. These params link the chain.
+const (
+	// ParamProgress is the running summary handed from one window to the next.
+	ParamProgress = "progress"
+	// ParamContinuationOf is the task id of the window this one continues.
+	ParamContinuationOf = "continuation_of"
+	// ParamWindow is this task's 1-based position in its chain.
+	ParamWindow = "window"
+	// ParamOnce opts a task out of continuation: one window, then a verdict.
+	ParamOnce = "once"
+)

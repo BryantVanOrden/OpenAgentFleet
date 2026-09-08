@@ -50,3 +50,16 @@ were not given parity: the console's hardcoded archetype dropdowns now read
 the template catalogue, the phone's voice-speed reset now actually resets
 (sends 0 rather than omitting the field), and the phone no longer offers
 `viewer` as a platform role the backend refuses.
+
+## Addendum — the fleet chat (2026-09-02)
+
+Both clients now open on one chat with the whole fleet, and the swarm surfaces
+(console Mission Control, app Swarms screen) are gone: missions run from the
+chat via `/mission`, `/missions`, `/approve`, `/reject`. The slash-command
+catalogue and executor are server-side (`GET /api/fleet/commands`,
+`POST /api/fleet/command`), which is what keeps the two clients' verbs
+identical by construction rather than by diligence. Parity items that fell
+out of it, both sides: markdown in chat bubbles, `continued` task state and
+the `↻ window N` chip for marathon runs, and the `progress` alert kind. The
+phone's tab bar is Chat · Fleet · Vault · Alerts · Settings (· Admin); Pipelines
+moved into the Fleet app bar, next to Skills and Fleet comms.

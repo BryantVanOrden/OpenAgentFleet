@@ -164,14 +164,24 @@ final meProvider = FutureProvider<CurrentUser>((ref) {
 
 
 /// Which bottom-nav tab is which, so the shell and the screens agree.
+///
+/// Pipelines is no longer a tab — it is reached from the Fleet screen — and
+/// the chat with the whole fleet took the first slot.
 class Tabs {
-  static const fleet = 0;
-  static const pipelines = 1;
+  static const chat = 0;
+  static const fleet = 1;
   static const vault = 2;
   static const alerts = 3;
   static const settings = 4;
   static const admin = 5;
 }
+
+/// The tab currently on screen.
+///
+/// [tabRefreshProvider] says when a tab is arrived at but not when it is left,
+/// and the fleet chat needs both: it polls and may be reading aloud, neither
+/// of which should carry on behind another tab.
+final selectedTabProvider = StateProvider<int>((_) => Tabs.chat);
 
 /// Bumped every time a tab is selected.
 ///

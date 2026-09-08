@@ -12,7 +12,7 @@ import 'features/alerts/alerts_screen.dart';
 import 'features/admin/admin_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
-import 'features/pipelines/pipelines_screen.dart';
+import 'features/home/home_chat_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/vault/vault_screen.dart';
@@ -169,12 +169,12 @@ class _OpenAgentFleetAppState extends ConsumerState<OpenAgentFleetApp> {
 
 /// Bottom-nav shell.
 ///
-/// Five destinations, down from seven. Voice and Swarms were pulled out as
-/// top-level tabs because neither is a place you go: voice is one of the ways
-/// to talk to a particular agent, so it lives inside that agent alongside chat,
-/// and agents now message each other automatically over the fleet bus, so a
-/// swarm is not a thing you assemble and then visit. Their content did not
-/// disappear; it moved to where it is used.
+/// The chat with the whole fleet comes first: it is where you say what you
+/// want and where the fleet tells you what happened, and slash commands there
+/// cover what used to need a screen of its own. Swarms went that way — a
+/// mission is started and approved in the chat now — and Pipelines moved off
+/// the bar to a button on the Fleet screen. Voice lives inside each agent
+/// alongside its chat rather than as a destination.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -191,6 +191,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// Without this they show what they fetched when the app started.
   void _select(int i) {
     setState(() => _index = i);
+    ref.read(selectedTabProvider.notifier).state = i;
     ref.read(tabRefreshProvider(i).notifier).state++;
   }
 
@@ -205,14 +206,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // Losing admin mid-session (signed out, role changed) must not leave the
     // stack pointing at a child that is no longer there.
     final pageCount = isAdmin ? 6 : 5;
-    final index = _index < pageCount ? _index : 0;
+    final index = _index < pageCount ? _index : Tabs.chat;
 
     return Scaffold(
       body: IndexedStack(
         index: index,
         children: [
+          const HomeChatScreen(),
           const FleetScreen(),
-          const PipelinesScreen(),
           const VaultScreen(),
           const AlertsScreen(),
           const SettingsScreen(),
@@ -224,14 +225,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         onDestinationSelected: _select,
         destinations: [
           const NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            selectedIcon: Icon(Icons.forum_rounded),
+            label: 'Chat',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.grid_view_outlined),
             selectedIcon: Icon(Icons.grid_view_rounded),
             label: 'Fleet',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.account_tree_outlined),
-            selectedIcon: Icon(Icons.account_tree_rounded),
-            label: 'Pipelines',
           ),
           const NavigationDestination(
             icon: Icon(Icons.lock_outline),

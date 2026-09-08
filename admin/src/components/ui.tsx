@@ -18,6 +18,8 @@ const STATE_STYLES: Record<string, string> = {
   succeeded: "bg-good-500/15 text-good-500 ring-good-500/30",
   failed: "bg-bad-500/15 text-bad-500 ring-bad-500/30",
   cancelled: "bg-ink-600/40 text-ink-300 ring-ink-500/30",
+  // Neither a success nor a failure: the run went on in another task.
+  continued: "bg-cool-500/15 text-cool-500 ring-cool-500/30",
   critical: "bg-bad-500/15 text-bad-500 ring-bad-500/30",
   warn: "bg-warn-500/15 text-warn-500 ring-warn-500/30",
   info: "bg-cool-500/15 text-cool-500 ring-cool-500/30",
@@ -34,6 +36,20 @@ export function StateBadge({ state, live }: { state: string; live?: boolean }) {
     >
       <span className={cx("size-1.5 rounded-full bg-current", live && "pulse-live")} />
       {state.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+/** Marks a task that is one step-window of a longer marathon run. Cool-toned
+ *  like "continued": a fact about the run's shape, not a verdict on it. */
+export function WindowChip({ window: n }: { window?: string }) {
+  if (!n) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded bg-cool-500/15 px-1.5 py-px font-mono text-[10px] text-cool-500"
+      title={`Step-window ${n} of a marathon run`}
+    >
+      ↻ window {n}
     </span>
   );
 }

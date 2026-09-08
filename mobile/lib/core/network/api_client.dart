@@ -671,6 +671,23 @@ class ApiClient {
     return PeerMessage.fromJson(data.cast<String, dynamic>());
   }
 
+  // -------------------------------------------------------- slash commands ---
+
+  /// The slash commands the fleet chat accepts. Fetched rather than hardcoded
+  /// so the picker offers exactly what this server will run.
+  Future<List<FleetCommand>> fleetCommands() async {
+    final data = await _get('/api/fleet/commands') as List? ?? const [];
+    return data
+        .map((e) => FleetCommand.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Run one command line, slash included, exactly as typed.
+  Future<FleetCommandResult> runFleetCommand(String text) async {
+    final data = await _post('/api/fleet/command', {'text': text}) as Map;
+    return FleetCommandResult.fromJson(data.cast<String, dynamic>());
+  }
+
   // ------------------------------------------------------------ pipelines ---
 
   Future<List<WorkflowPipeline>> pipelines() async {

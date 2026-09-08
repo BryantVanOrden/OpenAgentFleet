@@ -26,9 +26,10 @@ const FIELD = { server: [195, 393], email: [195, 453], password: [195, 513], sig
 // Bottom NavigationBar: six destinations for an admin, evenly spaced.
 const NAV_Y = 815;
 const navX = (i) => Math.round((390 / 6) * (i + 0.5));
+// Chat is the home tab now; Pipelines moved off the bar into Fleet's app bar.
 const TABS = [
-  { i: 0, name: "fleet" },
-  { i: 1, name: "pipelines" },
+  { i: 0, name: "chat" },
+  { i: 1, name: "fleet" },
   { i: 2, name: "vault" },
   { i: 3, name: "alerts" },
   { i: 4, name: "settings" },

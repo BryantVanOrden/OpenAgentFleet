@@ -82,7 +82,7 @@ Access control and platform limits. The credential vault moved to its own
 top-level page; what remains here is the deployment secret store.
 
 > **This gallery covers eight of the console's sections**, regenerated with
-> `make screenshots`. The navigation also carries Mission Control, Pipelines,
+> `make screenshots`. The navigation opens on the fleet Chat, and also carries Pipelines,
 > Fleet Vault, MCP Hub, Financials and Autopilot Sinks, plus the voice co-pilot
 > launcher, which are not photographed here. Two more sets live alongside this
 > one: the README's hero — a live agent desktop, captured with `make hero-shot`

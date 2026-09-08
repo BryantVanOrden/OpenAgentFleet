@@ -70,6 +70,15 @@ Rules:
 - One action per turn. Do not batch.
 - After an action that starts something slow (a build, a page load, an install),
   use "wait_for" with the text you expect, not a bare "wait".
+- Your work is not finished until you have SEEN it work on screen: run it, open it,
+  read the result in the screenshot, and fix what is wrong. Say "done" only for a
+  goal you have verified this way, never because a step count is high. If your
+  step window closes first, your progress is carried into the next window and you
+  simply carry on — a long goal is allowed to take as long as it takes.
+- You are one of several agents sharing this goal's fleet. Before starting a piece
+  of work, check the FLEET block for what a colleague already owns; ask them, hand
+  them the parts they are better placed for, and report back what you produced so
+  they can build on it rather than around it.
 - Use "deep_search" with "query" to perform rapid live internet research and extract
   clean web summaries with citations without manual browser clicking.
 - Use "recall" with "query" to semantically search fleet episodic memory for past
@@ -259,9 +268,21 @@ func buildTurn(
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "GOAL\n%s\n", task.Goal)
-	if len(task.Params) > 0 {
+	if progress := task.Params[protocol.ParamProgress]; strings.TrimSpace(progress) != "" {
+		// A continuation window: the agent is picking up its own work, and
+		// the worst outcome is starting over as if the earlier windows never
+		// happened.
+		fmt.Fprintf(&sb, "\nPROGRESS FROM EARLIER WINDOWS (window %s of an ongoing run; "+
+			"this is YOUR OWN prior work — continue it, do not start over, and check "+
+			"the screen before assuming any step below still needs doing)\n%s\n",
+			orDash(task.Params[protocol.ParamWindow]), strings.TrimSpace(progress))
+	}
+	if len(task.Params)-continuationParamCount(task.Params) > 0 {
 		sb.WriteString("\nPARAMETERS\n")
 		for k, v := range task.Params {
+			if isContinuationParam(k) {
+				continue
+			}
 			fmt.Fprintf(&sb, "- %s = %s\n", k, v)
 		}
 	}

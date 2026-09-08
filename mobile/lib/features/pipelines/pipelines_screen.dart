@@ -111,11 +111,9 @@ class _PipelinesScreenState extends ConsumerState<PipelinesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Reload when this tab is opened. The shell keeps every tab alive in an
-    // IndexedStack, so loading in initState alone meant showing whatever was
-    // fetched when the app started, for the rest of the session.
-    ref.listen(tabRefreshProvider(Tabs.pipelines), (_, __) => _load());
-
+    // Pushed from the Fleet screen rather than kept alive in the tab shell, so
+    // the load in initState runs on every arrival and the refresh button covers
+    // the rest.
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(),

@@ -409,7 +409,7 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		}
 	}
 
-	r.fail(ctx, task, fmt.Sprintf("step budget exhausted (%d steps)", task.MaxSteps))
+	r.continueOrFail(ctx, task, inst, history)
 }
 
 type terminalKind int

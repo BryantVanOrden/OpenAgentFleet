@@ -5,8 +5,8 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../fleet_comms/comms_screen.dart';
+import '../pipelines/pipelines_screen.dart';
 import '../skills/skills_screen.dart';
-import '../swarms/swarms_screen.dart';
 import 'provision_sheet.dart';
 import '../instance_view/instance_screen.dart';
 
@@ -46,13 +46,14 @@ class FleetScreen extends ConsumerWidget {
               MaterialPageRoute(builder: (_) => const SkillsScreen()),
             ),
           ),
-          // Missions run by teams of agents live beside the agents too, and
-          // not as another bottom tab — the tab bar is deliberately tight.
+          // Pipelines are the shape of work the fleet does without you. Off the
+          // tab bar so the chat could have the first slot; still one tap away
+          // from the agents that run the stages.
           IconButton(
-            tooltip: 'Swarms',
-            icon: const Icon(Icons.diversity_3_outlined),
+            tooltip: 'Pipelines',
+            icon: const Icon(Icons.account_tree_outlined),
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SwarmsScreen()),
+              MaterialPageRoute(builder: (_) => const PipelinesScreen()),
             ),
           ),
           // The agents' own conversation belongs beside the agents, not filed

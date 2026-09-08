@@ -23,6 +23,10 @@ const peerReplyKind = "reply"
 // than being one, so nobody answers it.
 const peerSummaryKind = "summary"
 
+// peerSystemKind marks a note the platform itself wrote into a channel — the
+// record of a slash command, a bot coming up. Agents never answer it.
+const peerSystemKind = "system"
+
 // RunPeerResponder lets idle agents answer messages addressed to them.
 //
 // The agent loop only reads its inbox while a task is running (peerContext is
@@ -155,6 +159,9 @@ func (s *Server) nextUnanswered(ctx context.Context, instanceID string, since ti
 		case m.Kind == peerSummaryKind:
 			// A summary is a record of what was said, not something said to
 			// anyone. Compacting a thread used to make every agent chime in.
+		case m.Kind == peerSystemKind:
+			// A command result the console posted into the channel. Nobody
+			// asked the fleet anything; answering it is noise.
 		case m.CreatedAt.Before(cutoff):
 		case !m.CreatedAt.After(since):
 		case found && !m.CreatedAt.After(best.CreatedAt):

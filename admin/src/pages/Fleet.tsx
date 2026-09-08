@@ -25,6 +25,7 @@ import {
   Modal,
   Stat,
   StateBadge,
+  WindowChip,
   bytes,
   cx,
   inputClass,
@@ -329,7 +330,8 @@ function InstanceCard({
                 </p>
               )}
             </div>
-            <span className="shrink-0 font-mono text-[11px] text-ink-500">
+            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-ink-500">
+              <WindowChip window={task.params?.window} />
               {task.step}/{task.max_steps}
             </span>
           </div>

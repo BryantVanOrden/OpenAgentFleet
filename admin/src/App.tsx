@@ -7,22 +7,24 @@ import ToastHost, { toast } from "./components/Toasts";
 import ThemePicker from "./components/ThemePicker";
 import VoiceCoPilot from "./components/VoiceCoPilot";
 import Login from "./pages/Login";
+import Home from "./pages/Home";
 import Fleet from "./pages/Fleet";
 import InstanceDetail from "./pages/InstanceDetail";
 import Skills from "./pages/Skills";
 import Alerts from "./pages/Alerts";
 import Models from "./pages/Models";
 import Settings from "./pages/Settings";
-import MissionControl from "./pages/MissionControl";
 import Triggers from "./pages/Triggers";
 import Vault from "./pages/Vault";
 import Pipelines from "./pages/Pipelines";
 import Financials from "./pages/Financials";
 import MCPHub from "./pages/MCPHub";
 
-const NAV: { to: string; label: string; icon: string; adminOnly?: boolean }[] = [
+const NAV: { to: string; label: string; icon: string; adminOnly?: boolean; end?: boolean }[] = [
+  // Exact match: "/" is a prefix of every route, so without `end` the chat
+  // entry would light up on all of them.
+  { to: "/", label: "Chat", icon: "💬", end: true },
   { to: "/fleet", label: "Fleet", icon: "▦" },
-  { to: "/swarms", label: "Mission Control", icon: "🐝" },
   { to: "/pipelines", label: "Pipelines", icon: "⛓" },
   { to: "/vault", label: "Fleet Vault", icon: "🔐" },
   { to: "/mcp", label: "MCP Hub", icon: "🔌" },
@@ -168,6 +170,7 @@ export default function App() {
             <NavLink
               key={item.to}
               to={item.to}
+              end={item.end}
               className={({ isActive }) =>
                 cx(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
@@ -225,9 +228,8 @@ export default function App() {
 
       <main className="flex-1 overflow-y-auto">
         <Routes>
-          <Route path="/" element={<Navigate to="/fleet" replace />} />
+          <Route path="/" element={<Home role={user.role} />} />
           <Route path="/fleet" element={<Fleet />} />
-          <Route path="/swarms" element={<MissionControl />} />
           <Route path="/pipelines" element={<Pipelines />} />
           <Route path="/vault" element={<Vault role={user.role} />} />
           <Route path="/mcp" element={<MCPHub />} />
@@ -238,7 +240,7 @@ export default function App() {
           <Route path="/alerts" element={<Alerts onChange={refreshAlerts} />} />
           <Route path="/models" element={<Models role={user.role} />} />
           <Route path="/settings" element={<Settings role={user.role} />} />
-          <Route path="*" element={<Navigate to="/fleet" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 

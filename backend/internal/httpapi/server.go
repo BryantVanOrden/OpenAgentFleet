@@ -104,6 +104,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/tasks/{id}/synthesize-skill", auth(roleOperator, s.handleSynthesizeSkill))
 
 	// Autonomous Multi-Agent Swarms & Mission Control
+	// The fleet chat's slash commands: one catalogue, one executor, so both
+	// clients offer exactly the same verbs.
+	mux.Handle("GET /api/fleet/commands", auth(roleAny, s.handleFleetCommands))
+	mux.Handle("POST /api/fleet/command", auth(roleOperator, s.handleFleetCommand))
 	mux.Handle("GET /api/swarms", auth(roleAny, s.handleListSwarms))
 	mux.Handle("POST /api/swarms", auth(roleOperator, s.handleCreateSwarm))
 	mux.Handle("GET /api/swarms/{id}", auth(roleAny, s.handleGetSwarm))

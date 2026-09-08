@@ -384,6 +384,8 @@ recorded as `running` indefinitely.
 
 | Method | Path | Role | Description |
 | :--- | :--- | :--- | :--- |
+| `GET` | `/api/fleet/commands` | any | The fleet chat's slash-command catalogue: `[{name, usage, description, mutates}]`. One list for every client. |
+| `POST` | `/api/fleet/command` | operator | Execute one command: `{text: "/task @bot …"}` → `{command, ok, title, body}` with a markdown body. Mutating commands also post an `Oaf` system note into the `broadcast` conversation. |
 | `GET` | `/api/swarms` | any | List swarms, newest first. |
 | `POST` | `/api/swarms` | operator | Create a swarm and start a task per member. |
 | `GET` | `/api/swarms/{id}` | any | One swarm and its blackboard. |

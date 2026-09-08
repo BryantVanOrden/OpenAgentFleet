@@ -9,7 +9,9 @@ export type TaskState =
   | "awaiting_human"
   | "succeeded"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /** A marathon step-window closed and the agent carried on in a new task. */
+  | "continued";
 
 export interface TierProfile {
   name: Tier;
@@ -140,6 +142,9 @@ export interface Task {
   max_steps: number;
   error?: string;
   result?: string;
+  /** Free-form. A marathon window carries continuation_of (the task it took
+   *  over from) and window (its ordinal, from 1). */
+  params?: Record<string, string>;
   created_at: string;
 }
 
@@ -817,6 +822,25 @@ export function isSimpleCombo(c: ModelCombo): boolean {
   return keys.length <= 2 && keys.every((r) => r === "vision" || r === "reasoning");
 }
 
+/** A slash command the fleet chat understands, from GET /api/fleet/commands. */
+export interface FleetCommand {
+  /** Without the leading slash in some builds, with it in others; use
+   *  commandText() in fleetChat.ts rather than reading this raw. */
+  name: string;
+  usage: string;
+  description: string;
+  /** Changes something (approve, reject, mission…) rather than reporting. */
+  mutates: boolean;
+}
+
+/** What running one slash command produced. body is markdown. */
+export interface FleetCommandResult {
+  command: string;
+  ok: boolean;
+  title: string;
+  body: string;
+}
+
 /** Something a bot decided was worth keeping across tasks. */
 export interface BotMemory {
   id: string;
@@ -978,6 +1002,12 @@ export const api = {
    *  on the server; this changes what is replayed, not what happened. */
   compactConversation: (id: string) =>
     post<PeerMessage>(`/api/comms/conversations/${id}/compact`),
+
+  // Fleet chat slash commands. The text goes across exactly as typed, slash
+  // included — parsing lives on the server so the console and the phone app
+  // cannot disagree about what a command means.
+  fleetCommands: () => get<FleetCommand[]>("/api/fleet/commands"),
+  runFleetCommand: (text: string) => post<FleetCommandResult>("/api/fleet/command", { text }),
 
   // Model Context Protocol (MCP) Bridge
   mcpServers: () => get<MCPServer[]>("/api/mcp/servers"),

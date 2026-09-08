@@ -100,6 +100,22 @@ you would. That one decision is where everything else comes from:
 
 ## What it does
 
+- **One chat with the whole fleet.** The home screen of both the console and the
+  phone app is a single conversation with every agent. Say what you want done and
+  the running bots divide it between themselves — each claims a part, sees what
+  colleagues already took, hands work on, and reports back. Name a bot and it
+  answers first. Type `/` for commands (`/bots`, `/task @bot …`, `/mission …`,
+  `/alerts`, `/ack`, `/run`, `/help`) — parsed and executed server-side, so both
+  clients offer exactly the same verbs. Missions are not a separate screen:
+  `/mission <goal>` gives every free bot a role from its archetype, they plan
+  first, then execute, and their artifacts are peer-reviewed in the same chat.
+- **Runs that take as long as they take.** A step budget is a checkpoint, not a
+  kill switch: when a window closes with the goal unfinished the agent writes a
+  handover note to itself and carries on in a fresh window, for hours or days,
+  until it has *seen* the result work on screen. Each window is its own task —
+  steps and screenshots stay browsable — and every boundary files a progress
+  alert you can cancel from. In a private chat, a bot that needs a colleague
+  asks them directly (`ASK Builder: …`) and the answer lands in fleet comms.
 - **Sandboxed desktops.** Each bot is a container running Ubuntu with XFCE, under
   cgroup limits on CPU and memory with swap disabled, an optional GPU device
   request, and an optional nftables egress policy. See [Security](docs/SECURITY.md)
@@ -247,6 +263,11 @@ each makes a deliberate trade:
 
 And the limits that remain, stated as limits:
 
+- **Marathon runs are bounded only by what you set.** `AGENT_MARATHON_MAX_WINDOWS`
+  defaults to 0 — unbounded, because that is what "until it is done" means — and
+  the handover note between windows is written by the summarising model, so a
+  weak summariser can lose detail across a very long run. The progress alert at
+  every boundary is the operator's cancel handle; nothing stops a run for you.
 - **No GPU on the VM tier.** `vfio-pci` passthrough needs IOMMU hardware this
   project's CI cannot exercise, and shipping untested code is against the
   point of this section — so it stays roadmap. The container tier's GPU
@@ -390,19 +411,20 @@ Real screenshots of a running fleet — console (`make screenshots`), live deskt
 
 ### The companion app
 
-The same fleet from your pocket, on Android, iOS, macOS, Linux and Windows:
-live CPU/memory per bot, pipelines, the shared vault, and the alerts that let
-you unblock an agent from wherever you are.
+The same fleet from your pocket, on Android, iOS, macOS, Linux and Windows —
+the same features as the console, down to the slash commands: the fleet chat,
+live CPU/memory per bot, the shared vault, and the alerts that let you unblock
+an agent from wherever you are. Oaf keeps you company.
 
 <table>
   <tr>
+    <td width="33%"><img src="docs/images/app-chat-dark.png" alt="The fleet chat on the phone — Oaf's notes, slash commands, one conversation with every agent"></td>
     <td width="33%"><img src="docs/images/app-fleet-dark.png" alt="Fleet on the phone"></td>
-    <td width="33%"><img src="docs/images/app-pipelines-dark.png" alt="Pipelines on the phone"></td>
     <td width="33%"><img src="docs/images/app-alerts-dark.png" alt="Alerts on the phone"></td>
   </tr>
   <tr>
+    <td align="center"><sub><strong>Chat</strong> — the whole fleet in one conversation, <code>/</code> for commands</sub></td>
     <td align="center"><sub><strong>Fleet</strong> — every bot, live meters</sub></td>
-    <td align="center"><sub><strong>Pipelines</strong> — stages, branches, one-tap run</sub></td>
     <td align="center"><sub><strong>Alerts</strong> — what needs a human (nothing, ideally)</sub></td>
   </tr>
 </table>

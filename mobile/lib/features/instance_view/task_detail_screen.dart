@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/window_chip.dart';
 
 /// One run, step by step: what the agent saw, thought, did, and what came of
 /// it. The mobile mirror of the console's activity pane, for reading a run
@@ -190,6 +191,12 @@ class _HeaderCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SelectableText(task.goal, style: const TextStyle(fontSize: 14)),
+            if (task.window > 0) ...[
+              const SizedBox(height: 8),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: WindowChip(task.window)),
+            ],
             const SizedBox(height: 10),
             Row(
               children: [
