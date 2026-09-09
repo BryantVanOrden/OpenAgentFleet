@@ -228,3 +228,30 @@ func TestDiscoveryReleasesTheConnectionWhenAProviderRejectsTheKey(t *testing.T) 
 		})
 	}
 }
+
+// A keyless local engine (Ollama's /v1, LM Studio, llama.cpp) must be asked,
+// not assumed: gating the live call on a key handed back the OpenAI catalogue
+// and made first-run autodetect find nothing on a machine running Ollama.
+func TestCompatibleDiscoveryAsksALocalEngineWithoutAKey(t *testing.T) {
+	var sawAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"qwen3.8-flash-next"},{"id":"nomic-embed-text"}]}`))
+	}))
+	defer ts.Close()
+
+	models, err := ListDynamicModels(context.Background(), protocol.ProviderCompatible, ts.URL+"/v1", "")
+	if err != nil {
+		t.Fatalf("a live answer must not be reported as a fallback: %v", err)
+	}
+	if len(models) != 1 || models[0].ID != "qwen3.8-flash-next" {
+		t.Fatalf("models = %+v, want the one chat model (embeddings filtered)", models)
+	}
+	if sawAuth != "" {
+		t.Errorf("no key was given, but Authorization %q was sent", sawAuth)
+	}
+}

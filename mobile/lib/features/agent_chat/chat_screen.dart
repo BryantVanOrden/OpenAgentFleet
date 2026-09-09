@@ -425,16 +425,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         color: _speakReplies ? Fleet.good : null,
                       ),
                     ),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: widget.enabled && !_busy
-                            ? () => _send(mode: 'plan')
-                            : null,
-                        icon: const Icon(Icons.checklist_rtl, size: 18),
-                        label: const Text('Plan'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
+                    // One box, no modes: the agent reads intent. A question
+                    // gets an answer; a request starts the work and says so.
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: widget.enabled && !_busy
@@ -523,6 +515,16 @@ class _BubbleState extends ConsumerState<_Bubble> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (message.kind == 'task')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('STARTED A RUN',
+                          style: TextStyle(
+                              fontSize: 10,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w700,
+                              color: Fleet.live)),
+                    ),
                   if (message.kind == 'plan') ...[
                     Row(
                       children: [

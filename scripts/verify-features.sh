@@ -33,13 +33,16 @@ bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; fail=$((fail + 1)); }
 head() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 note() { printf '    %s\n' "$1"; }
 
+# Retries are for the transport, not the API: Docker Desktop's port proxy on a
+# loaded host can reset or stall a connection, and a battery that reports a
+# real feature as broken because one socket blinked is a battery nobody trusts.
 api() {
   local method="$1" path="$2" body="${3:-}"
   if [ -n "$body" ]; then
-    curl -sS -X "$method" "$BASE$path" \
+    curl -sS -m 120 --retry 3 --retry-all-errors --retry-delay 1 -X "$method" "$BASE$path" \
       -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$body"
   else
-    curl -sS -X "$method" "$BASE$path" -H "Authorization: Bearer $TOKEN"
+    curl -sS -m 120 --retry 3 --retry-all-errors --retry-delay 1 -X "$method" "$BASE$path" -H "Authorization: Bearer $TOKEN"
   fi
 }
 
@@ -419,11 +422,13 @@ vmid=$(printf '%s' "$policied" | sed -n 's/.*"id":"\([a-f0-9-]*\)".*/\1/p')
 if [ -n "$vmid" ]; then
   ok "a policied qemu instance is accepted (egress enforced in the runner)"
   CLEANUP+=("curl -sS -X DELETE '$BASE/api/instances/$vmid' -H 'Authorization: Bearer $TOKEN'")
-  # The runner container appears within a few seconds of the create; the rules
-  # are programmed before QEMU starts, so no need to wait out the guest boot.
+  # The create is acknowledged before the runner exists (provisioning is
+  # asynchronous), and the runner container appears once the image is checked
+  # and the container created -- up to a minute on a loaded host. The rules are
+  # programmed before QEMU starts, so no need to wait out the guest boot.
   vmctr="af-$(printf '%s' "$vmid" | cut -c1-12)"
   rules=""
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
+  for _ in $(seq 1 45); do
     rules=$(docker exec "$vmctr" nft list table inet agentfleet 2>/dev/null || true)
     [ -n "$rules" ] && break
     sleep 2
@@ -468,6 +473,63 @@ if has "$bots_out" '"ok":true'; then
   ok "/bots answers"
 else
   bad "/bots failed: $(printf '%s' "$bots_out" | head -c 160)"
+fi
+
+# ------------------------------------------------------ 11. first-run setup ---
+# The setup card in both clients is only as honest as this endpoint: it must say
+# what is missing in order, and the chat verb behind its button must exist.
+
+setup_out=$(api GET /api/setup)
+if has "$setup_out" '"next"' && has "$setup_out" '"steps"' && has "$setup_out" '"model"'; then
+  ok "/api/setup reports the first-run plan"
+else
+  bad "/api/setup: $(printf '%s' "$setup_out" | head -c 160)"
+fi
+if has "$cat_out" '"setup"'; then
+  ok "the command catalogue offers /setup"
+else
+  bad "/setup missing from the catalogue"
+fi
+detect_out=$(api POST /api/setup/autodetect '{"apply":false}')
+if has "$detect_out" '"found"'; then
+  ok "autodetect answers (dry run)"
+else
+  bad "autodetect: $(printf '%s' "$detect_out" | head -c 160)"
+fi
+
+# ---------------------------------------------------------- 12. Oaf sessions ---
+# The chat as an agent: a session can be made, bound only to folders a device
+# exposes, and deleted; the chat verbs behind the session card exist.
+
+sess_out=$(api POST /api/oaf/sessions '{"name":"verify session"}')
+sess_id=$(printf '%s' "$sess_out" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+if [ -n "$sess_id" ]; then
+  ok "a session can be created"
+else
+  bad "session create: $(printf '%s' "$sess_out" | head -c 160)"
+fi
+bind_out=$(api PATCH "/api/oaf/sessions/$sess_id" '{"cwd":"/definitely/not/exposed"}')
+if has "$bind_out" 'needs a device' || has "$bind_out" 'outside'; then
+  ok "a folder with no device behind it is refused"
+else
+  bad "folder binding was not checked: $(printf '%s' "$bind_out" | head -c 160)"
+fi
+if has "$cat_out" '"goal"' && has "$cat_out" '"loop"' && has "$cat_out" '"devices"'; then
+  ok "the catalogue offers /goal, /loop and /devices"
+else
+  bad "session commands missing from the catalogue"
+fi
+dev_out=$(api GET /api/oaf/devices)
+if has "$dev_out" '[' ; then
+  ok "/api/oaf/devices answers"
+else
+  bad "devices: $(printf '%s' "$dev_out" | head -c 160)"
+fi
+del_code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/oaf/sessions/$sess_id" -H "Authorization: Bearer $TOKEN")
+if [ "$del_code" = "204" ]; then
+  ok "a session can be deleted"
+else
+  bad "session delete returned $del_code"
 fi
 
 # -------------------------------------------------------------------- summary ---

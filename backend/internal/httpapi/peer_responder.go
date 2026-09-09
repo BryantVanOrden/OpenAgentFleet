@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/agent"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
@@ -173,7 +174,7 @@ func (s *Server) nextUnanswered(ctx context.Context, instanceID string, since ti
 }
 
 func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.FleetReplyTimeout)
 	defer cancel()
 
 	scope := "you directly"
@@ -254,10 +255,7 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 				"nothing, say you are idle and available. Never invent work, never " +
 				"claim to have started something, and do not list your capabilities " +
 				"unless you were asked what you can do.",
-			Messages: []connectors.Message{{
-				Role: connectors.RoleUser,
-				Text: msg.FromInstanceName + " asked: " + msg.Content,
-			}},
+			Messages: s.peerQuestionMessages(ctx, inst, msg),
 			// A reasoning model would spend the whole budget thinking and
 			// return nothing.
 			DisableThinking: true,
@@ -794,4 +792,51 @@ func (s *Server) namedFirst(ctx context.Context, inst protocol.Instance, msg pro
 		}
 	}
 	return true
+}
+
+// peerQuestionMessages is the question as the model sees it. When the
+// question is about the screen, the answer is grounded in a frame taken now:
+// asked what was on its screen, a bot used to describe the QA report it
+// imagined it was writing, because the prompt only gave it its task history
+// and told it to ground every claim there. A question about what is visible
+// deserves a look.
+func (s *Server) peerQuestionMessages(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage) []connectors.Message {
+	msgs := []connectors.Message{{
+		Role: connectors.RoleUser,
+		Text: msg.FromInstanceName + " asked: " + msg.Content,
+	}}
+	if !asksAboutScreen(msg.Content) || inst.State != protocol.InstanceRunning || inst.AgentdURL == "" {
+		return msgs
+	}
+	octx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	obs, err := agent.NewSandboxClient(inst.AgentdURL).Observe(octx, agent.ObserveOptions{
+		Screenshot: true, MaxWidth: 1024, Quality: 60,
+	})
+	if err != nil || obs == nil {
+		return msgs
+	}
+	text := "This is your desktop right now. Active window: " + orDash(obs.ActiveWindow) +
+		". Describe only what is actually visible in it."
+	if obs.A11yTree != "" {
+		text += "\nAccessibility tree:\n" + clipLine(obs.A11yTree, 1500)
+	}
+	msgs = append(msgs, connectors.Message{
+		Role:      connectors.RoleUser,
+		Text:      text,
+		Image:     obs.ScreenshotB64,
+		ImageMime: "image/webp",
+	})
+	return msgs
+}
+
+// asksAboutScreen is the cheap test for "is this about what you can see".
+func asksAboutScreen(q string) bool {
+	l := strings.ToLower(q)
+	for _, k := range []string{"screen", "desktop", "window", "what do you see", "can you see", "showing", "display", "looking at", "open right now", "on your machine right now"} {
+		if strings.Contains(l, k) {
+			return true
+		}
+	}
+	return false
 }

@@ -12,7 +12,7 @@ import 'features/alerts/alerts_screen.dart';
 import 'features/admin/admin_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/dashboard/fleet_screen.dart';
-import 'features/home/home_chat_screen.dart';
+import 'features/home/home_shell.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/vault/vault_screen.dart';
@@ -212,7 +212,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       body: IndexedStack(
         index: index,
         children: [
-          const HomeChatScreen(),
+          const ChatHome(),
           const FleetScreen(),
           const VaultScreen(),
           const AlertsScreen(),

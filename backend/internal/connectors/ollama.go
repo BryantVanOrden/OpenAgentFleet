@@ -1,6 +1,7 @@
 package connectors
 
 import (
+	"os"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -50,7 +51,13 @@ type olRequest struct {
 	// agent turn the reasoning is what produces a well-formed action, so
 	// disabling it globally to fix a health check would be a bad trade.
 	Think   *bool `json:"think,omitempty"`
-	Options struct {
+	// How long the server keeps the weights resident after this call. Ollama's
+	// default is five minutes, and an agent step is routinely longer than that
+	// on shared hardware -- so every step paid the full load again (measured:
+	// 85-266 s for a 40-word reply on a 94 GB model, 6 s once warm). Sent on
+	// every request because the server applies the most recent value.
+	KeepAlive string `json:"keep_alive,omitempty"`
+	Options   struct {
 		Temperature float64 `json:"temperature,omitempty"`
 		NumPredict  int     `json:"num_predict,omitempty"`
 	} `json:"options"`
@@ -68,12 +75,23 @@ type olResponse struct {
 }
 
 func (c *ollama) Complete(ctx context.Context, req Request) (*Response, error) {
-	body := olRequest{Model: c.p.Model, Stream: false}
+	body := olRequest{Model: c.p.Model, Stream: false, KeepAlive: ollamaKeepAlive()}
 	if req.DisableThinking {
 		body.Think = &thinkDisabled
 	}
 	body.Options.Temperature = pick(req.Temperature, c.p.Temperature)
 	body.Options.NumPredict = pickInt(req.MaxTokens, c.p.MaxTokens)
+	// think:false is honoured by the model's template, not guaranteed by the
+	// server, and some templates still spend tokens before the first visible
+	// character: measured on qwen3.8-flash-next, an 8-token probe came back
+	// with empty content and eval_count 8, while 512 tokens produced "ok" in
+	// 41. So the flag buys headroom as well as asking nicely — the callers
+	// that set it (the probe, the empty-completion retry) want an answer, not
+	// an economy, and a provider that answers real turns must not read as
+	// permanently dead because its health check was starved.
+	if req.DisableThinking && body.Options.NumPredict > 0 && body.Options.NumPredict < 512 {
+		body.Options.NumPredict = 512
+	}
 	if req.JSONOnly {
 		body.Format = "json"
 	}
@@ -159,4 +177,13 @@ func ListOllamaModels(ctx context.Context, base string) ([]string, error) {
 		names = append(names, m.Name)
 	}
 	return names, nil
+}
+
+// ollamaKeepAlive is the keep_alive sent with every request: OLLAMA_KEEP_ALIVE
+// if set (Ollama duration syntax, "-1" for forever), else 30 minutes.
+func ollamaKeepAlive() string {
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_KEEP_ALIVE")); v != "" {
+		return v
+	}
+	return "30m"
 }

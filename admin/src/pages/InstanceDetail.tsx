@@ -16,7 +16,6 @@ import {
   type Instance,
   type ModelCombo,
   type Provider,
-  type Skill,
   type StepRecord,
   type Task,
   type TtsCatalogue,
@@ -49,7 +48,6 @@ export default function InstanceDetail({ role }: { role: string }) {
   const { id = "" } = useParams();
   const [instance, setInstance] = useState<Instance | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<StepRecord[]>([]);
   const [tab, setTab] = useState<Tab>("desktop");
@@ -59,14 +57,9 @@ export default function InstanceDetail({ role }: { role: string }) {
 
   const load = useCallback(async () => {
     try {
-      const [inst, taskList, skillList] = await Promise.all([
-        api.instance(id),
-        api.tasks(id),
-        api.skills(),
-      ]);
+      const [inst, taskList] = await Promise.all([api.instance(id), api.tasks(id)]);
       setInstance(inst);
       setTasks(taskList);
-      setSkills(skillList);
       const live = taskList.find(
         (t) => t.state === "running" || t.state === "awaiting_human" || t.state === "queued",
       );
@@ -148,7 +141,7 @@ export default function InstanceDetail({ role }: { role: string }) {
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="min-w-0 flex-1 p-6">
           {tab === "desktop" && (
             <DesktopPane
@@ -163,47 +156,7 @@ export default function InstanceDetail({ role }: { role: string }) {
           {tab === "chat" && <ChatPane instance={instance} readOnly={readOnly} />}
         </div>
 
-        <aside className="w-80 shrink-0 space-y-4 overflow-y-auto border-l border-ink-800 p-4">
-          <AssignTask
-            instance={instance}
-            skills={skills}
-            disabled={readOnly || instance.state !== "running"}
-            onAssigned={load}
-            onError={setError}
-          />
-
-          <Card title="Recording studio">
-            <p className="mb-3 text-xs text-ink-400">
-              Do the task yourself once. Keystrokes, clicks and the accessible element behind each
-              one are captured, then compiled into a skill an agent can follow.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={recording ? "danger" : "subtle"}
-                disabled={readOnly || instance.state !== "running"}
-                onClick={async () => {
-                  try {
-                    if (recording) {
-                      const skill = await api.stopRecording(id);
-                      setRecording(false);
-                      alert(`Saved "${skill.name}" with ${skill.steps.length} steps.`);
-                    } else {
-                      const name = prompt("What is this task called?") ?? "";
-                      if (!name) return;
-                      await api.startRecording(id, name);
-                      setRecording(true);
-                    }
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : String(err));
-                  }
-                }}
-              >
-                {recording ? "Stop and compile" : "Start recording"}
-              </Button>
-            </div>
-          </Card>
-
+        <aside className="w-full shrink-0 space-y-4 overflow-y-auto border-t border-ink-800 p-4 lg:w-80 lg:border-l lg:border-t-0">
           <TaskList
             tasks={tasks}
             activeId={activeTask?.id}
@@ -1142,13 +1095,13 @@ function DesktopPane({
           </div>
 
           {recording ? (
-            <div className="flex items-center gap-2 rounded-lg bg-bad-500/15 px-3 py-1 text-xs text-bad-400 border border-bad-500/30 animate-pulse font-mono font-semibold">
-              <span className="size-2 rounded-full bg-bad-500" />
-              Recording Demonstration (Interactions & A11y Elements)...
+            <div className="flex items-center gap-2 rounded-lg border border-bad-500/30 bg-bad-500/15 px-3 py-1 font-mono text-xs font-semibold text-bad-400">
+              <span className="size-2 rounded-full bg-bad-500 pulse-live" />
+              Recording {instance.name}&apos;s screen and your actions on it
             </div>
           ) : (
-            <span className="text-xs text-ink-400 hidden sm:inline">
-              Interactive Mode: Click desktop to take over controls & record demonstrations.
+            <span className="hidden text-xs text-ink-400 sm:inline">
+              Click the desktop to take over. Record while you drive it and it becomes a skill the agent can repeat.
             </span>
           )}
         </div>
@@ -1163,9 +1116,9 @@ function DesktopPane({
                   if (recording) {
                     const skill = await api.stopRecording(instance.id);
                     setRecording(false);
-                    alert(`✅ Successfully compiled demonstration into skill: "${skill.name}" (${skill.steps.length} steps)!`);
+                    alert(`Saved "${skill.name}" as a skill (${skill.steps.length} steps).`);
                   } else {
-                    const name = prompt("What workflow/task is this demonstration teaching the agent?") ?? "";
+                    const name = prompt("What is this task called? (the skill's name)") ?? "";
                     if (!name.trim()) return;
                     await api.startRecording(instance.id, name.trim());
                     setRecording(true);
@@ -1175,7 +1128,7 @@ function DesktopPane({
                 }
               }}
             >
-              {recording ? "⏹️ Stop & Compile to Skill" : "🎬 Teach Bot (Record Demonstration)"}
+              {recording ? "⏹ Stop and save skill" : "⏺ Record a skill"}
             </Button>
           )}
 
@@ -1243,9 +1196,25 @@ function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] 
         {task.result && <p className="mt-3 text-xs text-good-500">{task.result}</p>}
       </Card>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        {steps.length === 0 && (
+          <div className="space-y-2 py-2" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex gap-3 rounded-2xl bg-ink-900 p-3 ring-1 ring-inset ring-ink-800">
+                <div className="h-20 w-32 shrink-0 animate-pulse rounded-lg bg-ink-850" />
+                <div className="flex-1 space-y-2 pt-1">
+                  <div className="h-2.5 w-24 animate-pulse rounded bg-ink-800" />
+                  <div className="h-3 w-3/4 animate-pulse rounded bg-ink-850" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {steps.map((step) => (
-          <div key={step.id} className="flex gap-3 rounded-xl bg-ink-900 p-3 ring-1 ring-ink-800">
+          <div
+            key={step.id}
+            className="flex gap-3 rounded-2xl bg-ink-900 p-3 ring-1 ring-inset ring-ink-800 transition-colors hover:ring-ink-700"
+          >
             {step.observation_key ? (
               <a
                 href={artifactUrl(step.observation_key)}
@@ -1339,11 +1308,11 @@ function mostRecent(sessions: ChatSession[]): ChatSession | undefined {
 /**
  * Talking to a machine.
  *
- * Three send actions, deliberately. "Send" talks without touching anything,
- * "Plan" asks for a proposal that still touches nothing, and "Run as task"
- * starts real autonomous work — behind a confirmation, because collapsing
- * those into one button is how an agent ends up clicking Deploy because you
- * asked whether it was ready to deploy.
+ * One box, no modes: the agent reads intent. A question gets an answer; a
+ * request to do something starts the work and says so in the agent's own
+ * voice (the server marks that message kind "task"). Anything risky or vague
+ * comes back as a plan the operator approves or discards, so the agent never
+ * clicks Deploy because you asked whether it was ready to deploy.
  */
 function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolean }) {
   const instanceId = instance.id;
@@ -1359,7 +1328,6 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
   const [busy, setBusy] = useState(false);
   const [planBusy, setPlanBusy] = useState<string | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [confirmTask, setConfirmTask] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -1516,13 +1484,21 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
       {/* The chat you are in, and the way to the others. A bot holds several
           separate chats and each is its own context, so which one you are in
           changes what the agent can see — that has to be on screen. */}
-      <div className="flex items-center gap-2 rounded-xl bg-ink-900 px-3 py-2 ring-1 ring-ink-800">
+      <div className="flex items-center gap-2 rounded-2xl bg-ink-900 px-3 py-2 ring-1 ring-inset ring-ink-800">
         <button
           onClick={() => setSessionsOpen(true)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+          title="Switch chat"
         >
-          <span className="text-ink-400">💬</span>
-          <span className="truncate text-sm font-semibold text-ink-100">{chatTitle || "Chat"}</span>
+          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-live-500/15 text-sm font-semibold text-live-500">
+            {instance.name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-ink-100">{chatTitle || "Chat"}</span>
+            <span className="block truncate font-mono text-[11px] text-ink-400">
+              {running ? "talking to " + instance.name : instance.name + " is not running"}
+            </span>
+          </span>
           <span className="text-xs text-ink-500">▾</span>
         </button>
         <Button
@@ -1551,12 +1527,17 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-xl bg-ink-900 p-4 ring-1 ring-ink-800">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1 py-2">
         {messages.length === 0 && (
-          <p className="text-sm text-ink-400">
-            Ask what is happening on this machine, or send an instruction and let the agent run
-            with it.
-          </p>
+          <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+            <span className="grid size-12 place-items-center rounded-2xl bg-live-500/15 text-lg font-semibold text-live-500">
+              {instance.name.slice(0, 1).toUpperCase()}
+            </span>
+            <p className="max-w-sm text-sm leading-relaxed text-ink-300">
+              Ask {instance.name} what is on its screen, or say what you want done. It answers questions and
+              gets to work on requests; anything risky it proposes first and waits for your go.
+            </p>
+          </div>
         )}
         {messages.map((m) => {
           const mine = m.role === "user";
@@ -1569,15 +1550,20 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
             <div key={m.id} className={cx("flex", mine ? "justify-end" : "justify-start")}>
               <div
                 className={cx(
-                  "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm",
+                  "max-w-[80%] px-4 py-3 text-sm leading-relaxed",
                   mine
-                    ? "bg-live-500/15 whitespace-pre-wrap text-ink-100 ring-1 ring-inset ring-live-500/30"
-                    : "bg-ink-800 text-ink-200",
+                    ? "rounded-2xl rounded-tr-md bg-live-500/10 whitespace-pre-wrap text-ink-100 ring-1 ring-inset ring-live-500/20"
+                    : "rounded-2xl rounded-tl-md bg-ink-850 text-ink-100 ring-1 ring-inset ring-ink-800",
                 )}
               >
                 {isPlan && (
                   <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-live-500">
                     ☑ Proposed plan
+                  </div>
+                )}
+                {m.kind === "task" && (
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-live-500">
+                    <span className="size-1.5 rounded-full bg-live-500 pulse-live" /> Started a run — see Activity
                   </div>
                 )}
                 {mine ? m.body : <Markdown text={m.body} />}
@@ -1612,13 +1598,26 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
             </div>
           );
         })}
+        {busy && (
+          <div className="flex items-center gap-2 pl-1 text-xs text-ink-400">
+            <span className="size-1.5 animate-pulse rounded-full bg-live-500" />
+            {instance.name} is thinking…
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 
-      <div className="flex gap-2">
-        <input
-          className={inputClass}
-          placeholder={running ? "Talk to this agent" : "Instance is not running"}
+      <div
+        className={cx(
+          "flex items-end gap-2 rounded-2xl bg-ink-900 px-3 py-2 ring-1 ring-inset ring-ink-600",
+          "focus-within:ring-2 focus-within:ring-live-500",
+          !canSend && "opacity-60",
+        )}
+      >
+        <textarea
+          rows={1}
+          className="max-h-40 min-h-[28px] flex-1 resize-none bg-transparent py-1 text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
+          placeholder={running ? `Talk to ${instance.name}, or give it work` : "Instance is not running"}
           value={draft}
           disabled={!canSend || busy}
           onChange={(e) => setDraft(e.target.value)}
@@ -1629,37 +1628,18 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
             }
           }}
         />
-        <Button disabled={!canSend || busy || !draft.trim()} onClick={() => void doSend("plan")}>
-          Plan
-        </Button>
         <Button
+          size="sm"
           variant="primary"
           disabled={!canSend || busy || !draft.trim()}
           onClick={() => void doSend("chat")}
         >
-          Send
-        </Button>
-        <Button
-          disabled={!canSend || busy || !draft.trim()}
-          onClick={() => setConfirmTask(true)}
-        >
-          Run as task
+          {busy ? "…" : "Send"}
         </Button>
       </div>
-
-      {/* Never silently deploys: the exact text is quoted back before an agent
-          starts acting on the machine. */}
-      <Confirm
-        open={confirmTask}
-        title="Run as a task?"
-        body={`The agent will start acting on this machine straight away:\n\n"${draft.trim()}"`}
-        confirmLabel="Start"
-        onCancel={() => setConfirmTask(false)}
-        onConfirm={() => {
-          setConfirmTask(false);
-          void doSend("task");
-        }}
-      />
+      <p className="text-[11px] text-ink-500">
+        Enter sends · Shift+Enter for a new line · ask, or say what you want done and {instance.name} gets to work
+      </p>
 
       {sessionsOpen && (
         <ChatSessionsModal
@@ -1899,75 +1879,6 @@ function ChatSessionsModal({
 
 // -------------------------------------------------------------- assign task ---
 
-function AssignTask({
-  instance,
-  skills,
-  disabled,
-  onAssigned,
-  onError,
-}: {
-  instance: Instance;
-  skills: Skill[];
-  disabled: boolean;
-  onAssigned: () => void;
-  onError: (m: string) => void;
-}) {
-  const [goal, setGoal] = useState("");
-  const [skillId, setSkillId] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await api.createTask({
-        instance_id: instance.id,
-        goal,
-        skill_id: skillId || undefined,
-      });
-      setGoal("");
-      onAssigned();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Card title="Assign task">
-      <form onSubmit={submit} className="space-y-3">
-        <Field label="Goal">
-          <textarea
-            className={cx(inputClass, "h-24 resize-none")}
-            value={goal}
-            disabled={disabled}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder="Pull the latest commit on main and build the release target."
-          />
-        </Field>
-        <Field label="Recorded skill" hint="Optional. Gives the agent a procedure to follow.">
-          <select
-            className={inputClass}
-            value={skillId}
-            disabled={disabled}
-            onChange={(e) => setSkillId(e.target.value)}
-          >
-            <option value="">none</option>
-            {skills.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.steps.length} steps)
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Button type="submit" variant="primary" className="w-full" disabled={disabled || busy}>
-          {busy ? "Starting…" : "Start agent"}
-        </Button>
-      </form>
-    </Card>
-  );
-}
 
 function TaskList({
   tasks,

@@ -1,6 +1,11 @@
 package httpapi
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
+)
 
 // A plan only counts when the agent opened with it.
 //
@@ -76,5 +81,35 @@ func TestPlanFromReadsRealAgentReplies(t *testing.T) {
 		if plan, ok := planFrom(st); ok {
 			t.Errorf("a status update started work:\n  %s\n  parsed as: %s", st, plan)
 		}
+	}
+}
+
+// A question about what a bot can see is answered from a fresh frame; a
+// status question is not (a frame per status ping would be waste).
+func TestAsksAboutScreenPicksTheVisualQuestions(t *testing.T) {
+	for q, want := range map[string]bool{
+		"What is on your screen right now?":       true,
+		"what do you see":                         true,
+		"Which window is open right now?":         true,
+		"Are you idle?":                           false,
+		"What did you finish today?":              false,
+		"Can you take the login form?":            false,
+		"Is the build showing green in Firefox?":  true,
+	} {
+		if got := asksAboutScreen(q); got != want {
+			t.Errorf("asksAboutScreen(%q) = %v, want %v", q, got, want)
+		}
+	}
+}
+
+// Without a running desktop there is nothing to look at: the question goes to
+// the model alone, and no observe call is attempted against an empty URL.
+func TestPeerQuestionMessagesWithoutADesktopIsJustTheQuestion(t *testing.T) {
+	s := &Server{}
+	inst := protocol.Instance{Name: "Checker", State: protocol.InstanceStopped}
+	msg := protocol.PeerMessage{FromInstanceName: "alex", Content: "what is on your screen?"}
+	msgs := s.peerQuestionMessages(context.Background(), inst, msg)
+	if len(msgs) != 1 || msgs[0].Image != "" {
+		t.Fatalf("messages = %+v, want the bare question", msgs)
 	}
 }

@@ -132,7 +132,7 @@ Departments are organisations. There is no `/api/departments` prefix.
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/tiers` | any | The configured hardware tiers. |
 | `GET` | `/api/instances` | any | List instances. |
-| `POST` | `/api/instances` | operator | Provision and start an instance. `"driver": "qemu"` boots it as a real virtual machine (image built by `make sandbox-vm`; KVM-accelerated when the host has `/dev/kvm`, software-emulated otherwise). Egress policies are enforced on that driver in the runner's network namespace — where every guest connection must pass and nothing inside the guest can reach — applied before QEMU starts, fail-closed. |
+| `POST` | `/api/instances` | operator | Provision and start an instance. Answers `202 Accepted` with the row in `provisioning` as soon as it is recorded; the boot runs on and its outcome arrives as `instance.state` events (and in `GET /api/instances`). Holding the request open for the boot made every dropped connection a duplicate bot. `"driver": "qemu"` boots it as a real virtual machine (image built by `make sandbox-vm`; KVM-accelerated when the host has `/dev/kvm`, software-emulated otherwise). Egress policies are enforced on that driver in the runner's network namespace — where every guest connection must pass and nothing inside the guest can reach — applied before QEMU starts, fail-closed. |
 | `GET` | `/api/instances/{id}` | any | One instance. |
 | `DELETE` | `/api/instances/{id}` | operator | Destroy an instance and its container. |
 | `POST` | `/api/instances/{id}/start` | operator | Lifecycle. |
@@ -386,6 +386,21 @@ recorded as `running` indefinitely.
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/fleet/commands` | any | The fleet chat's slash-command catalogue: `[{name, usage, description, mutates}]`. One list for every client. |
 | `POST` | `/api/fleet/command` | operator | Execute one command: `{text: "/task @bot …"}` → `{command, ok, title, body}` with a markdown body. Mutating commands also post an `Oaf` system note into the `broadcast` conversation. |
+| `GET` | `/api/setup` | any | First-run status: `{providers, bots, running_bots, tasks, steps:[{id, title, done, hint, action}], next}` where `next` is the first step not done (`model`, `bot`, `goal`) or `ready`. Both clients show a setup card until it is `ready`. |
+| `POST` | `/api/setup/autodetect` | admin | Find a model engine and connect it. Body `{base_url?, api_key?, apply}`; with no `base_url` the usual local addresses (Ollama, LM Studio, llama.cpp, vLLM via the host gateway) are scanned. `apply: true` registers the best model as an OpenAI-compatible provider with vision measured by a red-square probe, and posts an `Oaf` note. Same as the `/setup` chat command. |
+| `GET` | `/api/oaf/sessions` | any | Your sessions with Oaf: `[{id, name, device_id, device_name, cwd, provider_id, pinned, message_count, last_message_at, …}]`. |
+| `POST` | `/api/oaf/sessions` | operator | Create a session: `{name?, device_id?, cwd?, provider_id?}`. A `cwd` must be under one of the device's exposed folders. |
+| `PATCH` | `/api/oaf/sessions/{id}` | operator | Rename, re-bind (`device_id`, `cwd`), pick a model, pin. |
+| `DELETE` | `/api/oaf/sessions/{id}` | operator | Delete the session and its messages; its goals and loops stop. |
+| `GET` | `/api/oaf/sessions/{id}/messages` | any | The thread: operator lines, Oaf replies, and `kind: "tool"` rows carrying `data.{tool,args,result,failed}`. |
+| `POST` | `/api/oaf/sessions/{id}/messages` | operator | One turn: `{text, attachments?: [id]}` → `{session, reply}`. A `/command` runs as a fleet command (including `/goal`, `/loop`, `/jobs`, `/cancel`); anything else is worked by Oaf with its tools until it answers. Synchronous, up to six minutes. |
+| `POST` | `/api/oaf/sessions/{id}/attachments` | operator | Upload one file (multipart `file`, or a raw body with `Content-Type` and `X-Filename`) → `{id, name, content_type, size, url}`. Images reach the model as pictures, text files inline. |
+| `GET` | `/api/oaf/sessions/{id}/attachments/{attachmentId}/{name}` | any | The stored file. |
+| `GET` | `/api/oaf/devices` | any | Your devices with `online` (seen in the last 90 s). |
+| `POST` | `/api/oaf/devices` | operator | Register or refresh a device: `{id?, name, kind: "pc"|"phone", platform?, roots: [folder], auto_approve}`. What `fleetctl host` and the phone call. |
+| `DELETE` | `/api/oaf/devices/{id}` | operator | Forget a device; sessions bound to it lose their device. |
+| `GET` | `/api/oaf/devices/{id}/jobs?wait=20` | operator | Long-poll for pending jobs (claims them). The device's heartbeat. |
+| `POST` | `/api/oaf/devices/{id}/jobs/{jobId}/result` | operator | `{state: done|failed|denied, result?, error?}`. |
 | `GET` | `/api/swarms` | any | List swarms, newest first. |
 | `POST` | `/api/swarms` | operator | Create a swarm and start a task per member. |
 | `GET` | `/api/swarms/{id}` | any | One swarm and its blackboard. |

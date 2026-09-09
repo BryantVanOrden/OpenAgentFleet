@@ -56,6 +56,28 @@ fleet.speak("All tasks completed successfully, operator.", voice="shadow")
 
 ---
 
+## 🖥️ Let Oaf use this PC (`fleetctl host`)
+
+The fleet chat's sessions can act on your own machine, Claude Code-style: a
+session is bound to a device and a working folder, and Oaf reads and edits
+files there, runs commands there, and shows every step in the thread.
+
+```bash
+fleetctl login
+fleetctl host --root ~/Code/my-project          # expose one folder
+fleetctl host --root ~/Code -r ~/Notes --yes    # several folders, no prompts
+```
+
+- Paths outside the exposed folders are refused on the device, whatever the
+  orchestrator asks for.
+- A shell command or a file write asks in this terminal first (`allow? [y/N]`),
+  like Claude Code's permission prompt. `--yes` auto-approves for a session you
+  trust.
+- The machine polls out; nothing connects in. Ctrl+C disconnects it and Oaf
+  loses the machine.
+- Then, in the console or the app: open a session → device → pick this PC and
+  a folder under one of its roots.
+
 ## 🛠️ Command-Line Interface (`fleetctl`)
 
 The `fleetctl` command-line utility provides full administrative control, live telemetry, and system diagnostics:

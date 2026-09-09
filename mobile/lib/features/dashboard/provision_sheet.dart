@@ -205,9 +205,12 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
 
       final goal = _goal.text.trim();
       if (goal.isNotEmpty) {
-        if (!instance.isRunning) {
+        // The create is acknowledged before the desktop is up; wait for it
+        // to leave "provisioning" before handing it work.
+        final up = await _waitUntilUp(instance.id);
+        if (!up.isRunning) {
           throw ApiException(
-              'machine came up ${instance.state} instead of running', 0);
+              'machine came up ${up.state} instead of running', 0);
         }
         await ref.read(apiProvider).createTask(
               instanceId: instance.id,
@@ -515,6 +518,21 @@ class _ProvisionSheetState extends ConsumerState<ProvisionSheet> {
           ),
         ],
       );
+
+  /// Polls the fleet until the instance leaves "provisioning", for up to ten
+  /// minutes; a tool-heavy archetype takes a while on a laptop.
+  Future<Instance> _waitUntilUp(String id) async {
+    final deadline = DateTime.now().add(const Duration(minutes: 10));
+    Instance? last;
+    while (DateTime.now().isBefore(deadline)) {
+      final list = await ref.read(apiProvider).instances();
+      last = list.where((i) => i.id == id).firstOrNull;
+      if (last != null && last.state != 'provisioning') return last;
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+    if (last != null) return last;
+    throw ApiException('the machine never appeared in the fleet', 0);
+  }
 
   @override
   Widget build(BuildContext context) {

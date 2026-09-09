@@ -624,6 +624,24 @@ def cmd_hub_import(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------- Main ---
 
 
+def cmd_host(args: argparse.Namespace) -> None:
+    """Let Oaf act on this machine: register it and execute its jobs here."""
+    from agentfleet import host as _host
+
+    client = _get_client(args)
+    if not client.token:
+        print("Not logged in. Run `fleetctl login` first (or set AGENTFLEET_TOKEN).", file=sys.stderr)
+        raise SystemExit(2)
+    import platform as _platform
+
+    name = args.name or _platform.node() or "this-pc"
+    try:
+        _host.run(client, name=name, roots=args.root or [], auto_approve=args.yes, quiet=args.quiet)
+    except KeyboardInterrupt:
+        print()
+        print("[host] disconnected")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="fleetctl",
@@ -637,6 +655,14 @@ def main() -> None:
     # diagnostics / doctor
     p_diag = subparsers.add_parser("diagnostics", aliases=["doctor"], help="Run comprehensive platform health diagnostics")
     p_diag.set_defaults(func=cmd_diagnostics)
+
+    # host: let Oaf act on this machine
+    p_host = subparsers.add_parser("host", help="Connect this PC so Oaf can run commands and edit files in folders you choose")
+    p_host.add_argument("--root", "-r", action="append", help="Folder to expose (repeatable). Default: the current folder")
+    p_host.add_argument("--name", "-n", help="Device name shown in the console (default: this computer's name)")
+    p_host.add_argument("--yes", "-y", action="store_true", help="Run shell commands and writes without asking here first")
+    p_host.add_argument("--quiet", "-q", action="store_true", help="Do not print each job")
+    p_host.set_defaults(func=cmd_host)
 
     # config
     p_conf = subparsers.add_parser("config", help="Manage local fleetctl configuration")

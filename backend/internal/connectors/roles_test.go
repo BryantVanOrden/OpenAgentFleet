@@ -1,6 +1,8 @@
 package connectors
 
 import (
+	"time"
+	"io"
 	"context"
 	"fmt"
 	"log/slog"
@@ -194,4 +196,114 @@ func (a *alwaysEmpty) Vision() bool { return true }
 func (a *alwaysEmpty) Complete(ctx context.Context, req Request) (*Response, error) {
 	a.calls++
 	return nil, fmt.Errorf("empty: %w", ErrEmptyCompletion)
+}
+
+// A text-only chain must still be driven: the screenshot is dropped and the
+// request goes through, because the turn also carries the element marks and
+// the accessibility tree. Before this the step failed with "no vision-capable
+// provider is enabled" and a fleet on a text model could not take one step.
+type textOnly struct {
+	calls int
+	saw   Request
+}
+
+func (t *textOnly) ID() string   { return "text-only" }
+func (t *textOnly) Name() string { return "Text only" }
+func (t *textOnly) Vision() bool { return false }
+func (t *textOnly) Complete(ctx context.Context, req Request) (*Response, error) {
+	t.calls++
+	t.saw = req
+	return &Response{Text: `{"action":"done"}`}, nil
+}
+
+func TestBlindChainDropsTheScreenshotInsteadOfFailing(t *testing.T) {
+	c := &textOnly{}
+	r := NewRegistry(nil, nil, slog.Default())
+	req := Request{Messages: []Message{{Role: RoleUser, Text: "ELEMENTS ...", Image: "AAAA", ImageMime: "image/webp"}}}
+
+	resp, err := r.complete(context.Background(), []Connector{c}, req)
+	if err != nil {
+		t.Fatalf("blind chain failed: %v", err)
+	}
+	if resp.Text == "" || c.calls != 1 {
+		t.Fatalf("calls = %d, resp = %+v", c.calls, resp)
+	}
+	if c.saw.Messages[0].Image != "" || c.saw.Messages[0].ImageMime != "" {
+		t.Error("the screenshot reached a model that cannot see")
+	}
+	if c.saw.Messages[0].Text != "ELEMENTS ..." {
+		t.Error("the text of the turn was altered")
+	}
+	if req.Messages[0].Image != "AAAA" {
+		t.Error("the caller's request was mutated")
+	}
+}
+
+// With one sighted model in the chain nothing is dropped: the blind one is
+// skipped, as before, and the sighted one gets the picture.
+func TestMixedChainKeepsTheScreenshotForTheSightedModel(t *testing.T) {
+	blind := &textOnly{}
+	sighted := &flakyThinker{visionOK: true}
+	r := NewRegistry(nil, nil, slog.Default())
+	req := Request{Messages: []Message{{Role: RoleUser, Text: "turn", Image: "AAAA"}}}
+
+	if _, err := r.complete(context.Background(), []Connector{blind, sighted}, req); err != nil {
+		t.Fatalf("mixed chain failed: %v", err)
+	}
+	if blind.calls != 0 {
+		t.Error("the blind model was called although a sighted one was available")
+	}
+	if sighted.calls == 0 {
+		t.Error("the sighted model was never called")
+	}
+}
+
+// A dropped connection is retried before the chain gives up on a provider: a
+// gateway restart should cost a step a few seconds, not the whole task.
+type blinking struct {
+	calls int
+	fails int
+	err   error
+}
+
+func (b *blinking) ID() string   { return "blink" }
+func (b *blinking) Name() string { return "Blinking gateway" }
+func (b *blinking) Vision() bool { return true }
+func (b *blinking) Complete(ctx context.Context, req Request) (*Response, error) {
+	b.calls++
+	if b.calls <= b.fails {
+		return nil, b.err
+	}
+	return &Response{Text: "back"}, nil
+}
+
+func TestTransientTransportErrorsAreRetried(t *testing.T) {
+	old := transientWaits
+	transientWaits = []time.Duration{time.Millisecond, time.Millisecond}
+	defer func() { transientWaits = old }()
+
+	c := &blinking{fails: 2, err: fmt.Errorf("gateway: Post \"http://x/v1/chat/completions\": %w", io.EOF)}
+	r := NewRegistry(nil, nil, slog.Default())
+	resp, err := r.complete(context.Background(), []Connector{c}, Request{})
+	if err != nil {
+		t.Fatalf("two EOFs then an answer should succeed: %v", err)
+	}
+	if resp.Text != "back" || c.calls != 3 {
+		t.Errorf("calls = %d, resp = %+v; want 3 calls and the answer", c.calls, resp)
+	}
+}
+
+func TestModelLevelErrorsAreNotRetried(t *testing.T) {
+	old := transientWaits
+	transientWaits = []time.Duration{time.Millisecond, time.Millisecond}
+	defer func() { transientWaits = old }()
+
+	c := &blinking{fails: 99, err: fmt.Errorf("gateway: http 400: unknown model")}
+	r := NewRegistry(nil, nil, slog.Default())
+	if _, err := r.complete(context.Background(), []Connector{c}, Request{}); err == nil {
+		t.Fatal("expected the model error to surface")
+	}
+	if c.calls != 1 {
+		t.Errorf("calls = %d, want 1: a 400 does not get better on repetition", c.calls)
+	}
 }

@@ -13,6 +13,7 @@ authentication. If you publish this port, you have given away the desktop.
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 from datetime import datetime, timezone
 # Pydantic resolves annotations lazily under `from __future__ import
@@ -37,7 +38,26 @@ KEYRING_DIR = "/var/run/agentfleet/keyring"
 # colour. Long enough for XFCE to paint on a slow host, short enough that a
 # genuinely blank desktop does not hang provisioning forever.
 BLANK_SCREEN_GRACE_SECONDS = 75.0
+# How long to wait for the window manager before declaring the desktop ready
+# anyway. A painted screen is not a working desktop: xfce4-session that lost
+# the race to the session bus paints a modal "Unable to load a failsafe
+# session" and nothing else, and that dialog passes the non-uniform check.
+DESKTOP_GRACE_SECONDS = 90.0
 _STARTED_AT = time.time()
+_WINDOW_MANAGERS = ("xfwm4",)
+
+
+def desktop_state() -> str:
+    """'ready' when a window manager is up, 'failsafe' when the session is
+    parked on its error dialog, 'starting' otherwise."""
+    for wm in _WINDOW_MANAGERS:
+        if subprocess.run(["pgrep", "-x", wm], capture_output=True).returncode == 0:
+            return "ready"
+    session = subprocess.run(["pgrep", "-x", "xfce4-session"], capture_output=True).returncode == 0
+    xfconf = subprocess.run(["pgrep", "-x", "xfconfd"], capture_output=True).returncode == 0
+    if session and not xfconf and time.time() - _STARTED_AT > 20:
+        return "failsafe"
+    return "starting"
 
 app = FastAPI(title="agentd", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -86,11 +106,19 @@ def health() -> dict:
             ),
         )
 
+    desktop = desktop_state()
+    if desktop != "ready" and waited < DESKTOP_GRACE_SECONDS:
+        raise HTTPException(
+            status_code=503,
+            detail=f"desktop is {desktop} after {waited:.0f}s; waiting for the window manager",
+        )
+
     return {
         "status": "ok",
         "instance": INSTANCE_ID,
         "resolution": f"{frame.width}x{frame.height}",
         "painted": painted,
+        "desktop": desktop,
         "hash": screen_hash,
         "a11y": a11y.AVAILABLE,
         "shell": ALLOW_SHELL,

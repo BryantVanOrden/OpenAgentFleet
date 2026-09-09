@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/markdown/markdown_lite.dart';
@@ -10,6 +11,7 @@ import '../../core/theme/theme.dart';
 import '../../core/voice/voice_service.dart';
 import '../../core/widgets/inline_error.dart';
 import '../fleet_comms/message_tile.dart';
+import 'setup_card.dart';
 
 /// Commands matching what has been typed so far, best match first.
 ///
@@ -41,7 +43,11 @@ List<FleetCommand> filterCommands(List<FleetCommand> all, String typed) {
 /// have: slash commands, which replace the screens missions and status used to
 /// need, and notes from Oaf — the platform itself telling you what happened.
 class HomeChatScreen extends ConsumerStatefulWidget {
-  const HomeChatScreen({super.key});
+  const HomeChatScreen({super.key, this.onOpenSessions});
+
+  /// Opens the sessions sheet (fleet, Oaf sessions, bot threads). Supplied by
+  /// the home shell; absent when the screen is shown on its own.
+  final VoidCallback? onOpenSessions;
 
   @override
   ConsumerState<HomeChatScreen> createState() => _HomeChatScreenState();
@@ -57,6 +63,8 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
   List<PeerMessage> _messages = const [];
   final _ephemera = <_Ephemeral>[];
   List<FleetCommand> _commands = const [];
+  SetupStatus? _setup;
+  final _composerFocus = FocusNode();
   String? _commandsError;
 
   bool _loading = true;
@@ -99,6 +107,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
   void dispose() {
     _poll?.cancel();
     _controller.dispose();
+    _composerFocus.dispose();
     _scroll.dispose();
     _voice.dispose();
     super.dispose();
@@ -134,15 +143,18 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
 
   Future<void> _refresh({bool speak = true}) async {
     try {
-      final list = await ref
-          .read(apiProvider)
-          .conversationMessages(Conversation.broadcastId);
+      final api = ref.read(apiProvider);
+      final list = await api.conversationMessages(Conversation.broadcastId);
+      // What is still missing on a fresh deployment, fetched with the stream
+      // so the card leaves the moment the step is done. Never fatal.
+      final setup = await api.setup().then<SetupStatus?>((s) => s, onError: (_) => null);
       if (!mounted) return;
       final atBottom = !_scroll.hasClients ||
           _scroll.position.pixels >= _scroll.position.maxScrollExtent - 40;
       final fresh = _newSince(list);
       setState(() {
         _messages = list;
+        if (setup != null) _setup = setup;
         _loading = false;
         _error = null;
       });
@@ -266,6 +278,8 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    // A tap that does something should feel like it did.
+    unawaited(HapticFeedback.selectionClick());
     if (text.startsWith('/')) {
       await _runCommand(text);
       return;
@@ -289,6 +303,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
   }
 
   Future<void> _runCommand(String text) async {
+    unawaited(HapticFeedback.selectionClick());
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -345,6 +360,13 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.onOpenSessions == null
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.menu_rounded),
+                tooltip: 'Sessions',
+                onPressed: widget.onOpenSessions,
+              ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -374,7 +396,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
       ),
       body: Column(
         children: [
-          Expanded(child: _buildStream()),
+          Expanded(child: _buildStream(readOnly: readOnly)),
           _quickActionRow(enabled: !readOnly && !_busy),
           if (_showCommands && !readOnly) _commandPanel(),
           _composer(readOnly: readOnly),
@@ -383,7 +405,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
     );
   }
 
-  Widget _buildStream() {
+  Widget _buildStream({required bool readOnly}) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null && _messages.isEmpty) {
       return Center(
@@ -404,14 +426,32 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
         ),
       );
     }
-    if (_messages.isEmpty && _ephemera.isEmpty) return const _EmptyState();
+    final setup = _setup;
+    final card = (setup != null && !setup.ready)
+        ? SetupCard(
+            status: setup,
+            busy: _busy,
+            readOnly: readOnly,
+            onRun: _runCommand,
+            onFocusComposer: _composerFocus.requestFocus,
+            leading: const OafAvatar(size: 44),
+          )
+        : null;
+    if (_messages.isEmpty && _ephemera.isEmpty) {
+      if (card == null) return const _EmptyState();
+      return ListView(children: [card, const _EmptyState()]);
+    }
 
     final items = _items();
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.all(12),
-      itemCount: items.length,
+      itemCount: items.length + (card == null ? 0 : 1),
       itemBuilder: (_, i) {
+        if (card != null) {
+          if (i == 0) return card;
+          i -= 1;
+        }
         final item = items[i];
         if (item is _Ephemeral) {
           return CommandResultCard(
@@ -564,7 +604,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
                       ? 'Your role can read the fleet chat but not post'
                       : _listening
                           ? 'Listening...'
-                          : 'Message the fleet, or / for a command',
+                          : 'Tell the fleet what you want done, or / for commands',
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 10),
                 ),

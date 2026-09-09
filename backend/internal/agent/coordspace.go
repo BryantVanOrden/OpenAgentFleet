@@ -156,6 +156,13 @@ func calibrationPNG() (b64 string, centreX, centreY int, err error) {
 // constantly and such a table is wrong the moment one ships. Measuring whatever
 // is actually configured works for models nobody has heard of yet.
 func DetectCoordTransform(ctx context.Context, models *connectors.Registry, providerID string) (CoordTransform, error) {
+	// A model that cannot see is not answering from the picture, so there is
+	// no picture convention to measure: it clicks the element centres the
+	// turn hands it, which are already in image pixels. Asking it where the
+	// button is would only produce a confident wrong answer to calibrate to.
+	if c, err := models.Get(ctx, providerID); err == nil && !c.Vision() {
+		return identityTransform, nil
+	}
 	b64, trueX, trueY, err := calibrationPNG()
 	if err != nil {
 		return identityTransform, fmt.Errorf("build calibration frame: %w", err)

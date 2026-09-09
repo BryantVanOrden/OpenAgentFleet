@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, artifactUrl, getToken, setToken, type Alert, type User } from "./lib/api";
 import { useEvents } from "./lib/events";
 import { cx } from "./components/ui";
 import ToastHost, { toast } from "./components/Toasts";
 import ThemePicker from "./components/ThemePicker";
-import VoiceCoPilot from "./components/VoiceCoPilot";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Fleet from "./pages/Fleet";
@@ -41,9 +40,9 @@ const NAV: { to: string; label: string; icon: string; adminOnly?: boolean; end?:
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const [openAlerts, setOpenAlerts] = useState<Alert[]>([]);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const loadSession = useCallback(async () => {
     if (!getToken()) {
@@ -175,7 +174,7 @@ export default function App() {
                 cx(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                   isActive
-                    ? "bg-ink-800 font-medium text-ink-100"
+                    ? "bg-ink-800 font-medium text-ink-100 shadow-[inset_2px_0_0_var(--accent)]"
                     : "text-ink-300 hover:bg-ink-850 hover:text-ink-100",
                 )
               }
@@ -192,8 +191,10 @@ export default function App() {
         </nav>
 
         <div className="space-y-2 border-t border-ink-800 px-4 py-3 text-xs">
+          {/* Voice lives in the chat now: this opens a session with the
+              microphone on, rather than a panel connected to nothing. */}
           <button
-            onClick={() => setVoiceOpen(true)}
+            onClick={() => navigate("/?voice=1")}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-live-500/15 py-1.5 font-mono text-xs font-semibold text-live-400 border border-live-500/30 hover:bg-live-500/25 transition-colors"
           >
             🎙️ Voice Co-Pilot
@@ -227,6 +228,9 @@ export default function App() {
       </aside>
 
       <main className="flex-1 overflow-y-auto">
+        {/* Keyed on the path so each page arrives with the same short rise;
+            a route change should feel like turning a page, not a reload. */}
+        <div key={location.pathname} className="page-enter h-full">
         <Routes>
           <Route path="/" element={<Home role={user.role} />} />
           <Route path="/fleet" element={<Fleet />} />
@@ -242,9 +246,9 @@ export default function App() {
           <Route path="/settings" element={<Settings role={user.role} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </div>
       </main>
 
-      <VoiceCoPilot open={voiceOpen} onClose={() => setVoiceOpen(false)} />
       <ToastHost />
     </div>
   );

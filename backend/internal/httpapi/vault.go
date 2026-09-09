@@ -211,7 +211,27 @@ func (s *Server) handleSendPeerMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := vault.GlobalBus.SendMessageAs(r.Context(), req.ConversationID, req.FromInstanceID,
 		req.FromInstanceName, sp.ID, req.ToInstanceID, req.Kind, req.Content, req.Data)
+	// A person addressing an empty room should be told it is empty. Before
+	// this the first thing a new operator typed simply sat there unanswered,
+	// which reads as a broken product rather than a fleet with nobody in it.
+	if req.FromInstanceID == "" && req.ToInstanceID == "broadcast" && req.Kind != peerSystemKind {
+		s.noteIfNobodyHome(r.Context())
+	}
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+func (s *Server) noteIfNobodyHome(ctx context.Context) {
+	instances, err := s.db.ListInstances(ctx)
+	if err != nil {
+		return
+	}
+	for _, in := range instances {
+		if in.State == protocol.InstanceRunning {
+			return
+		}
+	}
+	s.systemNote(ctx, "Nobody is up to hear that yet. Create a bot first: tap **Create a bot** above, "+
+		"or say `/new fullstack_dev`. Then tell it what you want done.")
 }
 
 // otherMemberOf resolves who a message in this thread is for, given who sent

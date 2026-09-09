@@ -229,10 +229,17 @@ func listOpenAIDynamic(ctx context.Context, hc *http.Client, base, key string, k
 		endpoint = base + "/v1/models"
 	}
 
-	if key != "" {
+	// Asked live whether or not there is a key. api.openai.com needs one, but
+	// every local engine that speaks this shape -- Ollama's /v1, LM Studio,
+	// llama.cpp, vLLM -- answers /models without, and gating the live call on
+	// a key meant a keyless local engine was never actually contacted: the
+	// caller got the OpenAI catalogue back and "discovered" nothing.
+	{
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err == nil {
-			req.Header.Set("Authorization", "Bearer "+key)
+			if key != "" {
+				req.Header.Set("Authorization", "Bearer "+key)
+			}
 			if status, raw := readAndClose(hc.Do(req)); status == http.StatusOK {
 				var out struct {
 					Data []struct {
@@ -244,7 +251,7 @@ func listOpenAIDynamic(ctx context.Context, hc *http.Client, base, key string, k
 					for _, d := range out.Data {
 						id := d.ID
 						// Filter noise like tts, audio, moderation, dall-e, text-embedding
-						if strings.Contains(id, "tts") || strings.Contains(id, "embedding") || strings.Contains(id, "whisper") || strings.Contains(id, "moderation") || strings.Contains(id, "babbage") || strings.Contains(id, "davinci") {
+						if strings.Contains(id, "tts") || strings.Contains(id, "embed") || strings.Contains(id, "whisper") || strings.Contains(id, "moderation") || strings.Contains(id, "babbage") || strings.Contains(id, "davinci") {
 							continue
 						}
 						isVision := strings.Contains(id, "4o") || strings.Contains(id, "vision") || strings.Contains(id, "vl") || strings.Contains(id, "o1") || strings.Contains(id, "o3")

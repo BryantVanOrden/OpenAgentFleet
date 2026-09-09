@@ -24,8 +24,7 @@ import {
   PromptModal,
   cx,
   inputClass,
-  relative,
-} from "./ui";
+  relative, SkeletonRows } from "./ui";
 
 /**
  * Fleet comms: every conversation in the fleet.
@@ -56,7 +55,9 @@ export default function CommsTab({ readOnly }: { readOnly: boolean }) {
   const refresh = useCallback(async () => {
     try {
       const [convs, insts] = await Promise.all([api.conversations(), api.instances()]);
-      setConversations(convs);
+      // Oaf sessions are conversations too, but they have their own home on the
+      // Chat page; the vault comms list is for the fleet's threads.
+      setConversations(convs.filter((c) => c.kind !== "oaf" && !c.id.startsWith("oaf:")));
       setInstances(insts);
       setLoading(false);
       setError(null);
@@ -451,7 +452,7 @@ function NewConversationModal({
  * it is where a new chat with the same people is started, so hiding it when
  * there is only one would hide the only way to make a second.
  */
-function ConversationView({
+export function ConversationView({
   conversation,
   siblings,
   title,
@@ -689,7 +690,7 @@ function ConversationView({
       {/* Messages */}
       <div ref={listRef} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
         {loading ? (
-          <p className="py-10 text-center text-xs text-ink-400">Loading…</p>
+          <SkeletonRows rows={4} className="px-2" />
         ) : messages.length === 0 ? (
           <p className="px-6 py-14 text-center text-xs leading-relaxed whitespace-pre-line text-ink-400">
             {isPair

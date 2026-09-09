@@ -30,7 +30,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         xvfb x11vnc xauth \
         xfce4 xfce4-terminal xfdesktop4 \
-        dbus-x11 at-spi2-core \
+        dbus dbus-x11 at-spi2-core \
         fonts-dejavu-core fonts-liberation \
         novnc websockify \
         supervisor ca-certificates curl wget gnupg \
@@ -92,6 +92,7 @@ RUN python3 -m venv --system-site-packages /opt/agentd/venv \
 COPY agentd/ /opt/agentd/
 COPY supervisord.conf /etc/supervisor/conf.d/agentfleet.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY wait-for-session.sh /usr/local/bin/wait-for-session.sh
 COPY egress.sh /usr/local/bin/egress.sh
 COPY init-archetype.sh /usr/local/bin/init-archetype.sh
 # Install recipes, editable without touching the script that reads them.

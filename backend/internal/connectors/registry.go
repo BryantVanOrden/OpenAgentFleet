@@ -1,6 +1,9 @@
 package connectors
 
 import (
+	"strings"
+	"net"
+	"io"
 	"context"
 	"errors"
 	"fmt"
@@ -33,9 +36,10 @@ type Registry struct {
 	log  *slog.Logger
 	hc   *http.Client
 
-	mu       sync.Mutex
-	penalty  map[string]time.Time
-	failures map[string]int
+	mu         sync.Mutex
+	penalty    map[string]time.Time
+	failures   map[string]int
+	blindNoted map[string]bool
 	// combos resolves a chain entry that names a combination rather than a
 	// provider. Optional: with none attached, entries are provider IDs.
 	combos ComboSource
@@ -152,6 +156,17 @@ func (r *Registry) Complete(ctx context.Context, preferred string, req Request) 
 var ErrEmptyCompletion = errors.New("empty completion")
 
 func (r *Registry) complete(ctx context.Context, chain []Connector, req Request) (*Response, error) {
+	// A chain with no eyes at all still gets to work. The turn carries the
+	// Set-of-Marks element list and the accessibility tree alongside the
+	// screenshot, and a text model can drive a desktop from those; what it
+	// cannot do is take a request with an image attached, and the alternative
+	// -- "no vision-capable provider is enabled" on every step -- retired the
+	// whole fleet the moment an operator chose a text-only model. Drop the
+	// pixels and let the words through.
+	if hasImage(req) && !anyVision(chain) && len(chain) > 0 {
+		req = withoutImages(req)
+		r.noteBlind(chain)
+	}
 	var errs []error
 	for _, c := range chain {
 		// Vision-blind providers cannot see the desktop; skip them when the
@@ -159,7 +174,7 @@ func (r *Registry) complete(ctx context.Context, chain []Connector, req Request)
 		if !c.Vision() && hasImage(req) {
 			continue
 		}
-		resp, err := c.Complete(ctx, req)
+		resp, err := r.completeTransient(ctx, c, req)
 
 		// One retry without the thinking pass before giving up on this model.
 		// A model that thought itself out of a budget will usually answer if
@@ -227,6 +242,111 @@ func (r *Registry) ChainFor(ctx context.Context, providerIDs []string) ([]Connec
 		return nil, ErrNoProvider
 	}
 	return out, nil
+}
+
+// completeTransient is one connector's Complete with a short retry on
+// transport failures: a dropped connection, a reset, a refused port.
+//
+// An agent that is meant to work for days meets these routinely -- the
+// gateway restarts to pick up a fix, a Wi-Fi hop blinks -- and a single EOF
+// used to fall through the whole chain and fail a sixty-step task at step
+// six, with "every model provider failed" as the epitaph for a network hiccup.
+// Two quick retries cover the blink; anything longer is still a failure, and
+// still falls through to the next provider as before.
+func (r *Registry) completeTransient(ctx context.Context, c Connector, req Request) (*Response, error) {
+	var resp *Response
+	var err error
+	for attempt, wait := range transientWaits {
+		resp, err = c.Complete(ctx, req)
+		if err == nil || !isTransient(err) || ctx.Err() != nil {
+			return resp, err
+		}
+		r.log.Warn("transient transport error from provider, retrying",
+			"provider", c.Name(), "attempt", attempt+1, "err", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return c.Complete(ctx, req)
+}
+
+// transientWaits is the pause before each retry; the final attempt follows
+// the last wait. Short on purpose: a step has its own deadline to respect.
+var transientWaits = []time.Duration{2 * time.Second, 6 * time.Second}
+
+// isTransient recognises the transport-level failures worth a second try.
+// Model-level failures (a 400, an empty completion, an unknown model) are
+// not: repeating them just repeats them.
+func isTransient(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"eof", "connection reset", "connection refused", "broken pipe",
+		"server closed idle connection", "http2: client connection lost", "tls handshake timeout",
+		"unexpected eof", "bad gateway", "http 502", "http 503", "http 504"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// ChainSees reports whether any provider in a bot's chain, resolved for a
+// role, can see images. Callers that would attach a screenshot ask this first
+// so the prompt can say what the model is actually working from.
+func (r *Registry) ChainSees(ctx context.Context, entries []string, role string) bool {
+	chain, err := r.ChainFor(ctx, r.ResolveChain(ctx, entries, role))
+	if err != nil {
+		return true // unknown; let complete() decide with the real chain
+	}
+	return anyVision(chain)
+}
+
+func anyVision(chain []Connector) bool {
+	for _, c := range chain {
+		if c.Vision() {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutImages(req Request) Request {
+	msgs := make([]Message, len(req.Messages))
+	copy(msgs, req.Messages)
+	for i := range msgs {
+		msgs[i].Image = ""
+		msgs[i].ImageMime = ""
+	}
+	req.Messages = msgs
+	return req
+}
+
+// noteBlind logs the text-only fallback once per chain head, not once per
+// step: an agent takes hundreds of steps and the fact does not change.
+func (r *Registry) noteBlind(chain []Connector) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.blindNoted == nil {
+		r.blindNoted = map[string]bool{}
+	}
+	id := chain[0].ID()
+	if r.blindNoted[id] {
+		return
+	}
+	r.blindNoted[id] = true
+	r.log.Info("no vision-capable provider in chain; perceiving through the accessibility tree and element marks",
+		"provider", chain[0].Name())
 }
 
 func hasImage(req Request) bool {

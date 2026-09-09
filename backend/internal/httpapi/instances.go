@@ -48,21 +48,24 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	req.OwnerID = userFrom(r.Context()).Subject
 
-	inst, err := s.fleet.Create(r.Context(), req)
-	if err != nil {
-		// A half-provisioned instance is still returned so the operator can see
-		// the error against it in the fleet view rather than losing the record.
-		if inst != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": err.Error(), "instance": redact(*inst),
-			})
+	// Acknowledged as soon as the row exists; the boot runs on and reports
+	// through the event stream. Holding this request open for the boot made
+	// every dropped connection a duplicate bot (see Manager.CreateAsync).
+	inst, err := s.fleet.CreateAsync(r.Context(), req, func(booted *protocol.Instance, berr error) {
+		if booted == nil {
 			return
 		}
+		s.bus.Emit("instance.state", booted.ID, "", redact(*booted))
+		if berr != nil {
+			s.log.Warn("instance did not come up", "instance", booted.ID, "name", booted.Name, "err", berr)
+		}
+	})
+	if err != nil {
 		failErr(w, err)
 		return
 	}
 	s.bus.Emit("instance.state", inst.ID, "", redact(*inst))
-	writeJSON(w, http.StatusCreated, redact(*inst))
+	writeJSON(w, http.StatusAccepted, redact(*inst))
 }
 
 func (s *Server) handleInstanceAction(w http.ResponseWriter, r *http.Request) {

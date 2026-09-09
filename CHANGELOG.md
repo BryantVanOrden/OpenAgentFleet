@@ -4,6 +4,97 @@ Notable changes to OpenAgentFleet. The format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 
+## [1.1.0] — 2026-09-09
+
+### The chat is an agent, with sessions
+- Sessions: named conversations with Oaf, each bound to a device and a working
+  folder (`/api/oaf/sessions`, rename, pin, delete, per-session model). Both
+  clients keep them beside the fleet channel, with the bots' own threads.
+- Devices: `fleetctl host --root <folder>` connects a PC (approval prompt in
+  the terminal for commands and writes, `--yes` to skip); the phone connects
+  from Settings for notifications, links, clipboard and speech
+  (`/api/oaf/devices`, long-polled jobs, folder jail on the device).
+- Oaf's tools: shell, read/write/list/search in the session folder, fleet
+  slash commands, `ask_bot` (waits for the answer), `broadcast`. Every call is
+  recorded in the thread with its result.
+- `/goal` keeps Oaf working on something with progress check-ins until it says
+  done; `/loop <every> <text>` repeats; `/jobs`, `/cancel`, `/devices`,
+  `/sessions`.
+- Attachments: files and images by picker, drag-drop or paste; images go to
+  the model as pictures, text files inline.
+- Voice lives in the chat: dictation and a voice mode that listens, sends and
+  speaks the reply. The old standalone Voice Co-Pilot panel is gone.
+- One box in the agent chat: no Assign task panel, no Plan / Run as task
+  buttons. The agent reads intent — a question gets an answer, a request to do
+  something starts the work with a short acknowledgement and a "Working on
+  it" note linking to the run; anything risky or vague is proposed in plain
+  text first and waits for your go.
+- Recording lives only in the desktop view, where you are looking at the
+  agent's screen: it records that screen and your actions on it while you
+  drive, and saves a skill.
+- The per-agent Chat and Activity tabs wear the same look, and the side panel
+  stacks under the pane on narrow screens instead of squeezing it away.
+
+### Setup does itself
+- `GET /api/setup` reports what a fresh deployment is missing — model, bot,
+  first goal — and both the console and the phone app lead the fleet chat with
+  a one-button setup card until it is `ready`.
+- `POST /api/setup/autodetect` and the `/setup` chat command find a local model
+  engine (Ollama, LM Studio, llama.cpp, vLLM via the host gateway, or an address
+  you give), rank its models, measure vision with a red-square probe, and
+  register the best one as an OpenAI-compatible provider.
+- Oaf answers an operator who broadcasts to an empty fleet instead of leaving
+  the message hanging.
+
+### Agents keep working on whatever model you have
+- A chain with no sighted model no longer fails every step with "no
+  vision-capable provider is enabled": the registry drops the screenshot, the
+  turn says so, and the agent drives from the element marks and the
+  accessibility tree. Coordinate calibration is skipped for such models.
+- The OpenAI-compatible connector waits through a gateway's `503 Loading model`
+  instead of failing over; the Ollama connector sends `keep_alive`
+  (`OLLAMA_KEEP_ALIVE`, default 30m) so a slow step does not pay the load
+  again; `think:false` raises the output floor to 512 tokens.
+- A dropped connection is retried before a provider is given up on: two quick
+  retries on EOF / reset / refused / 502–504, so a gateway restart costs a step
+  a few seconds instead of failing a sixty-step task with "every model
+  provider failed".
+- OpenAI-compatible model discovery asks a keyless local engine live instead of
+  handing back the OpenAI catalogue; `embed*` models are filtered out.
+- The peer-chat reply deadline (`FLEET_REPLY_TIMEOUT_SEC`, 360) and the marathon
+  handover summary deadline (`AGENT_MARATHON_SUMMARY_TIMEOUT_SEC`, 300) are
+  configurable and default generously for large local models.
+
+### Fleet
+- `POST /api/instances` answers `202` as soon as the row exists and boots the
+  desktop in the background. A create held open for the whole boot turned every
+  dropped connection into a retried, duplicate bot.
+
+### Sandbox
+- The developer-heavy image's `/home/agent/.config` and `.cache` were owned by
+  root (left behind by the toolchain smoke tests), so `xfconfd` could not start
+  and every `-dev` desktop booted into XFCE's failsafe dialog. The image hands
+  the home back to `agent`, and the entrypoint asserts it on every boot.
+- The session bus carries HOME and the XDG variables, so services it starts on
+  demand can find their configuration; XFCE and AT-SPI wait for the bus to
+  answer and for X to accept connections before they start.
+- XFCE no longer races the session bus at start: the `-dev` image could land on
+  "Unable to load a failsafe session" with no panel, no window manager and a
+  supervisord that thought everything was fine. The session waits for the bus
+  socket and pushes its environment into the bus so `xfconfd` can start.
+- The system D-Bus actually starts (`dbus` package, `/run/dbus`), and agentd's
+  `/health` requires a window manager before declaring the desktop ready.
+
+### Screenshots and E2E
+- The companion-app capture scripts sign in through Flutter's semantics tree
+  (labelled fields, a real "Sign in" button) with coordinates as the fallback,
+  and refuse to file a login screen as a screenshot of the app.
+
+### Console
+- Pages arrive with a short rise instead of a cut, buttons give under the
+  pointer, the active nav item carries the accent, and the chat loads into a
+  skeleton rather than a sentence.
+
 ## [1.0.0] — 2026-09-01
 
 **The first public release.** Everything below this section is the pre-release

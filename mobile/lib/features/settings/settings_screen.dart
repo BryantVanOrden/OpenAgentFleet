@@ -6,6 +6,7 @@ import '../../core/theme/theme.dart';
 import 'host_usage_card.dart';
 import '../auth/login_screen.dart';
 import 'theme_card.dart';
+import 'phone_device_card.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -30,6 +31,7 @@ class SettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         children: [
           const ThemeCard(),
+          const PhoneDeviceCard(),
           const SizedBox(height: 12),
           Card(
             child: Padding(

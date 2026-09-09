@@ -17,6 +17,58 @@ const OUT = process.env.OUT_DIR ?? "/out";
 // build defaults to the Android emulator's 10.0.2.2, which is nowhere from
 // inside this container, and sign-in then spins forever.
 const FIELD = { server: [195, 393], email: [195, 453], password: [195, 513], signIn: [195, 576] };
+
+// Flutter paints to a canvas, so there is no DOM to fill() -- unless the
+// semantics tree is switched on, which Flutter offers through a hidden
+// placeholder button for assistive technology. Clicking it gives real,
+// labelled inputs to type into, and a "Sign in" button whose disappearance
+// proves the login actually happened. Coordinates stay as the fallback: on a
+// loaded CI box the first frame can paint late and a click at a fixed point
+// lands on nothing, which is how a run once shipped a folder of login screens
+// as "screenshots of the app".
+async function signIn(page, { server, email, password }) {
+  const placeholder = page.locator("flt-semantics-placeholder");
+  if (await placeholder.count()) {
+    await placeholder.first().click({ force: true }).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+  const byLabel = async (label, value) => {
+    const el = page.getByLabel(label, { exact: false }).first();
+    if (!(await el.count())) return false;
+    await el.click({ force: true });
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type(value, { delay: 15 });
+    return true;
+  };
+  let viaTree = await byLabel("Orchestrator URL", server);
+  if (viaTree) {
+    await byLabel("Email", email);
+    await byLabel("Password", password);
+    const btn = page.getByRole("button", { name: /sign in/i }).first();
+    if (await btn.count()) await btn.click({ force: true });
+    else viaTree = false;
+  }
+  if (!viaTree) {
+    const clickType = async ([x, y], text) => {
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(400);
+      await page.keyboard.press("Control+a");
+      await page.keyboard.type(text, { delay: 15 });
+    };
+    await clickType(FIELD.server, server);
+    await clickType(FIELD.email, email);
+    await clickType(FIELD.password, password);
+    await page.mouse.click(...FIELD.signIn);
+  }
+  // Wait for the login screen to go, up to 30s; the semantics tree tells us.
+  for (let i = 0; i < 30; i++) {
+    await page.waitForTimeout(1000);
+    const still = await page.getByRole("button", { name: /sign in/i }).count().catch(() => 0);
+    if (!still) return true;
+  }
+  console.log("  [login] still on the sign-in screen after 30s");
+  return false;
+}
 // Chat screen geometry (see app-chat-dark.png): quick chips sit just above the
 // composer; the composer field is centred at y≈722.
 const CHIP_BOTS = [43, 661];
@@ -32,15 +84,11 @@ page.on("pageerror", (e) => console.log(`  [page uncaught] ${String(e).slice(0, 
 
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForTimeout(7000);
-const values = { server: API, email: EMAIL, password: PASSWORD };
-for (const [name, xy] of Object.entries(FIELD)) {
-  if (name === "signIn") continue;
-  await page.mouse.click(...xy);
-  await page.keyboard.press("Control+A");
-  await page.keyboard.type(values[name], { delay: 20 });
+if (!(await signIn(page, { server: API, email: EMAIL, password: PASSWORD }))) {
+  await browser.close();
+  throw new Error("sign-in did not complete");
 }
-await page.mouse.click(...FIELD.signIn);
-await page.waitForTimeout(9000);
+await page.waitForTimeout(2500);
 
 // 1. A quick-action chip runs /bots and renders the result card.
 await page.mouse.click(...CHIP_BOTS);

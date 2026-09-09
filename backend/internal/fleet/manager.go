@@ -112,7 +112,57 @@ type CreateRequest struct {
 
 // Create provisions a sandbox and blocks until its agent daemon answers, so the
 // caller never gets back an instance that cannot be driven.
+// Create validates, records and boots an instance, returning once the desktop
+// answers. Callers that hold an HTTP connection open for that long -- a minute
+// on a laptop, several for a tool-heavy archetype -- should use CreateAsync.
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Instance, error) {
+	inst, profile, err := m.prepare(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return m.finishBoot(ctx, inst, profile)
+}
+
+// CreateAsync validates and records the instance, then boots it in the
+// background and calls done with the outcome. The returned row is in
+// "provisioning"; the fleet view follows the rest through events.
+//
+// A synchronous create held the request open for the whole boot, and any
+// connection that dropped in those minutes -- a proxy blink, a client timeout
+// -- made the client retry and provision the same bot again. Four Builders
+// once came up from one command. Returning the row at once removes the
+// window: the create is acknowledged in milliseconds and the boot has nothing
+// to retry.
+func (m *Manager) CreateAsync(ctx context.Context, req CreateRequest, done func(*protocol.Instance, error)) (*protocol.Instance, error) {
+	inst, profile, err := m.prepare(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := *inst
+	go func() {
+		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Minute)
+		defer cancel()
+		booted, berr := m.finishBoot(bctx, inst, profile)
+		if done != nil {
+			done(booted, berr)
+		}
+	}()
+	return &snapshot, nil
+}
+
+// finishBoot brings a recorded instance up and records how that went.
+func (m *Manager) finishBoot(ctx context.Context, inst *protocol.Instance, profile protocol.TierProfile) (*protocol.Instance, error) {
+	if err := m.boot(ctx, inst, profile); err != nil {
+		inst.State = protocol.InstanceError
+		inst.LastError = err.Error()
+		_ = m.db.UpdateInstance(ctx, inst)
+		return inst, err
+	}
+	return inst, nil
+}
+
+// prepare validates a request and persists the instance row in "provisioning".
+func (m *Manager) prepare(ctx context.Context, req CreateRequest) (*protocol.Instance, protocol.TierProfile, error) {
 	// An archetype's tools come from its template unless the caller overrode
 	// them. Repositories already worked this way; tools did not, so creating a
 	// cyber_ops bot without spelling out a tool list got its wordlists and none
@@ -124,7 +174,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		if err := c.Validate(); err != nil {
 			// Wrapped so the API answers 400 rather than 500: a malformed tool
 			// name is the caller's mistake, not the server's.
-			return nil, fmt.Errorf("%w: %s", ErrInvalidRequest, err)
+			return nil, protocol.TierProfile{}, fmt.Errorf("%w: %s", ErrInvalidRequest, err)
 		}
 	}
 
@@ -148,10 +198,10 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 
 	live, err := m.db.CountLiveInstances(ctx)
 	if err != nil {
-		return nil, err
+		return nil, protocol.TierProfile{}, err
 	}
 	if live >= m.cfg.MaxInstances {
-		return nil, fmt.Errorf("host is at capacity (%d/%d instances)", live, m.cfg.MaxInstances)
+		return nil, protocol.TierProfile{}, fmt.Errorf("host is at capacity (%d/%d instances)", live, m.cfg.MaxInstances)
 	}
 
 	// An empty tier legitimately means "give me the default", but a tier that
@@ -160,7 +210,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 	// substitution that is only noticed much later, by which point the agent
 	// has been running on the wrong hardware.
 	if req.Tier != "" && !HasTier(m.tiers, req.Tier) {
-		return nil, fmt.Errorf("unknown tier %q; available: %s", req.Tier, TierNames(m.tiers))
+		return nil, protocol.TierProfile{}, fmt.Errorf("unknown tier %q; available: %s", req.Tier, TierNames(m.tiers))
 	}
 	profile := ApplyOverride(TierByName(m.tiers, req.Tier), req.Override)
 
@@ -172,7 +222,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 	case protocol.DriverQEMU:
 		profile.Driver = protocol.DriverQEMU
 	default:
-		return nil, fmt.Errorf("%w: unknown driver %q (use docker or qemu)", ErrInvalidRequest, req.Driver)
+		return nil, protocol.TierProfile{}, fmt.Errorf("%w: unknown driver %q (use docker or qemu)", ErrInvalidRequest, req.Driver)
 	}
 	if profile.Driver == protocol.DriverQEMU {
 		// Egress policies are enforced in the RUNNER's netns, not the guest's:
@@ -228,16 +278,9 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*protocol.Inst
 		UpdatedAt:         time.Now().UTC(),
 	}
 	if err := m.db.CreateInstance(ctx, inst); err != nil {
-		return nil, err
+		return nil, protocol.TierProfile{}, err
 	}
-
-	if err := m.boot(ctx, inst, profile); err != nil {
-		inst.State = protocol.InstanceError
-		inst.LastError = err.Error()
-		_ = m.db.UpdateInstance(ctx, inst)
-		return inst, err
-	}
-	return inst, nil
+	return inst, profile, nil
 }
 
 func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.TierProfile) (retErr error) {

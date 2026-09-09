@@ -136,7 +136,7 @@ func (r *Runner) progressSummary(ctx context.Context, task *protocol.Task, inst 
 	if r.models == nil {
 		return clipProgress(fallback)
 	}
-	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 90*time.Second)
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.cfg.MarathonSummaryTimeout)
 	defer cancel()
 	resp, err := r.models.CompleteRole(sctx,
 		connectors.PreferredChain(task.ProviderID, inst.ProviderIDs),

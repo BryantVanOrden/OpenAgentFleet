@@ -834,6 +834,79 @@ export interface FleetCommand {
 }
 
 /** What running one slash command produced. body is markdown. */
+/** First-run setup: what a fresh deployment is still missing, in order. */
+export interface SetupStep {
+  id: "model" | "bot" | "goal";
+  title: string;
+  done: boolean;
+  hint?: string;
+  /** A fleet command that does this step for you, when there is one. */
+  action?: string;
+}
+export interface SetupStatus {
+  providers: number;
+  bots: number;
+  running_bots: number;
+  tasks: number;
+  steps: SetupStep[];
+  next: "model" | "bot" | "goal" | "ready";
+}
+export interface AutodetectResult {
+  found: { base_url: string; models: string[] }[];
+  provider?: Provider;
+  vision: boolean;
+  note?: string;
+}
+
+/** One named conversation with Oaf, scoped to a device and folder. */
+export interface OafSession {
+  id: string;
+  owner_id: string;
+  name: string;
+  device_id?: string;
+  cwd?: string;
+  provider_id?: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  message_count?: number;
+  last_message_at?: string;
+  device_name?: string;
+}
+/** A PC (fleetctl host) or phone Oaf can act on. */
+export interface OafDevice {
+  id: string;
+  owner_id: string;
+  name: string;
+  kind: "pc" | "phone";
+  platform?: string;
+  roots: string[];
+  auto_approve: boolean;
+  last_seen?: string;
+  created_at: string;
+  online: boolean;
+}
+export interface OafJob {
+  id: string;
+  session_id: string;
+  kind: "goal" | "loop";
+  text: string;
+  every_sec?: number;
+  state: "running" | "done" | "stopped" | "failed";
+  progress?: string;
+  runs: number;
+  next_at: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface OafAttachment {
+  id: string;
+  name: string;
+  content_type: string;
+  size: number;
+  url: string;
+}
+
 export interface FleetCommandResult {
   command: string;
   ok: boolean;
@@ -1006,6 +1079,33 @@ export const api = {
   // Fleet chat slash commands. The text goes across exactly as typed, slash
   // included — parsing lives on the server so the console and the phone app
   // cannot disagree about what a command means.
+  // Oaf sessions: the chat as an agent.
+  oafSessions: () => get<OafSession[]>("/api/oaf/sessions"),
+  createOafSession: (body: Partial<Pick<OafSession, "name" | "device_id" | "cwd" | "provider_id">> = {}) =>
+    post<OafSession>("/api/oaf/sessions", body),
+  updateOafSession: (
+    id: string,
+    body: Partial<Pick<OafSession, "name" | "device_id" | "cwd" | "provider_id" | "pinned">>,
+  ) => patch<OafSession>(`/api/oaf/sessions/${id}`, body),
+  deleteOafSession: (id: string) => del<void>(`/api/oaf/sessions/${id}`),
+  oafMessages: (id: string) => get<PeerMessage[]>(`/api/oaf/sessions/${id}/messages`),
+  oafSend: (id: string, text: string, attachments: string[] = []) =>
+    post<{ session: OafSession; reply: PeerMessage }>(`/api/oaf/sessions/${id}/messages`, { text, attachments }),
+  oafUpload: async (id: string, file: File | Blob, name?: string): Promise<OafAttachment> => {
+    const headers = new Headers();
+    const token = getToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    headers.set("Content-Type", file.type || "application/octet-stream");
+    headers.set("X-Filename", name || (file instanceof File ? file.name : "pasted.png"));
+    const res = await fetch(`/api/oaf/sessions/${id}/attachments`, { method: "POST", headers, body: file });
+    if (!res.ok) throw new Error((await res.text()) || `upload failed (${res.status})`);
+    return (await res.json()) as OafAttachment;
+  },
+  oafDevices: () => get<OafDevice[]>("/api/oaf/devices"),
+  deleteOafDevice: (id: string) => del<void>(`/api/oaf/devices/${id}`),
+  setup: () => get<SetupStatus>("/api/setup"),
+  setupAutodetect: (body: { base_url?: string; api_key?: string; apply: boolean }) =>
+    post<AutodetectResult>("/api/setup/autodetect", body),
   fleetCommands: () => get<FleetCommand[]>("/api/fleet/commands"),
   runFleetCommand: (text: string) => post<FleetCommandResult>("/api/fleet/command", { text }),
 

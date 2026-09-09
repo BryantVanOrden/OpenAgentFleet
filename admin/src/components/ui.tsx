@@ -72,7 +72,9 @@ export function Button({ variant = "subtle", size = "md", className, ...props }:
     <button
       {...props}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-lg transition-colors",
+        "inline-flex items-center justify-center gap-2 rounded-lg transition-[background-color,color,transform] duration-150",
+        // Press feedback: the button gives a little under the pointer.
+        "active:scale-[0.97] disabled:active:scale-100",
         "disabled:cursor-not-allowed disabled:opacity-40",
         size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-2 text-sm",
         variants[variant],
@@ -178,6 +180,28 @@ export function Meter({ value, max, label }: { value: number; max: number; label
       <div className="h-1.5 overflow-hidden rounded-full bg-ink-800">
         <div className={cx("h-full rounded-full transition-all", tone)} style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  );
+}
+
+/** Ghost rows while a list loads: the shape of what is coming, not a
+ *  sentence about waiting. Purely decorative, so hidden from readers. */
+export function SkeletonRows({ rows = 3, className }: { rows?: number; className?: string }) {
+  const widths = [0.6, 0.85, 0.7, 0.5, 0.8];
+  return (
+    <div className={cx("space-y-3 py-2", className)} aria-hidden>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-start gap-3">
+          <div className="size-7 shrink-0 animate-pulse rounded-full bg-ink-800" />
+          <div className="flex-1 space-y-2 pt-1">
+            <div className="h-2.5 w-24 animate-pulse rounded bg-ink-800" />
+            <div
+              className="h-3 animate-pulse rounded bg-ink-850"
+              style={{ width: `${widths[i % widths.length] * 100}%` }}
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

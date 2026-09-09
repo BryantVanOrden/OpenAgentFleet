@@ -110,6 +110,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// Idle agents answer messages too; without this a broadcast to a fleet
 	// with nothing running is met with silence.
 	go s.RunPeerResponder(ctx)
+	go s.RunOafJobs(ctx)
 	// Finishing a part of a shared job wakes whoever the next part belongs
 	// to. Without this an agent publishes and stops, and the colleague who
 	// would review it never hears.

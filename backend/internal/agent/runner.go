@@ -295,16 +295,24 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		// This bot's own chain, resolved for the role this turn actually plays:
 		// perceiving the screen and choosing the next action. A combination
 		// sends this to whichever model it assigns to the hands.
-		resp, err := r.models.CompleteRole(ctx,
-			connectors.PreferredChain(task.ProviderID, inst.ProviderIDs),
+		chain := connectors.PreferredChain(task.ProviderID, inst.ProviderIDs)
+		turn := buildTurn(task, skill, obs, history, humanReply, r.peerContext(ctx, inst.ID))
+		// A chain with no sighted model drives from the element marks and the
+		// accessibility tree. Say so in the turn, and do not attach a picture
+		// nobody can look at.
+		screenshot := obs.ScreenshotB64
+		if !r.models.ChainSees(ctx, chain, protocol.RoleVision) {
+			turn += blindPerceptionNote
+			screenshot = ""
+		}
+		resp, err := r.models.CompleteRole(ctx, chain,
 			protocol.RoleVision, connectors.Request{
 				System:   buildSystem(inst, mountedTools),
 				JSONOnly: true,
 				Messages: []connectors.Message{{
-					Role: connectors.RoleUser,
-					Text: buildTurn(task, skill, obs, history, humanReply,
-						r.peerContext(ctx, inst.ID)),
-					Image:     obs.ScreenshotB64,
+					Role:      connectors.RoleUser,
+					Text:      turn,
+					Image:     screenshot,
 					ImageMime: "image/webp",
 				}},
 			})

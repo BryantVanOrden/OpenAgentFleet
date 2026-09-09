@@ -98,6 +98,14 @@ RUN set -eu; \
     cd "$tmp" && HOME=/tmp /usr/local/go/bin/go run a.go; \
     rm -rf "$tmp"
 
+# The toolchain smoke tests above run as root with HOME under /home/agent, and
+# left /home/agent/.config and .cache owned by root. xfconfd could then not
+# create its configuration directory and died with 'Unable to create
+# configuration directory "(null)"', and every developer-heavy desktop booted
+# into XFCE's failsafe dialog with no panel and no window manager -- while the
+# base image, whose home was untouched, came up fine. Hand the home back.
+RUN chown -R agent:agent /home/agent
+
 # Inherited from the base image and restated so this file is readable on its
 # own: the entrypoint drops privileges to `agent`, and supervisord runs the
 # desktop, the VNC servers and agentd.

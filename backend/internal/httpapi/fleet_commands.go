@@ -37,6 +37,7 @@ type fleetCommand struct {
 
 var fleetCommands = []fleetCommand{
 	{"help", "/help", "List every command.", false},
+	{"setup", "/setup [url] [api-key]", "Find a model engine on this machine (or at an address) and connect it, vision detected automatically.", true},
 	{"bots", "/bots", "Who is in the fleet, and what each is doing right now.", false},
 	{"status", "/status", "Fleet at a glance: bots, running work, open alerts, missions.", false},
 	{"new", "/new <archetype> [name]", "Provision a new agent from an archetype. Takes a minute; it appears in the fleet when ready.", true},
@@ -55,6 +56,12 @@ var fleetCommands = []fleetCommand{
 	{"run", "/run <pipeline>", "Run a pipeline by name or id.", true},
 	{"skills", "/skills", "Recorded skills agents can follow.", false},
 	{"say", "/say <text>", "Broadcast to every agent (the same as typing without a slash).", true},
+	{"goal", "/goal <what to reach>", "In a session: Oaf keeps working toward it, checking in with progress, until it is reached.", true},
+	{"loop", "/loop <every> <what to do>", "In a session: Oaf does it on an interval (30s, 5m, 2h, 1d) until cancelled.", true},
+	{"jobs", "/jobs", "Goals and loops, and where each stands.", false},
+	{"cancel", "/cancel <job-id>", "Stop a goal or loop.", true},
+	{"devices", "/devices", "The PCs and phones Oaf can act on, and whether each is online.", false},
+	{"sessions", "/sessions", "Your sessions with Oaf.", false},
 }
 
 type commandResult struct {
@@ -118,6 +125,8 @@ func (s *Server) runFleetCommand(r *http.Request, name, args string) commandResu
 	switch name {
 	case "help":
 		return helpResult()
+	case "setup":
+		return s.cmdSetup(r, args)
 	case "bots":
 		return s.cmdBots(ctx)
 	case "status":
@@ -146,6 +155,18 @@ func (s *Server) runFleetCommand(r *http.Request, name, args string) commandResu
 		return s.cmdSkills(ctx)
 	case "say":
 		return s.cmdSay(r, args)
+	case "goal":
+		return s.cmdGoal(r, args)
+	case "loop":
+		return s.cmdLoop(r, args)
+	case "jobs":
+		return s.cmdJobs(r)
+	case "cancel":
+		return s.cmdCancelJob(r, args)
+	case "devices":
+		return s.cmdDevices(r)
+	case "sessions":
+		return s.cmdSessions(r)
 	}
 	return commandResult{Command: name, OK: false, Title: "Unknown command",
 		Body: fmt.Sprintf("Oaf doesn't know `/%s`. Try `/help`.", name)}

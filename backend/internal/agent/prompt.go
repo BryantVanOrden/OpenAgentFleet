@@ -251,6 +251,15 @@ func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// blindPerceptionNote is appended to a turn whose chain has no sighted model.
+// The screenshot is not attached (the registry would drop it anyway); the
+// element marks and the accessibility tree are what the agent is driving from,
+// and it should be told so rather than left to wonder where the picture went.
+const blindPerceptionNote = "\n\nNO SCREENSHOT IS ATTACHED: the model driving this turn cannot see pixels. " +
+	"The INTERACTIVE ELEMENTS list and the ACCESSIBILITY TREE above are your view of the screen; " +
+	"treat them as the truth. Act on element centres and names from them, and verify each step " +
+	"by re-reading them on the next turn rather than by looking.\n"
+
 // buildTurn assembles the user message for one step. The image goes in its own
 // message so providers that cache text prefixes still get a cache hit on the
 // system prompt and the skill.

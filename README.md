@@ -109,6 +109,24 @@ you would. That one decision is where everything else comes from:
   clients offer exactly the same verbs. Missions are not a separate screen:
   `/mission <goal>` gives every free bot a role from its archetype, they plan
   first, then execute, and their artifacts are peer-reviewed in the same chat.
+- **The chat is an agent, with sessions.** Beside the fleet channel, the home
+  screen keeps *sessions*: each is a named conversation with Oaf scoped, like a
+  Claude Code session, to a device and a working folder. Attach your PC with
+  `fleetctl host --root <folder>` (it asks in your terminal before running a
+  command or writing a file), or the phone from Settings. Oaf then reads and
+  edits files there, runs commands there, runs any fleet command, asks bots
+  questions and hands the fleet work — every tool call shows in the thread as
+  it happens. Drop, pick or paste files and images and Oaf sees them. `/goal`
+  keeps it working until something is reached; `/loop 30m …` repeats. Voice
+  mode listens, sends and reads the answer back. Threads the bots keep between
+  themselves are listed right there too.
+- **First run does itself.** Until a model is connected, a bot exists and
+  something has been asked of it, the chat leads with one card and one button.
+  *Find my model* scans the machine for Ollama, LM Studio, llama.cpp or vLLM
+  (or takes an address), picks the best model, measures whether it can see
+  screenshots by showing it a red square, and registers it. *Create a bot*
+  provisions a desktop. Then you type what you want. The same `/setup` and
+  `/new` verbs are there for people who prefer typing.
 - **Runs that take as long as they take.** A step budget is a checkpoint, not a
   kill switch: when a window closes with the goal unfinished the agent writes a
   handover note to itself and carries on in a fresh window, for hours or days,
@@ -124,7 +142,9 @@ you would. That one decision is where everything else comes from:
   Set-of-Marks badges over interactive elements, the AT-SPI accessibility tree,
   and its own history; it replies with one JSON action. Coordinate conventions
   are calibrated per model automatically, because vision models disagree about
-  whether a coordinate is a pixel or a fraction and will not tell you which.
+  whether a coordinate is a pixel or a fraction and will not tell you which. A
+  chain with no sighted model still drives: the screenshot is dropped and the
+  agent works from the element marks and the tree, and is told so.
 - **Model combinations.** Name a mapping from roles — vision, reasoning, chat,
   summarize, refine — to different models, and use it anywhere a single provider
   would go. A bot's fallback chain can mix single providers and combinations, so
@@ -408,6 +428,12 @@ Real screenshots of a running fleet — console (`make screenshots`), live deskt
 </p>
 
 <p align="center"><em>The home screen is one chat with the whole fleet. Say what you want done and the bots divide it up; type <code>/</code> for commands; Oaf narrates what the platform did.</em></p>
+
+<p align="center">
+  <img src="docs/images/session-dark-amber.png" alt="A session with Oaf beside the fleet channel: sessions rail, device and folder header, and the composer with attachments and voice" width="900">
+</p>
+
+<p align="center"><em>Beside the channel, sessions: each is a chat with Oaf bound to a device and a folder — your PC through <code>fleetctl host</code>, or the phone — where it reads, edits, runs commands, asks bots and shows every step.</em></p>
 
 <p align="center">
   <img src="docs/images/fleet-dark-amber.png" alt="Fleet dashboard" width="900">

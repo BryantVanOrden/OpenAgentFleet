@@ -131,3 +131,63 @@ func TestAnthropicPrefillIsScopedToJSONOnly(t *testing.T) {
 		}
 	})
 }
+
+// The native Ollama connector has the same starved-probe failure Gemini had:
+// think:false is a request to the template, and some templates spend tokens
+// before any visible output. Measured on qwen3.8-flash-next — 8 tokens gave
+// empty content, 512 gave "ok".
+func TestOllamaDisableThinkingRaisesTheOutputFloor(t *testing.T) {
+	const olOK = `{"model":"m","message":{"role":"assistant","content":"ok"},"done":true,"done_reason":"stop"}`
+	for _, tc := range []struct {
+		name    string
+		max     int
+		disable bool
+		want    float64
+	}{
+		{"probe-sized budget is raised", 8, true, 512},
+		{"a real budget is left alone", 4096, true, 4096},
+		{"without the flag nothing changes", 8, false, 8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, cp := fakeProvider(t, http.StatusOK, olOK)
+			c := build(t, protocol.ProviderOllama, ts, nil)
+			if _, err := c.Complete(context.Background(), Request{
+				Messages:        []Message{{Role: RoleUser, Text: "ping"}},
+				MaxTokens:       tc.max,
+				DisableThinking: tc.disable,
+			}); err != nil {
+				t.Fatalf("Complete() error = %v", err)
+			}
+			wantNum(t, cp, "options.num_predict", tc.want)
+		})
+	}
+}
+
+// keep_alive rides on every request so a slow step does not pay the model
+// load again; the env override is the operator's knob for VRAM they cannot
+// afford to hold.
+func TestOllamaSendsKeepAliveOnEveryRequest(t *testing.T) {
+	const olOK = `{"model":"m","message":{"role":"assistant","content":"ok"},"done":true}`
+	t.Run("default is thirty minutes", func(t *testing.T) {
+		t.Setenv("OLLAMA_KEEP_ALIVE", "")
+		ts, cp := fakeProvider(t, http.StatusOK, olOK)
+		c := build(t, protocol.ProviderOllama, ts, nil)
+		if _, err := c.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "ping"}}}); err != nil {
+			t.Fatalf("Complete() error = %v", err)
+		}
+		if got, _ := dig(cp.body, "keep_alive"); got != "30m" {
+			t.Errorf("keep_alive = %v, want 30m", got)
+		}
+	})
+	t.Run("env override wins", func(t *testing.T) {
+		t.Setenv("OLLAMA_KEEP_ALIVE", "-1")
+		ts, cp := fakeProvider(t, http.StatusOK, olOK)
+		c := build(t, protocol.ProviderOllama, ts, nil)
+		if _, err := c.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "ping"}}}); err != nil {
+			t.Fatalf("Complete() error = %v", err)
+		}
+		if got, _ := dig(cp.body, "keep_alive"); got != "-1" {
+			t.Errorf("keep_alive = %v, want -1", got)
+		}
+	})
+}

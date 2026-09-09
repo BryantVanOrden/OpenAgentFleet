@@ -76,6 +76,14 @@ type Config struct {
 	// they can cancel from.
 	Marathon           bool
 	MarathonMaxWindows int
+	// MarathonSummaryTimeout bounds the handover summary between windows;
+	// FleetReplyTimeout bounds one peer-chat reply (its model call included).
+	// Both were fixed at under two minutes and both were routinely exceeded by
+	// a large local model on shared hardware, where a cold load alone is a
+	// minute or more. When they expire the chain carries raw history and the
+	// reply is skipped, so generous is the safe direction.
+	MarathonSummaryTimeout time.Duration
+	FleetReplyTimeout      time.Duration
 	ScreenshotMaxW int
 
 	// CoordSpace is the coordinate convention the vision model answers in.
@@ -128,6 +136,8 @@ func Load() (*Config, error) {
 		StallDelta:            envFloat("AGENT_STALL_DELTA", 0.02),
 		Marathon:              envBool("AGENT_MARATHON", true),
 		MarathonMaxWindows:    envInt("AGENT_MARATHON_MAX_WINDOWS", 0),
+		MarathonSummaryTimeout: time.Duration(envInt("AGENT_MARATHON_SUMMARY_TIMEOUT_SEC", 300)) * time.Second,
+		FleetReplyTimeout:      time.Duration(envInt("FLEET_REPLY_TIMEOUT_SEC", 360)) * time.Second,
 		ScreenshotMaxW:        envInt("AGENT_SCREENSHOT_MAX_WIDTH", 1280),
 		CoordSpace:            env("AGENT_COORD_SPACE", "auto"),
 		AllowShell:            envBool("ALLOW_SHELL", true),

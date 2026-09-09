@@ -139,6 +139,43 @@ func (b *Bus) CreateConversation(ctx context.Context, title string, members []st
 	return c
 }
 
+// EnsureConversation registers a conversation with a caller-chosen id if it
+// does not exist yet, and returns it.
+//
+// Most threads get a generated id, but a few are addressed by a derived id the
+// caller already knows -- an Oaf session's thread is "oaf:<session id>". Such a
+// thread has to exist in the working set before anything is filed to it, or
+// sendFrom, finding no conversation behind the id, reroutes the message to the
+// broadcast channel and the whole session appears to talk to the fleet.
+func (b *Bus) EnsureConversation(ctx context.Context, id, title string, members []string, kind string) protocol.Conversation {
+	norm := normalizeMembers(members)
+	b.mu.Lock()
+	if existing, ok := b.conversations[id]; ok {
+		b.mu.Unlock()
+		return existing
+	}
+	resolved := kind
+	if resolved == "" {
+		resolved = KindFor(norm)
+	}
+	c := protocol.Conversation{
+		ID:        id,
+		Kind:      resolved,
+		Title:     title,
+		Members:   norm,
+		CreatedAt: time.Now().UTC(),
+	}
+	b.conversations[id] = c
+	st, log := b.convStore, b.log
+	b.mu.Unlock()
+	if st != nil {
+		if err := st.UpsertConversation(ctx, c); err != nil && log != nil {
+			log.Warn("conversation not persisted", "id", id, "err", err)
+		}
+	}
+	return c
+}
+
 // CanonicalThread is the thread an unfiled message between two parties belongs
 // to, created if it does not exist yet.
 //

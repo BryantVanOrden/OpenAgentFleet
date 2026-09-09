@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, type Tier, type TierProfile } from "../lib/api";
+import { api, type Instance, type Tier, type TierProfile } from "../lib/api";
 import { Button, ErrorNote, Field, Modal, cx, inputClass } from "./ui";
 
 /**
@@ -84,6 +84,22 @@ const PHASE_LABEL: Record<Phase, string> = {
   done: "Running.",
 };
 
+/** Polls the fleet until an instance leaves "provisioning", for up to ten
+ *  minutes: a tool-heavy archetype on a laptop takes a while, and giving up
+ *  early would hand the operator a machine that is fine thirty seconds later. */
+async function waitUntilUp(id: string): Promise<Instance> {
+  const deadline = Date.now() + 10 * 60_000;
+  let last: Instance | undefined;
+  while (Date.now() < deadline) {
+    const list = await api.instances();
+    last = list.find((i) => i.id === id);
+    if (last && last.state !== "provisioning") return last;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  if (last) return last;
+  throw new Error("the machine never appeared in the fleet");
+}
+
 export default function QuickLaunch({
   open,
   tiers,
@@ -133,17 +149,18 @@ export default function QuickLaunch({
     let instanceId = "";
     try {
       setPhase("provisioning");
-      // Create blocks until agentd answers, so by the time this resolves the
-      // desktop is genuinely drivable — no polling loop needed here.
-      const instance = await api.createInstance({
+      // Create is acknowledged as soon as the row exists; the desktop boots
+      // on. Follow it here until it is drivable (or has failed), so the task
+      // goes to a machine that can actually take it.
+      const created = await api.createInstance({
         name: name.trim() || suggestName(goal),
         tier,
         shell_access: shell,
         egress: { block_local: blockLocal },
         override: {},
       });
-      instanceId = instance.id;
-
+      instanceId = created.id;
+      const instance = await waitUntilUp(created.id);
       if (instance.state !== "running") {
         throw new Error(
           instance.last_error || `machine came up ${instance.state} instead of running`,

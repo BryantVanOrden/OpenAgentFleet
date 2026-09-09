@@ -68,6 +68,26 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	mux.Handle("GET /api/me", auth(roleAny, s.handleMe))
+	// First-run setup: what is missing, and a way to fix the first piece
+	// without leaving the chat. Status is for everyone (both clients show
+	// the card); autodetect registers a provider, which is administration.
+	mux.Handle("GET /api/setup", auth(roleAny, s.handleSetupStatus))
+	// Oaf sessions: named conversations with Oaf, each scoped to a device and
+	// folder. Devices are the PCs and phones Oaf can act on; they poll for jobs.
+	mux.Handle("GET /api/oaf/sessions", auth(roleAny, s.handleListOafSessions))
+	mux.Handle("POST /api/oaf/sessions", auth(roleOperator, s.handleCreateOafSession))
+	mux.Handle("PATCH /api/oaf/sessions/{id}", auth(roleOperator, s.handleUpdateOafSession))
+	mux.Handle("DELETE /api/oaf/sessions/{id}", auth(roleOperator, s.handleDeleteOafSession))
+	mux.Handle("GET /api/oaf/sessions/{id}/messages", auth(roleAny, s.handleOafSessionMessages))
+	mux.Handle("POST /api/oaf/sessions/{id}/messages", auth(roleOperator, s.handleOafSend))
+	mux.Handle("POST /api/oaf/sessions/{id}/attachments", auth(roleOperator, s.handleOafUpload))
+	mux.Handle("GET /api/oaf/sessions/{id}/attachments/{attachmentId}/{name}", auth(roleAny, s.handleOafAttachment))
+	mux.Handle("GET /api/oaf/devices", auth(roleAny, s.handleListOafDevices))
+	mux.Handle("POST /api/oaf/devices", auth(roleOperator, s.handleRegisterOafDevice))
+	mux.Handle("DELETE /api/oaf/devices/{id}", auth(roleOperator, s.handleDeleteOafDevice))
+	mux.Handle("GET /api/oaf/devices/{id}/jobs", auth(roleOperator, s.handlePollOafDeviceJobs))
+	mux.Handle("POST /api/oaf/devices/{id}/jobs/{jobId}/result", auth(roleOperator, s.handleOafDeviceJobResult))
+	mux.Handle("POST /api/setup/autodetect", auth(roleAdmin, s.handleSetupAutodetect))
 
 	mux.Handle("GET /api/tiers", auth(roleAny, s.handleTiers))
 	mux.Handle("GET /api/templates", auth(roleAny, s.handleListTemplates))

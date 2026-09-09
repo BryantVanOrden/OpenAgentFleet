@@ -466,6 +466,8 @@ const (
 	// stored member list is therefore not what decides who is in it -- a
 	// frozen roster would quietly stop including new bots.
 	ConversationBroadcast = "broadcast"
+	// ConversationOaf is a session with Oaf: one operator and Oaf, no bots.
+	ConversationOaf = "oaf"
 )
 
 // BroadcastConversationID is the built-in channel every agent can hear. It is
@@ -1022,3 +1024,108 @@ const (
 	// ParamOnce opts a task out of continuation: one window, then a verdict.
 	ParamOnce = "once"
 )
+
+// ------------------------------------------------------------------ Oaf ---
+//
+// The fleet chat as an agent. A session is one named conversation with Oaf,
+// scoped like a Claude Code session to a device and a working folder; its
+// messages live in fleet comms under OafConversationID(session).
+
+// OafSession is one chat with Oaf.
+type OafSession struct {
+	ID      string `json:"id"`
+	OwnerID string `json:"owner_id"`
+	Name    string `json:"name"`
+	// DeviceID is the PC or phone this session may act on; empty means Oaf
+	// only has the fleet (bots, commands) and no machine of its own.
+	DeviceID string `json:"device_id,omitempty"`
+	// CWD is the folder on that device the session works in. Every path Oaf
+	// touches is resolved under it and refused outside it.
+	CWD string `json:"cwd,omitempty"`
+	// ProviderID pins the model Oaf thinks with; empty uses the chain.
+	ProviderID string    `json:"provider_id,omitempty"`
+	Pinned     bool      `json:"pinned"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
+	// Filled in on read, not stored.
+	MessageCount  int       `json:"message_count,omitempty"`
+	LastMessageAt time.Time `json:"last_message_at,omitzero"`
+	DeviceName    string    `json:"device_name,omitempty"`
+}
+
+// OafConversationID is the comms thread a session's messages live in.
+func OafConversationID(sessionID string) string { return "oaf:" + sessionID }
+
+// OafMemberID is who Oaf is on the peer bus.
+const OafMemberID = "oaf"
+
+// Device is a PC or phone that connected itself for Oaf to act on.
+type Device struct {
+	ID       string `json:"id"`
+	OwnerID  string `json:"owner_id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"` // "pc" | "phone"
+	Platform string `json:"platform,omitempty"`
+	// Roots are the folders the device agreed to expose. A session's CWD has
+	// to be under one of them; a device with no roots exposes no files.
+	Roots []string `json:"roots"`
+	// AutoApprove lets shell and write jobs run without the device asking.
+	AutoApprove bool      `json:"auto_approve"`
+	LastSeen    time.Time `json:"last_seen,omitzero"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	// Online is filled in on read: seen within the last minute.
+	Online bool `json:"online"`
+}
+
+type DeviceJobState string
+
+const (
+	DeviceJobPending DeviceJobState = "pending"
+	DeviceJobRunning DeviceJobState = "running"
+	DeviceJobDone    DeviceJobState = "done"
+	DeviceJobFailed  DeviceJobState = "failed"
+	DeviceJobDenied  DeviceJobState = "denied"
+)
+
+// DeviceJob is one unit of work handed to a device: run this, read that.
+type DeviceJob struct {
+	ID        string `json:"id"`
+	DeviceID  string `json:"device_id"`
+	SessionID string `json:"session_id,omitempty"`
+	// Kind: shell | read_file | write_file | list_dir | search | notify |
+	// open_url | clipboard | screenshot.
+	Kind       string         `json:"kind"`
+	Args       map[string]any `json:"args"`
+	State      DeviceJobState `json:"state"`
+	Result     string         `json:"result,omitempty"`
+	Error      string         `json:"error,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+	FinishedAt time.Time      `json:"finished_at,omitzero"`
+}
+
+type OafJobState string
+
+const (
+	OafJobRunning OafJobState = "running"
+	OafJobDone    OafJobState = "done"
+	OafJobStopped OafJobState = "stopped"
+	OafJobFailed  OafJobState = "failed"
+)
+
+// OafJob is work Oaf keeps doing after the message that asked for it: a goal
+// it ticks on until done, or a loop that runs its text every EverySec.
+type OafJob struct {
+	ID        string      `json:"id"`
+	SessionID string      `json:"session_id"`
+	Kind      string      `json:"kind"` // "goal" | "loop"
+	Text      string      `json:"text"`
+	EverySec  int         `json:"every_sec,omitempty"`
+	State     OafJobState `json:"state"`
+	Progress  string      `json:"progress,omitempty"`
+	Runs      int         `json:"runs"`
+	NextAt    time.Time   `json:"next_at"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}

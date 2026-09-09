@@ -143,14 +143,9 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 		httpReq.Header.Set("Authorization", "Bearer "+c.key)
 	}
 
-	resp, err := c.hc.Do(httpReq)
+	resp, raw, err := doWhileLoading(ctx, c.hc, httpReq, buf)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", c.p.Name, err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return nil, err
 	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("%s: http %d: %s", c.p.Name, resp.StatusCode, trim(raw))
@@ -249,4 +244,49 @@ func pngIfWebP(b64, mime string) (string, string) {
 		return b64, mime
 	}
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), "image/png"
+}
+
+// doWhileLoading sends the request and, while the server answers 503 "the
+// model is loading", waits and sends it again until the context gives up.
+//
+// A gateway that pages a large model in on first use answers every request
+// during the load with 503 rather than holding the connection (seen on a
+// 94 GB model: about three minutes of "Loading model" before the first token).
+// Treating that as a failure fell through to the next provider or failed the
+// step; the operator's model was never broken, only not yet resident. The
+// probe's own deadline still bounds the wait, so a model that never loads
+// still reports as one.
+func doWhileLoading(ctx context.Context, hc *http.Client, req *http.Request, body []byte) (*http.Response, []byte, error) {
+	wait := 5 * time.Second
+	for {
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		resp, err := hc.Do(req)
+		if err != nil {
+			return nil, nil, err
+		}
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if err != nil {
+			return nil, nil, err
+		}
+		if !isLoading(resp.StatusCode, raw) {
+			return resp, raw, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, nil, fmt.Errorf("model still loading when the deadline passed: %w", ctx.Err())
+		case <-time.After(wait):
+		}
+		if wait < 15*time.Second {
+			wait += 5 * time.Second
+		}
+	}
+}
+
+func isLoading(status int, raw []byte) bool {
+	if status != http.StatusServiceUnavailable {
+		return false
+	}
+	lower := strings.ToLower(string(raw))
+	return strings.Contains(lower, "loading model") || strings.Contains(lower, "unavailable_error")
 }

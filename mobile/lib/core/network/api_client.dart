@@ -675,6 +675,134 @@ class ApiClient {
 
   /// The slash commands the fleet chat accepts. Fetched rather than hardcoded
   /// so the picker offers exactly what this server will run.
+  /// What a fresh deployment is still missing (model, bot, first goal).
+  Future<SetupStatus> setup() async {
+    final data = await _get('/api/setup') as Map;
+    return SetupStatus.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// Find a model engine and, with [apply], register its best model.
+  Future<AutodetectResult> setupAutodetect({
+    String baseUrl = '',
+    String apiKey = '',
+    bool apply = true,
+  }) async {
+    final data = await _post('/api/setup/autodetect', {
+      if (baseUrl.isNotEmpty) 'base_url': baseUrl,
+      if (apiKey.isNotEmpty) 'api_key': apiKey,
+      'apply': apply,
+    }) as Map;
+    return AutodetectResult.fromJson(data.cast<String, dynamic>());
+  }
+
+  // ---------------------------------------------------------- Oaf sessions ---
+
+  Future<List<OafSession>> oafSessions() async {
+    final data = await _get('/api/oaf/sessions') as List? ?? const [];
+    return data.map((e) => OafSession.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<OafSession> createOafSession({String name = ''}) async {
+    final data = await _post('/api/oaf/sessions', {if (name.isNotEmpty) 'name': name}) as Map;
+    return OafSession.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<OafSession> updateOafSession(
+    String id, {
+    String? name,
+    String? deviceId,
+    String? cwd,
+    String? providerId,
+    bool? pinned,
+  }) async {
+    final data = await _patch('/api/oaf/sessions/$id', {
+      if (name != null) 'name': name,
+      if (deviceId != null) 'device_id': deviceId,
+      if (cwd != null) 'cwd': cwd,
+      if (providerId != null) 'provider_id': providerId,
+      if (pinned != null) 'pinned': pinned,
+    }) as Map;
+    return OafSession.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteOafSession(String id) => _delete('/api/oaf/sessions/$id');
+
+  Future<List<PeerMessage>> oafMessages(String id) async {
+    final data = await _get('/api/oaf/sessions/$id/messages') as List? ?? const [];
+    return data.map((e) => PeerMessage.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  /// One turn with Oaf. Blocks while Oaf works (tool calls stream into the
+  /// thread meanwhile); the reply is the final message.
+  Future<PeerMessage> oafSend(String id, String text, {List<String> attachments = const []}) async {
+    final res = await _dio.post<dynamic>(
+      '/api/oaf/sessions/$id/messages',
+      data: {'text': text, if (attachments.isNotEmpty) 'attachments': attachments},
+      options: Options(receiveTimeout: const Duration(minutes: 6), sendTimeout: const Duration(minutes: 1)),
+    );
+    final data = res.data as Map;
+    return PeerMessage.fromJson((data['reply'] as Map).cast<String, dynamic>());
+  }
+
+  /// Uploads one file for a session; the id goes on the next message.
+  Future<OafAttachment> oafUpload(String id, List<int> bytes, String name, String contentType) async {
+    final res = await _dio.post<dynamic>(
+      '/api/oaf/sessions/$id/attachments',
+      data: Stream.fromIterable([bytes]),
+      options: Options(
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': bytes.length,
+          'X-Filename': name,
+        },
+        responseType: ResponseType.json,
+      ),
+    );
+    return OafAttachment.fromJson((res.data as Map).cast<String, dynamic>());
+  }
+
+  Future<List<OafDevice>> oafDevices() async {
+    final data = await _get('/api/oaf/devices') as List? ?? const [];
+    return data.map((e) => OafDevice.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  /// Registers (or refreshes) this phone as a device Oaf can act on.
+  Future<OafDevice> registerOafDevice({
+    required String id,
+    required String name,
+    required String platform,
+    required List<String> roots,
+    required bool autoApprove,
+  }) async {
+    final data = await _post('/api/oaf/devices', {
+      if (id.isNotEmpty) 'id': id,
+      'name': name,
+      'kind': 'phone',
+      'platform': platform,
+      'roots': roots,
+      'auto_approve': autoApprove,
+    }) as Map;
+    return OafDevice.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteOafDevice(String id) => _delete('/api/oaf/devices/$id');
+
+  /// Long-polls for this device's jobs; each poll is also the heartbeat.
+  Future<List<DeviceJob>> pollDeviceJobs(String deviceId, {int waitSec = 20}) async {
+    final res = await _dio.get<dynamic>(
+      '/api/oaf/devices/$deviceId/jobs',
+      queryParameters: {'wait': waitSec},
+      options: Options(receiveTimeout: Duration(seconds: waitSec + 15)),
+    );
+    final data = res.data as List? ?? const [];
+    return data.map((e) => DeviceJob.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  Future<void> finishDeviceJob(String deviceId, String jobId,
+      {required String state, String result = '', String error = ''}) =>
+      _post('/api/oaf/devices/$deviceId/jobs/$jobId/result',
+          {'state': state, 'result': result, 'error': error});
+
   Future<List<FleetCommand>> fleetCommands() async {
     final data = await _get('/api/fleet/commands') as List? ?? const [];
     return data

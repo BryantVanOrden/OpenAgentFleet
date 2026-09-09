@@ -118,6 +118,27 @@ async function main() {
       await shot(page, `${name}-${mode}-${accent}`);
     }
 
+    // A session with Oaf: the rail's "+" makes one, empty, with the welcome
+    // card and the device/folder header. Deleted again afterwards so the demo
+    // account does not accumulate one per capture run.
+    await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(700);
+    const newSession = page.getByRole("button", { name: "New session" });
+    if (await newSession.count()) {
+      await newSession.first().click();
+      await page.waitForSelector("text=Ask Oaf", { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(900);
+      await shot(page, `session-${mode}-${accent}`);
+      const del = page.getByRole("button", { name: "Delete" }).first();
+      await page.locator("aside li").first().hover().catch(() => {});
+      if (await del.count()) {
+        await del.click().catch(() => {});
+        const confirm = page.locator("button", { hasText: /^Delete$/ }).last();
+        if (await confirm.count()) await confirm.click().catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    }
+
     // Launch dialog — the primary flow, and the most interesting screen.
     await page.goto(`${BASE}/fleet`, { waitUntil: "networkidle" });
     await page.waitForTimeout(700);

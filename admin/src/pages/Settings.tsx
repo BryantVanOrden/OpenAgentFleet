@@ -14,8 +14,7 @@ import {
   PromptModal,
   cx,
   inputClass,
-  relative,
-} from "../components/ui";
+  relative, SkeletonRows } from "../components/ui";
 
 type SecretRef = { ref: string; note: string; updated_at: string };
 
@@ -84,7 +83,7 @@ export default function Settings({ role }: { role: string }) {
             ))}
           </dl>
         ) : (
-          <p className="text-xs text-ink-400">Loading…</p>
+          <SkeletonRows rows={2} />
         )}
         <p className="mt-3 text-xs text-ink-400">
           Instance ceiling, step budget, stall threshold and screenshot width are environment

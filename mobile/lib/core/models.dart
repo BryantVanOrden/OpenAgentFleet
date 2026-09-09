@@ -226,6 +226,212 @@ class FleetCommand {
 }
 
 /// What running a slash command produced. [body] is markdown.
+/// First-run setup: what a fresh deployment is still missing, in order.
+class SetupStep {
+  const SetupStep({
+    required this.id,
+    required this.title,
+    required this.done,
+    this.hint = '',
+    this.action = '',
+  });
+
+  final String id;
+  final String title;
+  final bool done;
+  final String hint;
+
+  /// A fleet command that does this step for you, when there is one.
+  final String action;
+
+  factory SetupStep.fromJson(Map<String, dynamic> j) => SetupStep(
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        done: j['done'] as bool? ?? false,
+        hint: j['hint'] as String? ?? '',
+        action: j['action'] as String? ?? '',
+      );
+}
+
+class SetupStatus {
+  const SetupStatus({
+    required this.providers,
+    required this.bots,
+    required this.runningBots,
+    required this.tasks,
+    required this.steps,
+    required this.next,
+  });
+
+  final int providers;
+  final int bots;
+  final int runningBots;
+  final int tasks;
+  final List<SetupStep> steps;
+
+  /// "model", "bot", "goal" or "ready".
+  final String next;
+
+  bool get ready => next == 'ready';
+
+  factory SetupStatus.fromJson(Map<String, dynamic> j) => SetupStatus(
+        providers: (j['providers'] as num?)?.toInt() ?? 0,
+        bots: (j['bots'] as num?)?.toInt() ?? 0,
+        runningBots: (j['running_bots'] as num?)?.toInt() ?? 0,
+        tasks: (j['tasks'] as num?)?.toInt() ?? 0,
+        steps: ((j['steps'] as List?) ?? const [])
+            .map((e) => SetupStep.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
+        next: j['next'] as String? ?? 'ready',
+      );
+}
+
+class AutodetectResult {
+  const AutodetectResult({
+    required this.found,
+    required this.vision,
+    this.note = '',
+    this.providerId = '',
+  });
+
+  /// Engines that answered, as "host -> models".
+  final Map<String, List<String>> found;
+  final bool vision;
+  final String note;
+  final String providerId;
+
+  bool get connected => providerId.isNotEmpty;
+
+  factory AutodetectResult.fromJson(Map<String, dynamic> j) {
+    final found = <String, List<String>>{};
+    for (final e in (j['found'] as List?) ?? const []) {
+      final m = (e as Map).cast<String, dynamic>();
+      found[m['base_url'] as String? ?? ''] =
+          ((m['models'] as List?) ?? const []).map((x) => x.toString()).toList();
+    }
+    final p = j['provider'];
+    return AutodetectResult(
+      found: found,
+      vision: j['vision'] as bool? ?? false,
+      note: j['note'] as String? ?? '',
+      providerId: p is Map ? (p['id'] as String? ?? '') : '',
+    );
+  }
+}
+
+/// One named conversation with Oaf, scoped to a device and a folder.
+class OafSession {
+  const OafSession({
+    required this.id,
+    required this.name,
+    this.deviceId = '',
+    this.deviceName = '',
+    this.cwd = '',
+    this.providerId = '',
+    this.pinned = false,
+    this.messageCount = 0,
+    this.updatedAt,
+    this.lastMessageAt,
+  });
+
+  final String id;
+  final String name;
+  final String deviceId;
+  final String deviceName;
+  final String cwd;
+  final String providerId;
+  final bool pinned;
+  final int messageCount;
+  final DateTime? updatedAt;
+  final DateTime? lastMessageAt;
+
+  factory OafSession.fromJson(Map<String, dynamic> j) => OafSession(
+        id: j['id'] as String,
+        name: j['name'] as String? ?? 'Session',
+        deviceId: j['device_id'] as String? ?? '',
+        deviceName: j['device_name'] as String? ?? '',
+        cwd: j['cwd'] as String? ?? '',
+        providerId: j['provider_id'] as String? ?? '',
+        pinned: j['pinned'] as bool? ?? false,
+        messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
+        updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? ''),
+        lastMessageAt: DateTime.tryParse(j['last_message_at'] as String? ?? ''),
+      );
+}
+
+/// A PC (`fleetctl host`) or phone Oaf can act on.
+class OafDevice {
+  const OafDevice({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.platform = '',
+    this.roots = const [],
+    this.autoApprove = false,
+    this.online = false,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final String platform;
+  final List<String> roots;
+  final bool autoApprove;
+  final bool online;
+
+  factory OafDevice.fromJson(Map<String, dynamic> j) => OafDevice(
+        id: j['id'] as String,
+        name: j['name'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'pc',
+        platform: j['platform'] as String? ?? '',
+        roots: ((j['roots'] as List?) ?? const []).map((e) => e.toString()).toList(),
+        autoApprove: j['auto_approve'] as bool? ?? false,
+        online: j['online'] as bool? ?? false,
+      );
+}
+
+/// A file or image attached to a session message.
+class OafAttachment {
+  const OafAttachment({
+    required this.id,
+    required this.name,
+    required this.contentType,
+    required this.size,
+    required this.url,
+  });
+
+  final String id;
+  final String name;
+  final String contentType;
+  final int size;
+  final String url;
+
+  bool get isImage => contentType.startsWith('image/');
+
+  factory OafAttachment.fromJson(Map<String, dynamic> j) => OafAttachment(
+        id: j['id'] as String,
+        name: j['name'] as String? ?? 'file',
+        contentType: j['content_type'] as String? ?? '',
+        size: (j['size'] as num?)?.toInt() ?? 0,
+        url: j['url'] as String? ?? '',
+      );
+}
+
+/// One unit of work a device was handed: run this, read that.
+class DeviceJob {
+  const DeviceJob({required this.id, required this.kind, required this.args});
+
+  final String id;
+  final String kind;
+  final Map<String, dynamic> args;
+
+  factory DeviceJob.fromJson(Map<String, dynamic> j) => DeviceJob(
+        id: j['id'] as String,
+        kind: j['kind'] as String? ?? '',
+        args: ((j['args'] as Map?) ?? const {}).cast<String, dynamic>(),
+      );
+}
+
 class FleetCommandResult {
   const FleetCommandResult({
     required this.command,
@@ -771,12 +977,24 @@ class PeerMessage {
     required this.createdAt,
     this.conversationId = '',
     this.compactedCount = 0,
+    this.data = const {},
   });
 
   final String id;
 
   /// The thread this message belongs to.
   final String conversationId;
+
+  /// Structured extras: a tool call's args and result, attachments, a goal's
+  /// "done" flag. Empty for a plain line.
+  final Map<String, dynamic> data;
+
+  /// Files and images the sender attached, when any.
+  List<OafAttachment> get attachments =>
+      ((data['attachments'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((m) => OafAttachment.fromJson(m.cast<String, dynamic>()))
+          .toList();
 
   /// For a summary message, how many messages it stands in for.
   final int compactedCount;
@@ -798,6 +1016,7 @@ class PeerMessage {
         conversationId: j['conversation_id'] as String? ?? '',
         compactedCount:
             ((j['data'] as Map?)?['compacted_messages'] as num?)?.toInt() ?? 0,
+        data: ((j['data'] as Map?) ?? const {}).cast<String, dynamic>(),
       );
 }
 
