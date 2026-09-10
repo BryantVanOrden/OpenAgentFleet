@@ -45,10 +45,19 @@ var validActions = map[protocol.ActionKind]bool{
 // recovered here rather than burning a retry.
 func ParseAction(raw string) (protocol.Action, error) {
 	var a protocol.Action
-	body := extractJSON(raw)
+	// A tool call in a function-calling dialect is checked for first: its
+	// shell command may well contain braces of its own (a heredoc full of
+	// JavaScript), and the JSON search would seize on those.
+	body, fromToolCall := toolCallToJSON(raw)
+	if !fromToolCall {
+		body = extractJSON(raw)
+	}
 	if body == "" {
 		return a, fmt.Errorf("no JSON object in model reply: %s", clip(raw, 200))
 	}
+	// Empty strings where maps and lists belong, numbers quoted, "command"
+	// for text: cleaned before the strict decode. See parse_lenient.go.
+	body = lenientActionJSON(body)
 	if err := json.Unmarshal([]byte(body), &a); err != nil {
 		return a, fmt.Errorf("malformed action JSON: %w (%s)", err, clip(body, 200))
 	}
@@ -252,7 +261,11 @@ func ParseAction(raw string) (protocol.Action, error) {
 // inside string literals.
 func extractJSON(s string) string {
 	s = strings.TrimSpace(s)
-	if i := strings.Index(s, "```"); i >= 0 {
+	// A fence is only a wrapper when it comes before the object. A reply that
+	// begins with "{" and carries a fence inside a string -- a shell action
+	// writing a README with a ```bash block in it -- was being cut down to
+	// the README's code block, which is not an action, and the run failed.
+	if i := strings.Index(s, "```"); i >= 0 && (strings.Index(s, "{") < 0 || i < strings.Index(s, "{")) {
 		rest := s[i+3:]
 		if j := strings.Index(rest, "\n"); j >= 0 {
 			rest = rest[j+1:]

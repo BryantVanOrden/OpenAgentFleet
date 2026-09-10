@@ -259,7 +259,7 @@ func (r *Registry) completeTransient(ctx context.Context, c Connector, req Reque
 	for attempt, wait := range transientWaits {
 		resp, err = c.Complete(ctx, req)
 		if err == nil || !isTransient(err) || ctx.Err() != nil {
-			return resp, err
+			return scrubbed(resp), err
 		}
 		r.log.Warn("transient transport error from provider, retrying",
 			"provider", c.Name(), "attempt", attempt+1, "err", err)
@@ -269,7 +269,17 @@ func (r *Registry) completeTransient(ctx context.Context, c Connector, req Reque
 		case <-time.After(wait):
 		}
 	}
-	return c.Complete(ctx, req)
+	resp, err = c.Complete(ctx, req)
+	return scrubbed(resp), err
+}
+
+// scrubbed drops a model's thinking blocks from a reply on its way out, so no
+// consumer has to know which models think out loud. See reasoning.go.
+func scrubbed(resp *Response) *Response {
+	if resp != nil {
+		resp.Text = StripReasoning(resp.Text)
+	}
+	return resp
 }
 
 // transientWaits is the pause before each retry; the final attempt follows

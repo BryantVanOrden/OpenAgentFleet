@@ -194,6 +194,27 @@ computer-use models are post-trained *on their own tool schema*, with its
 coordinate conventions and batching semantics. Handing them a bespoke JSON blob
 discards alignment we are already paying for.
 
+Since 1.1.x the parser meets the models halfway: `agent/parse_toolcall.go` translates
+a reply in Qwen's XML tool-call form (`<tool_call><function=shell><parameter=command>`),
+a Hermes `{"name", "arguments"}` object or the OpenAI function shape into the action
+object before the JSON search runs. Qwen falls back to that XML under load (a long
+heredoc, a truncated system prompt); refusing it cost a live run at step 7. The
+JSON contract in the prompt is unchanged; the dialects are accepted, not advertised.
+
+Since 1.1.x the loop also sends the action object's JSON schema as a grammar
+(`Request.JSONSchema`, built in `agent/schema.go` from `protocol.Action`; sent as
+`response_format: json_schema` to OpenAI-compatible gateways and as `format` to
+Ollama). Measured on a LAN llama-server gateway: plain `json_object` was honoured on
+short prompts and ignored past a few thousand tokens, the schema was honoured on
+both, and sixty steps ran with zero unparseable replies where the previous run had
+failed at step seven. Two details carry the result. `thought` is first in the
+schema and required, because a grammar emits properties in schema order and a
+model that picks the verb before it has thought re-reads the same file five times.
+And the history keeps the newest command outputs whole within a 24 KB budget
+rather than only the newest one, because a builder that reads four files needs all
+four in view at once. The lenient decoder (`agent/parse_lenient.go`) remains for
+providers that cannot enforce a grammar.
+
 ### 1.10 Bugs found while reading
 
 - `clip()` slices **bytes**: `s[:n] + "..."`. The a11y tree is clipped at 6000

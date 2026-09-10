@@ -4,6 +4,134 @@ Notable changes to OpenAgentFleet. The format is loosely
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 semantic versioning.
 
+## [Unreleased]
+
+### Agents keep working
+- The agent loop sends the action object's JSON schema as a grammar
+  (`response_format: json_schema` on OpenAI-compatible gateways, `format` on
+  Ollama), built from `protocol.Action` itself with `action` limited to the
+  verbs the loop accepts. The LAN gateway honoured plain `json_object` on
+  short prompts and ignored it on long ones, which is every agent turn; it
+  honours the schema on both, and with a grammar the malformed shapes below
+  cannot be produced at all. The lenient decoder stays for providers that
+  cannot enforce one.
+- The schema puts `thought` first and requires it. A grammar emits properties
+  in schema order, and an alphabetical order had the model pick `action`
+  before it had thought; the thought-less turns were the pointless ones.
+- The action parser accepts tool calls in the dialects function-calling
+  models fall back to under load: Qwen's `<tool_call><function=shell>
+  <parameter=command>…` XML and Hermes/OpenAI `{"name", "arguments"}`
+  objects. A builder seven steps into a run used to be failed with "model
+  would not produce a valid action" for three perfectly good shell commands
+  in the wrong clothes.
+- The action object is decoded leniently: empty strings where lists and maps
+  belong are dropped, quoted numbers and `"[x, y]"` are parsed, `command` is
+  read as `text`, and an `action` parameter wins over a function name. All
+  three shapes were seen from one model in one run.
+- A markdown fence inside the action (a shell command writing a README with a
+  ```bash block) no longer truncates the reply to the README's code block: a
+  fence only counts as a wrapper when it comes before the object.
+- Default output limit raised from 1,024 to 4,096 tokens when neither the
+  request nor the provider sets one; a shell command in the `code` field (or
+  Python in `text`) is read as what it is.
+- A reply that opens with a status sentence and commits in the next ("I'm
+  idle. I'll take the code…") is read as the commitment it is, and `PLAN:`
+  is found at the start of any sentence. A producer the operator named is
+  started on its assigned part rather than parked waiting for a hand-off
+  nothing upstream will ever send.
+- A part that dies for a system reason (unreadable reply, provider outage,
+  desktop unreachable) is restarted for the same agent with a note of where it
+  got to, twice, before the failure is handed on. The thread is told.
+- The relay follows a marathon run across its windows: a window that closes
+  unfinished hands its place on the job to the task that continues it. It
+  used to know only the first window, so a failure three windows in was
+  nobody's and the job died silently with the tester still waiting.
+- The hand-off line in the thread says when a part stopped short ("Builder's
+  build stopped short (stalled…). Over to you, Checker") instead of calling
+  every hand-off "done".
+- Collaborating bots are told they are on separate machines: a fleet request
+  names the bot's own address on the sandbox network (`http://af-<id>:<port>`),
+  and a hand-off tells the receiver where the work is (the catalog, the other
+  bot's server at that address, or ask with `message_peer`). Handed Builder's
+  build, Checker had searched its own disk and reported the files missing.
+- A bot that promises a colleague work inside a live job does the work: when
+  the asker is mid-task on a job and the answering bot is idle, its `PLAN:`
+  becomes a task, bounded by the job's round limit. Builder had answered
+  Checker's request three times with "PLAN: I will publish the files" and
+  done nothing, because a plan given to a peer never started anything.
+- A bot's assignment in a brief is its `Name:` clause when the brief uses
+  that form, not the first place its name appears; a mention inside another
+  bot's instructions ("tell Checker the URL") had made the tester a builder.
+  Peer-requested work only starts for bots on the job (members, or named in
+  the request), not for a bystander that answered politely.
+- `publish_work` takes a `path`: a file on the bot's own machine is read and
+  published, instead of asking the model to paste a 6 KB file into a JSON
+  string. Builder had tried four times by name alone.
+- One failed observe no longer fails the run: the loop tries three times a
+  few seconds apart first. A peer question about the screen, a health probe
+  and the loop can ask agentd for a frame in the same second; the second
+  caller's 503 had ended Checker's test pass at step 13. agentd itself now
+  lets a second capture wait for the one in flight, up to one capture
+  timeout. A relay retry of a run that died before its first step waits
+  twenty seconds instead of dying the same way in the same second.
+- `read_work` on a published app says the local copy is one file and to test
+  the author's served address when there is one. Checker had opened Builder's
+  index.html from the catalog, found it "completely broken" without its CSS
+  and JS, and reported that while the working app was one URL away.
+- Relay stages are scored rather than first-match: a builder whose brief
+  mentions `tests.html` and "check every feature yourself" is a builder, not a
+  tester waiting to be handed its own work.
+- The model sees the output it asked for: a command's output on the turn
+  after it ran is shown up to 6,000 characters (older turns are trimmed to
+  400). At 500 a developer bot could not see past the `<head>` of the file it
+  had just written and re-read it five turns running.
+- Recent command outputs stay in view together: the newest outputs are kept
+  whole up to a 24,000-character budget (a repeated command's output only
+  once), older turns are trimmed to one line. With only the newest kept
+  whole, a builder reading four files saw one at a time and read the others
+  again, sixty steps of `cat` and no edit.
+- A command run for the third time in six turns is called out in its result
+  as a loop, with the output right there; eight reads in a row with nothing
+  written are called out as reading instead of building.
+- A cut-off reply (finish reason `length`) and a reply that narrated instead
+  of acting get different corrections; the raw reply is logged.
+- Once a reply has been cut off, the model is told the limit it is actually
+  under, in tokens and in lines of code, and to write long files in parts. The
+  LAN gateway stops at 2,048 tokens whatever is requested; a builder that did
+  not know lost one step in three to whole-file rewrites.
+- Reasoning blocks (`<think>`, `<thinking>`, `<antml_thinking>`, `<reasoning>`)
+  are stripped from every completion on its way out of the registry. A
+  gateway with reasoning off still passed one through, and a bot's
+  colleague-facing reply began "Let me analyze what's happening here".
+
+### The sandbox stays up
+- A desktop watchdog (`desktop-watchdog.sh`, supervised, root) probes the X
+  server every 30 s with a request that needs a real answer; after three
+  misses it restarts Xvfb and the programs on top of it. An hour into a run
+  the server stopped answering its clients; agentd, its screenshots and every
+  observe blocked, and only restarting Xvfb by hand brought the bot back.
+- agentd never blocks on the desktop again: screenshots are taken in a child
+  process with a hard timeout (`capture_child.py`), a second capture arriving
+  while one is stuck fails at once, and observe answers `503 display
+  unresponsive` instead of hanging; health reports `desktop: unresponsive`.
+- Accessibility queries run in a child too (`a11y_child.py`): a wedged AT-SPI
+  registry costs one query, not the daemon. agentd logs at info level so a
+  hang leaves evidence; it logged nothing at warning.
+
+### Chat animations
+- A thinking bubble where the reply will land: breathing avatar, three rising
+  dots, and what the thinker is doing when known ("read the shell result,
+  deciding what is next"). In the Oaf session, the fleet channel and the
+  per-agent chat, console and app alike.
+- Messages rise in when they arrive; the fleet channel shows who is mid-run
+  under the newest message with the step count. Honours reduced-motion.
+
+### Docs
+- Architecture, Security and Roadmap now describe sessions, devices and
+  `fleetctl host`; the security model states the folder jail, the approval
+  prompt and what `--yes` gives up. README hero recaptured on the current
+  console.
+
 ## [1.1.0] — 2026-09-09
 
 ### The chat is an agent, with sessions

@@ -41,7 +41,7 @@ type olRequest struct {
 	Model    string      `json:"model"`
 	Messages []olMessage `json:"messages"`
 	Stream   bool        `json:"stream"`
-	Format   string      `json:"format,omitempty"`
+	Format    any    `json:"format,omitempty"` // "json" or a JSON schema
 	// Thinking models (qwen3, deepseek-r1, ornith, ...) emit their reasoning
 	// into a separate `thinking` field and only then start `content`. With a
 	// tiny token budget the whole budget goes to reasoning and `content` comes
@@ -93,7 +93,11 @@ func (c *ollama) Complete(ctx context.Context, req Request) (*Response, error) {
 		body.Options.NumPredict = 512
 	}
 	if req.JSONOnly {
+		// Ollama takes either the word "json" or a JSON schema here.
 		body.Format = "json"
+		if req.JSONSchema != nil {
+			body.Format = req.JSONSchema
+		}
 	}
 	if req.System != "" {
 		body.Messages = append(body.Messages, olMessage{Role: "system", Content: req.System})

@@ -50,6 +50,8 @@ _WINDOW_MANAGERS = ("xfwm4",)
 def desktop_state() -> str:
     """'ready' when a window manager is up, 'failsafe' when the session is
     parked on its error dialog, 'starting' otherwise."""
+    if capture.display_unresponsive():
+        return "unresponsive"
     for wm in _WINDOW_MANAGERS:
         if subprocess.run(["pgrep", "-x", wm], capture_output=True).returncode == 0:
             return "ready"
@@ -143,7 +145,13 @@ class ObserveRequest(BaseModel):
 
 @app.post("/observe")
 def observe(req: ObserveRequest) -> dict:
-    full = capture.grab()
+    try:
+        full = capture.grab()
+    except capture.DisplayUnresponsive as exc:
+        # Said plainly and at once, so the orchestrator retries or recovers
+        # instead of timing out its own request, and so agentd stays up to
+        # say it. The desktop watchdog restarts the X stack behind this.
+        raise HTTPException(status_code=503, detail=f"display unresponsive: {exc}") from exc
 
     # The hash is always taken over the FULL desktop. Computing it over a crop
     # would make stall detection blind to anything happening outside the zoom,

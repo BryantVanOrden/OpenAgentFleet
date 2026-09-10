@@ -43,6 +43,19 @@ pipelines that survive an orchestrator restart; conversations with membership an
 sender identity; per-bot named chat sessions; and archetype tool selection with
 operator-supplied custom tool recipes.
 
+**Phase 6 — the chat is an agent.** The home screen of both clients is one
+conversation with the fleet plus named **sessions with Oaf**, each bound to
+one of the operator's own devices and a working folder: `fleetctl host
+--root <folder>` attaches a PC (approval prompt in the terminal for commands
+and writes), the phone attaches from Settings. Oaf reads and edits files
+there, runs commands, runs any fleet command, asks bots and hands the fleet
+work, with every tool call shown in the thread; files and images attach by
+pick, drop or paste; `/goal` keeps working with check-ins, `/loop` repeats.
+Voice lives in the chat. First run is a one-button setup card that finds a
+local model and measures its vision; text-only models still drive from the
+element marks and accessibility tree. Provisioning answers `202` and boots
+in the background.
+
 ## Next
 
 ### Phase 5 — heavy workloads and real isolation

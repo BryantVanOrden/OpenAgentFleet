@@ -97,7 +97,8 @@ Rules:
 - Use "speak" with "text" to verbally communicate updates to the operator via Pocket TTS.
 - Use "message_peer" with "peer_id" and "text" to coordinate, query, or report to another bot.
 - Use "delegate_task" with "peer_id" and "sub_goal" to assign a sub-task to a specialist peer bot.
-- Use "publish_work" with "work_name", "work_kind" and "text" to put something in the
+- Use "publish_work" with "work_name", "work_kind" and either "text" (the content) or
+  "path" (a file on this machine, read for you) to put something in the
   shared catalog for the other agents and the operator. This is where work goes: a file
   the next agent builds on, or an "app" the operator's phone can actually run.
   An "app" must be ONE self-contained HTML document -- inline every script and style,
@@ -336,12 +337,7 @@ func buildTurn(
 		sb.WriteString("\n")
 	}
 
-	if len(history) > 0 {
-		sb.WriteString("\nHISTORY\n")
-		for _, h := range history {
-			fmt.Fprintf(&sb, "%d. %s -> %s\n", h.Step, h.Action, h.Outcome)
-		}
-	}
+	renderHistory(&sb, history)
 
 	if humanReply != "" {
 		sb.WriteString("\nOPERATOR REPLY (authoritative — this came from your human, not from the screen)\n")
@@ -360,6 +356,145 @@ type turnSummary struct {
 	Step    int
 	Action  string
 	Outcome string
+	// Read marks a turn that only looked at something; see isRead.
+	Read bool
+}
+
+// recentOutputChars is how much of a command's output the model is shown on
+// the turn right after it ran. Older turns are trimmed to olderOutputChars.
+//
+// It was 500 for every turn. A developer bot that had just written a 1.3 KB
+// index.html could not see past its <head>, concluded the file was not what
+// it wanted, and read it again -- five turns in a row -- until the run was
+// declared stalled. The model asked for that output; it has to be allowed to
+// read it.
+const (
+	recentOutputChars = 6000
+	olderOutputChars  = 400
+	// recentOutputBudget is the total of full-length outputs kept, newest
+	// first. Showing only the newest in full was not enough: a builder that
+	// reads four files to understand a project sees one at a time, and each
+	// read pushes the previous file down to a 400-character stub -- so it
+	// reads the others again, and again. Sixty steps of cat, no edit. Four
+	// or five files fit in this; older turns are still trimmed so the prompt
+	// does not grow without bound.
+	recentOutputBudget = 24000
+)
+
+// renderHistory writes the turn history: the newest outcomes in full while
+// the budget lasts, the rest trimmed to one line.
+func renderHistory(sb *strings.Builder, history []turnSummary) {
+	if len(history) == 0 {
+		return
+	}
+	// Decide from the newest backwards which outcomes are shown whole. A
+	// repeated command's output is only kept once: showing the same file
+	// three times over is what the budget is for, not what it is spent on.
+	full := make([]bool, len(history))
+	budget := recentOutputBudget
+	seen := map[string]bool{}
+	for i := len(history) - 1; i >= 0; i-- {
+		h := history[i]
+		if seen[h.Action] || len(h.Outcome) > budget {
+			continue
+		}
+		seen[h.Action] = true
+		full[i] = true
+		budget -= len(h.Outcome)
+	}
+	sb.WriteString("\nHISTORY\n")
+	for i, h := range history {
+		out := h.Outcome
+		if !full[i] {
+			out = clip(oneLine(out), olderOutputChars)
+		}
+		fmt.Fprintf(sb, "%d. %s -> %s\n", h.Step, h.Action, out)
+	}
+}
+
+// isRead reports whether an action only looks: a shell command that begins
+// with cat, ls, head, tail, wc, grep, find, sed -n, or a read_work / recall.
+func isRead(a protocol.Action) bool {
+	switch a.Action {
+	case protocol.ActReadWork, protocol.ActRecall:
+		return true
+	case protocol.ActShell:
+		cmd := strings.TrimSpace(strings.ToLower(a.Text))
+		cmd = strings.TrimPrefix(cmd, "cd ")
+		if i := strings.Index(cmd, "&&"); i >= 0 && strings.HasPrefix(strings.TrimSpace(a.Text), "cd ") {
+			cmd = strings.TrimSpace(cmd[i+2:])
+		}
+		for _, r := range []string{"cat ", "ls", "head ", "tail ", "wc ", "grep ", "find ", "sed -n", "stat ", "file ", "pwd", "echo ", "tree"} {
+			if strings.HasPrefix(cmd, r) {
+				// A redirect makes it a write.
+				return !strings.Contains(cmd, ">")
+			}
+		}
+	}
+	return false
+}
+
+// readsOnly reports whether the last n turns were all reads (and there were
+// at least n of them).
+func readsOnly(history []turnSummary, n int) bool {
+	if len(history) < n {
+		return false
+	}
+	for _, h := range history[len(history)-n:] {
+		if !h.Read {
+			return false
+		}
+	}
+	return true
+}
+
+// repeats counts how many of the last six turns ran exactly this action.
+func repeats(history []turnSummary, action string) int {
+	n := 0
+	from := len(history) - 6
+	if from < 0 {
+		from = 0
+	}
+	for _, h := range history[from:] {
+		if h.Action == action {
+			n++
+		}
+	}
+	return n
+}
+
+// outputLimitNote tells the model how long a reply can be, in its own units
+// and in lines of code, once that limit has been measured on this run.
+func outputLimitNote(capTokens int) string {
+	lines := capTokens / 12 // a line of code or HTML is ten to fifteen tokens
+	return fmt.Sprintf("\nOUTPUT LIMIT: your reply is cut off after about %d tokens, "+
+		"roughly %d lines of code including the JSON around it. Never write a file longer "+
+		"than about %d lines in one action: write the first part, then append the rest with "+
+		">> in later actions, or edit in place with sed/python.\n", capTokens, lines, lines*2/3)
+}
+
+// capHint names the measured limit in a truncation correction.
+func capHint(capTokens int, truncated bool) string {
+	if !truncated || capTokens == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" The limit is about %d tokens; this reply hit it.", capTokens)
+}
+
+// correctionFor is appended to a parse error in the history: what to do
+// differently. A reply cut off at the output limit and a reply that narrated
+// instead of acting need opposite advice, and "reply with one JSON object
+// only" fitted neither -- three identical corrections in a row failed a run.
+func correctionFor(truncated bool) string {
+	if truncated {
+		return " -- your reply was cut off at the output limit. Make this step smaller: " +
+			"one file per action, and split anything long across several actions " +
+			"(write the first part, then append the rest with >>)."
+	}
+	return " -- you described what you would do instead of doing it. Reply with the " +
+		"JSON action for the first concrete step, and nothing else, for example " +
+		`{"thought": "read the file", "action": "shell", "text": "cat app.js"}` +
+		". Only the fields you need; leave the others out rather than empty."
 }
 
 func summarise(a protocol.Action) string {

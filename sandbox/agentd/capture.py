@@ -14,7 +14,12 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import subprocess
+import sys
+import tempfile
+import threading
+import time
 from dataclasses import dataclass
 
 import mss
@@ -36,14 +41,78 @@ class Frame:
     origin: tuple[int, int] = (0, 0)
 
 
-def grab() -> Frame:
-    """Capture the primary virtual screen."""
+class DisplayUnresponsive(RuntimeError):
+    """The X server did not answer a screenshot request in time."""
+
+
+# An X request that never returns cannot be interrupted from Python, and on
+# 2026-09-09 one took agentd down: the server wedged, every observe blocked
+# on its screenshot, the worker threads filled up and health stopped
+# answering. So the screenshot is taken in a child (capture_child.py) the
+# parent can kill, one at a time -- a second observe arriving while the first
+# is stuck fails at once instead of joining the queue.
+INPROC = os.environ.get("AGENTD_CAPTURE_INPROC") == "1"
+CHILD_TIMEOUT = float(os.environ.get("AGENTD_CAPTURE_TIMEOUT", "10"))
+_grab_lock = threading.Lock()
+_unresponsive_since: float | None = None
+
+
+def display_unresponsive() -> bool:
+    return _unresponsive_since is not None
+
+
+def _grab_inproc() -> Frame:
     with mss.mss() as sct:
         # monitors[0] is the union of all screens; [1] is the first real one.
         monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
         raw = sct.grab(monitor)
     image = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
     return Frame(image=image, width=image.width, height=image.height, scale=1.0)
+
+
+def grab() -> Frame:
+    """Capture the primary virtual screen.
+
+    Raises DisplayUnresponsive when the server does not answer in time, or when
+    another capture is already stuck waiting for it.
+    """
+    global _unresponsive_since
+    if INPROC:
+        return _grab_inproc()
+    # A second caller waits for the capture in flight rather than being
+    # turned away: the orchestrator's loop, a peer question about the screen
+    # and a health probe legitimately overlap. It waits at most one capture
+    # timeout, so a wedged display still fails everyone quickly.
+    if not _grab_lock.acquire(timeout=CHILD_TIMEOUT):
+        raise DisplayUnresponsive("a screenshot has been waiting on the display for "
+                                  f"{CHILD_TIMEOUT:.0f}s")
+    try:
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "capture_child.py")
+        fd, path = tempfile.mkstemp(prefix="agentd-frame-", suffix=".png",
+                                    dir="/dev/shm" if os.path.isdir("/dev/shm") else None)
+        os.close(fd)
+        try:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, script, path], capture_output=True, text=True,
+                    timeout=CHILD_TIMEOUT, env=dict(os.environ, AGENTD_CAPTURE_INPROC="1"),
+                )
+            except subprocess.TimeoutExpired as exc:
+                _unresponsive_since = _unresponsive_since or time.time()
+                raise DisplayUnresponsive(f"no screenshot in {CHILD_TIMEOUT:.0f}s") from exc
+            if proc.returncode != 0:
+                raise RuntimeError(f"screenshot failed: {proc.stderr.strip()[:200]}")
+            image = Image.open(path)
+            image.load()
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        _unresponsive_since = None
+        return Frame(image=image.convert("RGB"), width=image.width, height=image.height, scale=1.0)
+    finally:
+        _grab_lock.release()
 
 
 def crop(frame: Frame, region: tuple[int, int, int, int]) -> Frame:

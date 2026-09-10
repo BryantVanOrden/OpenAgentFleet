@@ -50,9 +50,7 @@ type oaRequest struct {
 	Messages       []oaMessage `json:"messages"`
 	Temperature    float64     `json:"temperature,omitempty"`
 	MaxTokens      int         `json:"max_tokens,omitempty"`
-	ResponseFormat *struct {
-		Type string `json:"type"`
-	} `json:"response_format,omitempty"`
+	ResponseFormat map[string]any `json:"response_format,omitempty"`
 	// ChatTemplateKwargs is how a self-hosted gateway is told to skip a
 	// reasoning model's thinking pass. It is not part of the OpenAI API, so it
 	// is only ever set for the openai-compatible kind -- api.openai.com
@@ -114,9 +112,13 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 		body.Messages = append(body.Messages, oaMessage{Role: m.Role, Content: parts})
 	}
 	if req.JSONOnly {
-		body.ResponseFormat = &struct {
-			Type string `json:"type"`
-		}{Type: "json_object"}
+		body.ResponseFormat = map[string]any{"type": "json_object"}
+		if req.JSONSchema != nil {
+			body.ResponseFormat = map[string]any{
+				"type": "json_schema",
+				"json_schema": map[string]any{"name": "action", "schema": req.JSONSchema},
+			}
+		}
 	}
 	// A reasoning model asked for a short answer spends the whole budget
 	// thinking and returns empty content, which every caller reads as an
@@ -170,6 +172,7 @@ func (c *openAICompatible) Complete(ctx context.Context, req Request) (*Response
 	}
 	return &Response{
 		Text:         out.Choices[0].Message.Content,
+		Truncated:    out.Choices[0].FinishReason == "length",
 		Model:        firstNonEmpty(out.Model, c.p.Model),
 		PromptTokens: out.Usage.PromptTokens,
 		OutputTokens: out.Usage.CompletionTokens,
@@ -186,6 +189,12 @@ func pick(a, b float64) float64 {
 	return b
 }
 
+// defaultMaxTokens is the output limit when neither the request nor the
+// provider sets one. It was 1024, which is a paragraph: a developer bot
+// writing a 150-line file was cut off mid-action every time, and the loop
+// read the truncated JSON as a refusal to act. Every connector shares this.
+const defaultMaxTokens = 4096
+
 func pickInt(a, b int) int {
 	if a > 0 {
 		return a
@@ -193,7 +202,7 @@ func pickInt(a, b int) int {
 	if b > 0 {
 		return b
 	}
-	return 1024
+	return defaultMaxTokens
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -217,6 +217,9 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		sameCount   int
 		stalls      int
 		parseErrors int
+		// outputCap is the smallest output length at which a reply of this run
+		// was cut off, 0 while none has been. Once known it is put in the prompt.
+		outputCap int
 		humanReply  string
 	)
 
@@ -227,14 +230,32 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		}
 		stepStart := time.Now()
 
-		obsCtx, cancel := context.WithTimeout(ctx, r.cfg.StepTimeout)
-		obs, err := sc.Observe(obsCtx, ObserveOptions{
-			Screenshot: true,
-			A11y:       true,
-			MaxWidth:   r.cfg.ScreenshotMaxW,
-			Quality:    70,
-		})
-		cancel()
+		// One failed observe is not a dead desktop. A peer question about
+		// the screen, a health probe and this loop can ask agentd for a frame
+		// in the same second, and agentd answers the second caller 503 while
+		// the first capture is in flight; that 503 failed Checker's test pass
+		// at step 13, and the relay's immediate retry died at step 0 the same
+		// way. Three tries, a few seconds apart, before it counts.
+		var obs *protocol.Observation
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			obsCtx, cancel := context.WithTimeout(ctx, r.cfg.StepTimeout)
+			obs, err = sc.Observe(obsCtx, ObserveOptions{
+				Screenshot: true,
+				A11y:       true,
+				MaxWidth:   r.cfg.ScreenshotMaxW,
+				Quality:    70,
+			})
+			cancel()
+			if err == nil || ctx.Err() != nil {
+				break
+			}
+			r.log.Warn("observe failed; retrying", "task", task.ID, "attempt", attempt+1, "err", err)
+			select {
+			case <-ctx.Done():
+			case <-time.After(time.Duration(3*(attempt+1)) * time.Second):
+			}
+		}
 		if err != nil {
 			r.fail(ctx, task, "could not observe the desktop: "+err.Error())
 			return
@@ -297,6 +318,13 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		// sends this to whichever model it assigns to the hands.
 		chain := connectors.PreferredChain(task.ProviderID, inst.ProviderIDs)
 		turn := buildTurn(task, skill, obs, history, humanReply, r.peerContext(ctx, inst.ID))
+		// Once a reply has been cut off, the model is told the limit it is
+		// actually under. The LAN gateway stops at 2,048 tokens whatever is
+		// asked for, and a builder that does not know that rewrites whole
+		// files and loses one step in three to truncation.
+		if outputCap > 0 {
+			turn += outputLimitNote(outputCap)
+		}
 		// A chain with no sighted model drives from the element marks and the
 		// accessibility tree. Say so in the turn, and do not attach a picture
 		// nobody can look at.
@@ -307,8 +335,9 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		}
 		resp, err := r.models.CompleteRole(ctx, chain,
 			protocol.RoleVision, connectors.Request{
-				System:   buildSystem(inst, mountedTools),
-				JSONOnly: true,
+				System:     buildSystem(inst, mountedTools),
+				JSONOnly:   true,
+				JSONSchema: ActionSchema(),
 				Messages: []connectors.Message{{
 					Role:      connectors.RoleUser,
 					Text:      turn,
@@ -342,14 +371,23 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		action, err := ParseAction(resp.Text)
 		if err != nil {
 			parseErrors++
+			if resp.Truncated && resp.OutputTokens > 0 && (outputCap == 0 || resp.OutputTokens < outputCap) {
+				outputCap = resp.OutputTokens
+			}
 			if parseErrors >= 3 {
 				r.fail(ctx, task, "model would not produce a valid action: "+err.Error())
 				return
 			}
+			// The full reply is worth a log line: "no JSON object in model
+			// reply: I need to write all the files..." clipped at 200 chars
+			// left the second failure of the day undiagnosable.
+			r.log.Warn("unparseable model reply", "task", task.ID, "step", task.Step+1,
+				"truncated", resp.Truncated, "output_tokens", resp.OutputTokens,
+				"reply_chars", len(resp.Text), "err", err.Error(), "reply", clip(resp.Text, 1500))
 			history = append(history, turnSummary{
 				Step:    task.Step + 1,
 				Action:  "(invalid reply)",
-				Outcome: err.Error() + " — reply with one JSON object only",
+				Outcome: err.Error() + correctionFor(resp.Truncated) + capHint(outputCap, resp.Truncated),
 			})
 			continue
 		}
@@ -362,6 +400,21 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 
 		lastAction = action.Action
 		outcome, terminal := r.execute(ctx, task, inst, sc, action, obs, mountedTools)
+		// A command run for the third time is not gathering information, it
+		// is a loop. Builder read the same index.html five turns running
+		// because the output it was shown stopped at 500 characters; say
+		// plainly that the output is right here and the next step is due.
+		if n := repeats(history, summarise(action)); n >= 2 {
+			outcome += fmt.Sprintf("\n(You have now run exactly this %d times. Its output is above in "+
+				"full. Do not run it again -- act on what it shows.)", n+1)
+		}
+		// Reading is not progress. A run whose last eight steps were all
+		// reads has understood enough; the next step has to change something.
+		if readsOnly(history, 8) && isRead(action) {
+			outcome += "\n(Your last eight steps have all been reads and nothing has been written or " +
+				"run. You have seen these files. Make the first concrete change now -- write one " +
+				"file, or run the thing -- and read again only if that fails.)"
+		}
 
 		_ = r.db.AppendStep(ctx, &protocol.StepRecord{
 			TaskID:       task.ID,
@@ -396,7 +449,7 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			LatencyMS:    int(resp.Latency.Milliseconds()),
 		})
 
-		history = append(history, turnSummary{Step: task.Step, Action: summarise(action), Outcome: outcome})
+		history = append(history, turnSummary{Step: task.Step, Action: summarise(action), Outcome: outcome, Read: isRead(action)})
 		if len(history) > 24 {
 			history = history[len(history)-24:]
 		}
@@ -432,6 +485,12 @@ const (
 
 // execute performs one action and returns a short outcome string that goes both
 // into the audit log and back into the next prompt.
+// shellQuote wraps a path for a POSIX shell, so a space or a quote in a file
+// name reaches cat as one argument.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 func (r *Runner) execute(
 	ctx context.Context,
 	task *protocol.Task,
@@ -540,8 +599,26 @@ func (r *Runner) execute(
 			return "failed: work_kind must be file, app or workspace", terminalNone
 		}
 		body := a.Text
+		if strings.TrimSpace(body) == "" && strings.TrimSpace(a.Path) != "" {
+			// Read the file off the agent's own machine. Builder tried four
+			// times to publish index.html by name alone and was told each time
+			// to paste the content; the file was right there.
+			if !inst.ShellAccess {
+				return "failed: reading a file needs shell access, which this instance does not have; put the content in \"text\"", terminalNone
+			}
+			readCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			res, err := sc.Act(readCtx, protocol.Action{Action: protocol.ActShell, Text: "cat -- " + shellQuote(a.Path)})
+			cancel()
+			if err != nil {
+				return "failed: could not read " + a.Path + ": " + err.Error(), terminalNone
+			}
+			if res.ExitCode != 0 {
+				return "failed: could not read " + a.Path + ": " + clip(res.Stdout, 200), terminalNone
+			}
+			body = res.Stdout
+		}
 		if kind != protocol.WorkWorkspace && strings.TrimSpace(body) == "" {
-			return "failed: publish_work needs the content in \"text\"", terminalNone
+			return "failed: publish_work needs the content in \"text\", or the file's \"path\" on this machine", terminalNone
 		}
 		mime := "text/plain"
 		if kind == protocol.WorkApp {
@@ -636,10 +713,21 @@ func (r *Runner) execute(
 			// looking.
 			opened := ""
 			if path, ok := r.materialize(ctx, inst.ID, w); ok {
-				opened = fmt.Sprintf("It is already open in the browser on this "+
-					"desktop, from %s. Look at the screen and use it. It is not "+
-					"published on the web, so do not search for it, and you do "+
-					"not need to type the address.\n\n", "file://"+path)
+				// A copy of one file, opened locally. When the author is
+				// serving the real thing, the copy is the wrong thing to
+				// test: Checker opened Builder's index.html from the catalog,
+				// found it "completely broken -- no styles.css, no app.js",
+				// and said so, while the working app sat one URL away. The
+				// old wording ("you do not need to type the address") made
+				// that worse.
+				opened = fmt.Sprintf("A copy of this one file is open in the browser on this "+
+					"desktop, from %s. It is a single file: if the app also has a "+
+					"styles.css or app.js, this copy will look broken -- that is the "+
+					"copy, not the app. If the author is serving it (a message or hand-off "+
+					"note giving an http://af-...:port address), open that address in the "+
+					"browser and test there; that is the real thing. Use this copy only "+
+					"when nothing is being served. Do not search the web for it.\n\n",
+					"file://"+path)
 			}
 			return fmt.Sprintf("%s%s %q by %s (version %d):\n%s%s",
 				opened, w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix), terminalNone
@@ -842,9 +930,11 @@ func (r *Runner) execute(
 		}
 		return "timed out waiting for " + clip(a.Text, 60), terminalNone
 	case a.Action == protocol.ActShell:
-		return fmt.Sprintf("exit %d: %s", res.ExitCode, clip(res.Stdout, 500)), terminalNone
+		// Generous: the model asked for this output and is about to act on
+		// it. History rendering trims older turns; see renderHistory.
+		return fmt.Sprintf("exit %d: %s", res.ExitCode, clip(res.Stdout, recentOutputChars)), terminalNone
 	case a.Action == protocol.ActPython:
-		return fmt.Sprintf("python output: %s", clip(res.Stdout, 800)), terminalNone
+		return fmt.Sprintf("python output: %s", clip(res.Stdout, recentOutputChars)), terminalNone
 	case a.Action == protocol.ActMountTool:
 		if res.OK {
 			mountedTools[a.ToolName] = protocol.MountedTool{

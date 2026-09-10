@@ -10,6 +10,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../../core/voice/voice_service.dart';
+import '../../core/widgets/thinking.dart';
 import 'home_chat_screen.dart' show OafAvatar;
 import 'session_settings_sheet.dart';
 
@@ -319,21 +320,28 @@ class _OafChatScreenState extends ConsumerState<OafChatScreen> {
             child: Text(_error!, style: TextStyle(fontSize: 12, color: Fleet.bad)),
           );
         }
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(44, 6, 0, 6),
-          child: Row(
-            children: [
-              SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2, color: Fleet.live)),
-              const SizedBox(width: 8),
-              Text('Oaf is working…', style: TextStyle(fontSize: 12, color: Fleet.ink400)),
-            ],
-          ),
+        return ThinkingBubble(
+          who: 'Oaf',
+          avatar: const OafAvatar(size: 30),
+          hint: _thinkingHint(),
         );
       },
     );
   }
 
-  Widget _row(PeerMessage m) {
+  /// What Oaf is doing while the reply is pending: after a tool call lands,
+  /// it is reading the result and deciding the next step.
+  String? _thinkingHint() {
+    if (_messages.isEmpty) return null;
+    final last = _messages.last;
+    if (last.kind != 'tool') return null;
+    final tool = (last.data['tool'] as String?) ?? last.content.split(' ').first;
+    return last.data['failed'] == true ? '$tool failed, choosing another way' : 'read the $tool result, deciding what is next';
+  }
+
+  Widget _row(PeerMessage m) => MessageEnter(key: ValueKey(m.id), child: _rowBody(m));
+
+  Widget _rowBody(PeerMessage m) {
     if (m.kind == 'tool') return _ToolRow(message: m);
     final fromOaf = m.fromInstanceId == 'oaf';
     final atts = m.attachments;

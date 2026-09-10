@@ -58,9 +58,17 @@ in the client would not survive an edited URL.
 
 It has no authentication of its own, exactly like a kubelet: the port is never published, the sandbox network is not routable from outside, and operator authentication happens at the orchestrator's proxy.
 
+**Staying up.** `desktop-watchdog.sh` (supervised, root) probes the X server every 30 s with a request that needs a real answer and, after three misses, restarts Xvfb and the programs on top of it — an hour into a run the server once stopped answering every client, and nothing short of that brought the bot back. agentd itself never blocks on the desktop: screenshots and accessibility queries run in child processes with hard timeouts (`capture_child.py`, `a11y_child.py`); a stuck capture makes `/observe` answer `503 display unresponsive` at once and `/health` report `desktop: unresponsive`, which the orchestrator treats as a system failure and retries.
+
 ### Admin console (`admin/`) and companion app (`mobile/`)
 
 The console is for administration — provisioning, recording, engine configuration, skill timeline editing, and AI refinement. The phone app is for triage — watch, unblock, take over, stop.
+
+Both open on the same home screen: the **fleet channel** (one conversation with every bot, slash commands parsed server-side in `httpapi/fleet_commands.go`) beside **sessions with Oaf** (`httpapi/oaf.go`). A session is a named thread bound to one of the operator's own devices and a working folder, the way a Claude Code session is bound to a directory. Oaf runs a tool loop of its own — up to twelve hops per turn — over a closed vocabulary: `shell`, `read_file`, `write_file`, `list_dir`, `search` (executed on the device), `notify`, `open_url`, `clipboard`, `speak` (phone), `screenshot`, `fleet` (any slash command, run as the owner), `ask_bot` and `broadcast`. Every tool call and result is written into the thread as a message, so the transcript is the audit trail.
+
+Devices never accept connections. A PC runs `fleetctl host --root <folder>` (`sdk/python/agentfleet/host.py`), registers itself under `/api/oaf/devices`, and long-polls for jobs; the phone does the same from inside the app (`core/device/phone_device_service.dart`). The orchestrator queues a `device_job`, the device executes it inside the exposed folders and posts the result back; the tool loop blocks on that row. Stop the process and Oaf loses the machine. `/goal` and `/loop` are `oaf_jobs` rows serviced by a ticker (`RunOafJobs`) that replays the turn under the owner's identity at each due time.
+
+First run is a setup card (`GET /api/setup`): `POST /api/setup/autodetect` scans the usual local gateways, lists models, measures vision with a red-square probe and registers the best candidate. Provisioning is asynchronous — `POST /api/instances` answers `202` and the boot continues in the background — because a request held open for a sandbox boot was dropped by proxies and retried, producing duplicate bots.
 
 ---
 
@@ -122,6 +130,9 @@ instances ──< tasks
 skills (with version & refinement notes)
 providers ──> secrets                  by ref; the value is sealed, never inline
 alerts                                 escalations, with the operator's reply
+oaf_sessions ──> oaf_devices           a thread with Oaf, bound to a device + folder
+oaf_devices  ──< device_jobs           shell / read / write / list / search, polled by the device
+oaf_jobs                               /goal and /loop schedules, replayed as the owner
 ```
 
 Migrations are embedded in the binary and applied automatically on boot in filename order.

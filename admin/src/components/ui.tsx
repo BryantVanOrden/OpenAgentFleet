@@ -466,3 +466,57 @@ export function bytes(n: number): string {
   const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
   return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+// ----------------------------------------------------------------- thinking ---
+
+/** Three dots rising in turn. Inherits the text colour of its parent. */
+export function ThinkingDots({ className }: { className?: string }) {
+  return (
+    <span className={cx("inline-flex items-center gap-1 align-middle", className)} aria-hidden>
+      <span className="thinking-dot size-1.5 rounded-full bg-current" />
+      <span className="thinking-dot size-1.5 rounded-full bg-current" />
+      <span className="thinking-dot size-1.5 rounded-full bg-current" />
+    </span>
+  );
+}
+
+/**
+ * An incoming-message bubble standing in for the reply that is being written.
+ * Sits where the reply will appear, so the eye is already in the right place
+ * when it lands. `hint` is what the thinker is doing right now, when known.
+ */
+export function ThinkingBubble({
+  who,
+  avatar,
+  hint,
+  compact,
+}: {
+  who: string;
+  avatar?: ReactNode;
+  hint?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className="msg-enter flex items-start gap-3" role="status" aria-live="polite">
+      {avatar ?? (
+        <span className="thinking-avatar mt-1 grid size-7 shrink-0 place-items-center rounded-full bg-ink-800 text-[10px] font-bold text-ink-200">
+          {who.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <div
+        className={cx(
+          "rounded-2xl rounded-tl-md bg-ink-850 ring-1 ring-inset ring-ink-800",
+          compact ? "px-3 py-1.5" : "px-4 py-2.5",
+        )}
+      >
+        <div className="flex items-center gap-2 text-xs text-ink-400">
+          <ThinkingDots className="text-live-500" />
+          <span>
+            <span className="font-medium text-ink-200">{who}</span> is thinking
+            {hint ? <span className="text-ink-500"> · {hint}</span> : null}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}

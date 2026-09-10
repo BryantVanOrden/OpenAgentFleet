@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +71,8 @@ func (s relayStage) String() string {
 // Keyword matching on purpose. Asking a second model to classify a sentence
 // costs a round trip per agent per handoff, and gets it wrong in less
 // predictable ways than a word list does.
+var fileNames = regexp.MustCompile(`[\w./-]+\.(html?|js|ts|css|py|go|md|json|ya?ml|txt|sh)\b`)
+
 func stageOf(plan string) relayStage {
 	// Whole words only.
 	//
@@ -77,45 +80,55 @@ func stageOf(plan string) relayStage {
 	// asked to build it registered as a reviewer, waited for work nobody was
 	// making, and the job was correctly reported as one that could not start.
 	// The bug was upstream of all of that, in one word inside another.
-	words := map[string]bool{}
-	for _, w := range strings.FieldsFunc(strings.ToLower(plan), func(r rune) bool {
+	// File names are not roles: "tests.html" is a thing being built.
+	lower := fileNames.ReplaceAllString(strings.ToLower(plan), " ")
+	counts := map[string]int{}
+	for _, w := range strings.FieldsFunc(lower, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	}) {
-		words[w] = true
+		counts[w]++
 	}
-	has := func(want ...string) bool {
+	// Scored, not first-match.
+	//
+	// The first version returned the most specific category with any hit,
+	// and Builder's brief -- "create a single-page notes app ... write a
+	// README.md and a tests.html page ... tell Checker what to test" -- came
+	// back as a tester. It then waited to be handed work by itself. So each
+	// category is counted and the biggest wins; a tie still goes to the most
+	// specific, which is what keeps "write the test plan" a testing job.
+	scores := map[relayStage]int{}
+	count := func(st relayStage, want ...string) {
 		for _, w := range want {
-			// A phrase is checked as a phrase; a single word as a word.
 			if strings.ContainsRune(w, ' ') {
-				if strings.Contains(strings.ToLower(plan), w) {
-					return true
-				}
+				scores[st] += strings.Count(lower, w)
 				continue
 			}
-			if words[w] {
-				return true
-			}
+			scores[st] += counts[w]
 		}
-		return false
 	}
-	// Checked most-specific first: "write the test plan" is testing, not
-	// building, and "review the design" is review, not design.
-	switch {
-	case has("review", "reviews", "reviewing", "audit", "audits", "auditing",
-		"critique", "quality assurance", "qa report"):
-		return stageReview
-	case has("test", "tests", "testing", "verify", "verifies", "verifying",
-		"validate", "validates", "check it", "try it"):
-		return stageTest
-	case has("design", "designs", "designing", "concept", "mechanic", "mechanics",
-		"spec", "specs", "plan the", "architecture"):
-		return stageDesign
-	case has("write", "writes", "writing", "build", "builds", "building",
+	count(stageReview, "review", "reviews", "reviewing", "audit", "audits", "auditing",
+		"critique", "quality assurance", "qa report")
+	count(stageTest, "test", "tests", "testing", "verify", "verifies", "verifying",
+		"validate", "validates", "check it", "try it")
+	count(stageDesign, "design", "designs", "designing", "concept", "mechanic", "mechanics",
+		"spec", "specs", "plan the", "architecture")
+	count(stageBuild, "write", "writes", "writing", "build", "builds", "building",
 		"implement", "implements", "code", "produce", "produces", "create",
-		"creates", "creating", "generate", "generates"):
-		return stageBuild
+		"creates", "creating", "generate", "generates")
+	// "Verify every feature yourself before you report" is a builder checking
+	// its own work, not a testing role. Each self-reference cancels one test
+	// word.
+	scores[stageTest] -= counts["myself"] + counts["yourself"]
+	if scores[stageTest] < 0 {
+		scores[stageTest] = 0
 	}
-	return stageUnknown
+	best, bestScore := stageUnknown, 0
+	for _, st := range []relayStage{stageReview, stageTest, stageDesign, stageBuild} {
+		if scores[st] > bestScore {
+			best, bestScore = st, scores[st]
+		}
+	}
+	return best
 }
 
 // collaborator is one agent's place in a job.
@@ -146,7 +159,15 @@ type collaboration struct {
 	// Done marks stages already handed on, so finishing twice does not start
 	// the next agent twice.
 	Handed map[string]bool
+	// Retries counts, per agent, the runs of its part that died for a reason
+	// that said nothing about the work -- a reply the parser could not read, a
+	// provider outage -- and were started again. Bounded by maxPartRetries.
+	Retries map[string]int
 }
+
+// maxPartRetries is how many times one agent's part is restarted after a
+// system failure before the job moves on without it.
+const maxPartRetries = 2
 
 // relay tracks live collaborations.
 //
@@ -234,6 +255,7 @@ func (r *relay) jobFor(request, thread string) *collaboration {
 		Request: request,
 		Thread:  thread,
 		Handed:  map[string]bool{},
+		Retries: map[string]int{},
 		Started: time.Now(),
 	}
 	r.jobs[request] = job
@@ -259,6 +281,41 @@ func (r *relay) register(taskID string, job *collaboration, c collaborator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.byTask[taskID] = taskOwner{job: job, member: c}
+}
+
+// rebind moves a task's place on the job to the task that continues it.
+func (r *relay) rebind(oldID, newID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	owner, ok := r.byTask[oldID]
+	if !ok {
+		return
+	}
+	delete(r.byTask, oldID)
+	r.byTask[newID] = owner
+}
+
+// retry moves a task's place on the job to a fresh task for the same agent,
+// if that agent still has retries left. It reports false when the part has
+// been restarted enough and should be handed on as a failure instead.
+func (r *relay) retry(taskID, newTaskID string) (*collaboration, collaborator, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	owner, ok := r.byTask[taskID]
+	if !ok {
+		return nil, collaborator{}, false
+	}
+	if owner.job.Retries == nil {
+		owner.job.Retries = map[string]int{}
+	}
+	if owner.job.Retries[owner.member.InstanceID] >= maxPartRetries {
+		return nil, collaborator{}, false
+	}
+	owner.job.Retries[owner.member.InstanceID]++
+	delete(r.byTask, taskID)
+	r.byTask[newTaskID] = owner
+	return owner.job, owner.member, true
 }
 
 // next returns the agent that should pick the work up after this one, and the
@@ -358,18 +415,115 @@ func (s *Server) watchForHandoffs(ctx context.Context) {
 			// each time. A failure is still information the next agent can act
 			// on -- "the tester ran out of steps" is worth knowing before you
 			// review something.
+			// A marathon window that closed unfinished continues in a new
+			// task. The job has to follow it: three windows and a failure
+			// later, the relay still only knew the first task id, so the
+			// failure was nobody's, no retry ran and no hand-off happened.
+			// The job died silently at 17:36 with the tester still waiting.
+			if st, _ := terminalState(payload["state"]); st == protocol.TaskContinued {
+				if next, _ := payload["next_task_id"].(string); next != "" {
+					s.relay.rebind(ev.TaskID, next)
+				}
+				continue
+			}
 			state, done := terminalState(payload["state"])
 			if !done {
 				continue
 			}
 			result := fmt.Sprint(payload["result"])
 			if state == protocol.TaskFailed {
+				// A run that died for a reason unrelated to the work -- the
+				// model answered in a syntax the parser did not know, the
+				// provider went away -- is restarted for the same agent, with
+				// a note of where it got to. Handing it on as "they did not
+				// finish" made a tester test nothing and left the operator a
+				// stalled job, when the builder was seven steps into a
+				// perfectly good build.
+				if s.retryFailedPart(ctx, ev.TaskID, fmt.Sprint(payload["error"])) {
+					continue
+				}
 				result = "They did not finish: " + fmt.Sprint(payload["error"]) +
 					". Whatever they left in the catalog is what there is."
 			}
 			s.handOff(ctx, ev.TaskID, result, "")
 		}
 	}
+}
+
+// systemFailure reports whether a task's error describes the machinery rather
+// than the work: the kind of failure a second attempt can simply get past.
+// The model's own verdict ("agent gave up", or whatever it said in a fail
+// action) is not one of these; retrying an agent that decided the task was
+// impossible only makes it decide again.
+func systemFailure(err string) bool {
+	for _, p := range []string{
+		"model would not produce a valid action",
+		"every model provider failed",
+		"could not observe the desktop",
+		"stalled and could not reach the operator",
+	} {
+		if strings.HasPrefix(err, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryFailedPart starts a failed part again for the same agent when the
+// failure was the machinery's, telling the thread so. It reports false when
+// the failure should be handed on instead: not a system failure, not a relay
+// task, or the agent has already been retried enough.
+func (s *Server) retryFailedPart(ctx context.Context, taskID, errText string) bool {
+	if !systemFailure(errText) {
+		return false
+	}
+	bg := context.WithoutCancel(ctx)
+	old, err := s.db.Task(bg, taskID)
+	if err != nil || old == nil {
+		return false
+	}
+	task := &protocol.Task{
+		ID:         store.NewID(),
+		InstanceID: old.InstanceID,
+		OwnerID:    old.OwnerID,
+		Goal: old.Goal + fmt.Sprintf("\n\nYour previous attempt at this stopped at step %d, "+
+			"not because of anything you did wrong: %s. Anything you already created is "+
+			"still on disk. Look at what exists, then continue from there rather than "+
+			"starting over. Answer with one JSON action object per turn, nothing else.",
+			old.Step, clipLine(errText, 200)),
+		State:     protocol.TaskQueued,
+		MaxSteps:  old.MaxSteps,
+		Params:    old.Params,
+		CreatedAt: time.Now().UTC(),
+	}
+	job, member, ok := s.relay.retry(taskID, task.ID)
+	if !ok {
+		return false
+	}
+	if err := s.db.CreateTask(bg, task); err != nil {
+		s.log.Warn("could not queue a retry", "instance", member.Name, "err", err)
+		return false
+	}
+	// A run that died before its first step met a condition that is still
+	// there a second later -- two retries fired in the same second on
+	// Checker's desktop and both died at step 0. Give it a moment.
+	start := func() {
+		if err := s.runner.Start(bg, task); err != nil {
+			s.log.Warn("could not start a retry", "instance", member.Name, "err", err)
+		}
+	}
+	if old.Step == 0 {
+		time.AfterFunc(20*time.Second, start)
+	} else {
+		start()
+	}
+	vault.GlobalBus.SendMessageIn(bg, job.Thread, member.InstanceID, member.Name,
+		"broadcast", peerReplyKind,
+		fmt.Sprintf("My run stopped at step %d (%s). Picking it back up where I left off.",
+			old.Step, clipLine(errText, 120)), nil)
+	s.log.Info("restarted a failed part", "instance", member.Name, "task", task.ID,
+		"attempt", job.Retries[member.InstanceID], "err", clipLine(errText, 80))
+	return true
 }
 
 // handOff gives the next agent the work, with what the last one produced.
@@ -385,19 +539,18 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 	// Say it in the thread as well as starting the work. A handoff nobody can
 	// see looks like an agent starting something at random.
 	vault.GlobalBus.SendMessageIn(ctx, c.Thread, finished.InstanceID, finished.Name,
-		successor.InstanceID, peerReplyKind,
-		fmt.Sprintf("%s is done with the %s. Over to you, %s, for the %s.",
-			finished.Name, finished.Stage, successor.Name, successor.Stage), nil)
+		successor.InstanceID, peerReplyKind, handoffLine(finished, successor, result), nil)
 
 	goal := fmt.Sprintf(
 		"%s has finished the %s and handed it to you for the %s.\n\n"+
 			"What they reported:\n%s\n\n"+
 			"Your part, which you chose: %s\n\n"+
-			"%s\n\n"+
+			"%s\n\n%s\n\n"+
 			"The original request was: %s",
 		finished.Name, finished.Stage, successor.Stage,
 		clipLine(result, 600), successor.Plan,
-		briefFor(finished.Stage, successor.Stage, produced), c.Request)
+		briefFor(finished.Stage, successor.Stage, produced),
+		machinesNote(finished), c.Request)
 
 	task := &protocol.Task{
 		ID:         store.NewID(),
@@ -429,6 +582,45 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 
 	s.log.Info("handed work on", "from", finished.Name, "to", successor.Name,
 		"stage", successor.Stage.String(), "round", c.Round)
+}
+
+// sandboxHost is the name a bot's machine answers to on the sandbox network,
+// the same alias the fleet manager gives its container.
+func sandboxHost(instanceID string) string {
+	if len(instanceID) < 12 {
+		return "af-" + instanceID
+	}
+	return "af-" + instanceID[:12]
+}
+
+// machinesNote tells the agent receiving work where the work actually is.
+//
+// Handed Builder's build, Checker opened a terminal on its own desktop, ran
+// `ls /home/agent/fleet-notes`, found nothing, and told Builder twice that the
+// directory did not exist. Every bot has its own machine; nothing in the
+// hand-off said so, and nothing said how to reach the other one.
+func machinesNote(finished collaborator) string {
+	host := sandboxHost(finished.InstanceID)
+	return fmt.Sprintf("Where the work is: %s worked on its own machine, not yours -- its files "+
+		"are not on your disk and `ls` here will not find them. What %s published is in "+
+		"the shared catalog (read_work). Anything %s is serving is reachable from your "+
+		"browser at http://%s:<port> (a local web server is usually port 8000: try "+
+		"http://%s:8000). If neither has what you need, ask %s with message_peer to "+
+		"publish_work the files or tell you the URL -- do not report them missing.",
+		finished.Name, finished.Name, finished.Name, host, host, finished.Name)
+}
+
+// handoffLine is what the thread says when work moves on. A run that stopped
+// short must not be announced as done: "Builder is done with the build" over a
+// stalled window told the operator the opposite of what happened.
+func handoffLine(finished, successor collaborator, result string) string {
+	if strings.HasPrefix(result, "They did not finish") {
+		return fmt.Sprintf("%s's %s stopped short (%s). Over to you, %s, for the %s -- with what is there.",
+			finished.Name, finished.Stage, clipLine(strings.TrimPrefix(result, "They did not finish: "), 90),
+			successor.Name, successor.Stage)
+	}
+	return fmt.Sprintf("%s is done with the %s. Over to you, %s, for the %s.",
+		finished.Name, finished.Stage, successor.Name, successor.Stage)
 }
 
 // terminalState reports whether a task has stopped for good, and how.
@@ -526,6 +718,43 @@ func (r *relay) taskFor(instanceID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// jobOfInstance returns the live job an agent is currently working a task on,
+// and its place on it.
+func (r *relay) jobOfInstance(instanceID string) (*collaboration, collaborator, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, owner := range r.byTask {
+		if owner.member.InstanceID == instanceID {
+			return owner.job, owner.member, true
+		}
+	}
+	return nil, collaborator{}, false
+}
+
+// claimRound spends one of a job's rounds on a peer-requested task and
+// registers it. It reports false when the job has no rounds left, which is
+// what stops two agents asking each other for things forever.
+func (r *relay) claimRound(job *collaboration, taskID string, c collaborator) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if job.Round >= maxRelayRounds {
+		return false
+	}
+	job.Round++
+	found := false
+	for _, m := range job.Members {
+		if m.InstanceID == c.InstanceID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		job.Members = append(job.Members, c)
+	}
+	r.byTask[taskID] = taskOwner{job: job, member: c}
+	return true
 }
 
 // readyForHandoff reports whether an agent can take the next part, and clears

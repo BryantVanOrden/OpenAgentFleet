@@ -10,6 +10,7 @@ import '../../core/theme/theme.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../core/voice/voice_service.dart';
 import '../../core/voice/voice_prefs.dart';
+import '../../core/widgets/thinking.dart';
 import 'chat_sessions_sheet.dart';
 
 /// Talking to a machine.
@@ -360,15 +361,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   );
                 }
               });
+              final name = ref
+                      .watch(instancesProvider)
+                      .valueOrNull
+                      ?.where((i) => i.id == widget.instanceId)
+                      .map((i) => i.name)
+                      .firstOrNull ??
+                  'The agent';
               return ListView.builder(
                 controller: _scroll,
                 padding: const EdgeInsets.all(16),
-                itemCount: list.length,
-                itemBuilder: (context, i) =>
-                    _Bubble(
+                itemCount: list.length + (_busy ? 1 : 0),
+                itemBuilder: (context, i) {
+                  if (i == list.length) {
+                    return ThinkingBubble(who: name, hint: 'reading the screen');
+                  }
+                  return MessageEnter(
+                    key: ValueKey(list[i].id),
+                    child: _Bubble(
                         message: list[i],
                         instanceId: widget.instanceId,
                         chatId: _chatId),
+                  );
+                },
               );
             },
           ),

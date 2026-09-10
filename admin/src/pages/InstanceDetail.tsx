@@ -40,6 +40,7 @@ import {
   WindowChip,
   cx,
   inputClass,
+  ThinkingBubble,
 } from "../components/ui";
 
 type Tab = "desktop" | "activity" | "chat";
@@ -1547,7 +1548,7 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
           // work twice.
           const isOpenPlan = isPlan && !m.plan_state;
           return (
-            <div key={m.id} className={cx("flex", mine ? "justify-end" : "justify-start")}>
+            <div key={m.id} className={cx("msg-enter flex", mine ? "justify-end" : "justify-start")}>
               <div
                 className={cx(
                   "max-w-[80%] px-4 py-3 text-sm leading-relaxed",
@@ -1598,12 +1599,7 @@ function ChatPane({ instance, readOnly }: { instance: Instance; readOnly: boolea
             </div>
           );
         })}
-        {busy && (
-          <div className="flex items-center gap-2 pl-1 text-xs text-ink-400">
-            <span className="size-1.5 animate-pulse rounded-full bg-live-500" />
-            {instance.name} is thinking…
-          </div>
-        )}
+        {busy && <ThinkingBubble who={instance.name} hint="reading the screen" />}
         <div ref={endRef} />
       </div>
 

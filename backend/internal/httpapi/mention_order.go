@@ -252,6 +252,42 @@ func orderByMention(content string, instances []protocol.Instance) []protocol.In
 
 // assignmentFor returns what the message asked this particular agent to do.
 //
+// assignmentSpan finds where an agent's own assignment starts: the "Name:"
+// form when the message uses it, otherwise the first mention.
+//
+// "Builder: ... tell Checker the URL of your machine. Checker: you own
+// quality ..." mentions Checker twice, and the first mention is inside
+// Builder's instructions. Taking it as Checker's assignment made Checker a
+// builder ("build and ship a small web app" followed), so it started building
+// instead of waiting to test.
+func assignmentSpan(content, name string) (start, after int, ok bool) {
+	lower, lname := strings.ToLower(content), strings.ToLower(name)
+	from := 0
+	for {
+		i := strings.Index(lower[from:], lname)
+		if i < 0 {
+			break
+		}
+		i += from
+		j := i + len(lname)
+		// Whole word, followed by a colon (with optional spaces).
+		wordStart := i == 0 || !isWordRune(rune(lower[i-1]))
+		k := j
+		for k < len(lower) && lower[k] == ' ' {
+			k++
+		}
+		if wordStart && k < len(lower) && lower[k] == ':' && (j == len(lower) || !isWordRune(rune(lower[j]))) {
+			return i, k + 1, true
+		}
+		from = j
+	}
+	return mentionSpan(content, name)
+}
+
+func isWordRune(r rune) bool {
+	return r == '_' || r == '-' || ('a' <= r && r <= 'z') || ('0' <= r && r <= '9')
+}
+
 // "Builder writes the game. ToolCheck tests it." is two instructions, and
 // handing both to both agents is how two of them end up doing the same thing.
 // Told only the whole message and a list of what colleagues had claimed,
@@ -262,7 +298,7 @@ func orderByMention(content string, instances []protocol.Instance) []protocol.In
 // The clause is everything from an agent's name up to the next agent's, which
 // is how these sentences are actually written.
 func assignmentFor(content string, name string, all []protocol.Instance) string {
-	start, after, ok := mentionSpan(content, name)
+	start, after, ok := assignmentSpan(content, name)
 	if !ok {
 		return ""
 	}
@@ -272,7 +308,7 @@ func assignmentFor(content string, name string, all []protocol.Instance) string 
 		if strings.EqualFold(other.Name, name) {
 			continue
 		}
-		if o, _, found := mentionSpan(content, other.Name); found && o > start && o < end {
+		if o, _, found := assignmentSpan(content, other.Name); found && o > start && o < end {
 			end = o
 		}
 	}

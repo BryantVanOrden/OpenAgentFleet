@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -312,6 +313,17 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 		s.startFromPlan(ctx, inst, msg, plan)
 		return
 	}
+	// A colleague's request, inside a live job, is also work. Handed
+	// Builder's build, Checker asked Builder three times to publish the
+	// files; Builder answered "PLAN: I will publish them" three times and
+	// did nothing, because a plan given to a peer never started anything.
+	// That rule is right between idle bots -- one bot's question must not be
+	// another bot's afternoon -- and wrong when the asker is mid-task on a job
+	// both are part of. The job's round limit bounds the ping-pong.
+	if plan, ok := planFrom(body); ok && !isOperator(msg) {
+		s.startFromPeerRequest(ctx, inst, msg, plan)
+		return
+	}
 	// An agent that said it would wait — "ready to review once Builder is
 	// done" — is still part of the job. Register it so the relay can hand it
 	// the work when there is work.
@@ -334,12 +346,14 @@ func planFrom(body string) (string, bool) {
 		return "", false
 	}
 
-	if strings.HasPrefix(strings.ToUpper(trimmed), planMarker) {
-		plan := strings.TrimSpace(trimmed[len(planMarker):])
-		if plan == "" {
-			return "", false
+	// The marker at the start of the reply, or of any later sentence or line:
+	// "I'm idle. PLAN: I'll take the code" is a plan that happens to open
+	// with a status report.
+	if i := planMarkerIndex(trimmed); i >= 0 {
+		if plan := strings.TrimSpace(trimmed[i+len(planMarker):]); plan != "" {
+			return plan, true
 		}
-		return plan, true
+		return "", false
 	}
 
 	// A commitment without the marker still counts.
@@ -363,32 +377,56 @@ func planFrom(body string) (string, bool) {
 // status update read as a commitment starts a task nobody asked for, on an
 // agent that just said it was idle.
 func commitsToWork(body string) bool {
-	// The first sentence carries the commitment; the rest is elaboration.
-	first := body
-	if i := strings.IndexAny(first, ".\n"); i > 0 {
-		first = first[:i]
-	}
-	lower := strings.ToLower(strings.TrimSpace(first))
-
-	// A status report often opens in the first person too, so the words that
-	// mean "nothing is happening" veto the whole thing.
-	for _, idle := range []string{"idle", "available", "no tasks", "nothing to report",
-		"awaiting", "standing by", "ready to receive", "ready for"} {
-		if strings.Contains(lower, idle) {
-			return false
+	// Sentence by sentence. The first version read only the first sentence,
+	// and Builder's "I'm idle and available -- nothing has actually run yet.
+	// I'll take the code: read the existing files, then rebuild the app" was
+	// filed as a status report. The builder then waited to be handed its own
+	// work, and the job stalled. A status sentence vetoes itself, not the
+	// commitment that follows it.
+	for _, sentence := range strings.FieldsFunc(body, func(r rune) bool {
+		return r == '.' || r == '\n' || r == '!' || r == '?'
+	}) {
+		lower := strings.ToLower(strings.TrimSpace(sentence))
+		idle := false
+		for _, word := range []string{"idle", "available", "no tasks", "nothing to report",
+			"awaiting", "standing by", "ready to receive", "ready for"} {
+			if strings.Contains(lower, word) {
+				idle = true
+				break
+			}
 		}
-	}
-
-	for _, opener := range []string{
-		"i will ", "i'll ", "i am taking ", "i'm taking ",
-		"i accept ", "i have taken ", "i will take", "i shall ",
-		"my part ", "i can take ", "i'm going to ", "i am going to ",
-	} {
-		if strings.HasPrefix(lower, opener) {
-			return true
+		if idle {
+			continue
+		}
+		for _, opener := range []string{
+			"i will ", "i'll ", "i am taking ", "i'm taking ",
+			"i accept ", "i have taken ", "i will take", "i shall ",
+			"my part ", "i can take ", "i'm going to ", "i am going to ",
+		} {
+			if strings.HasPrefix(lower, opener) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// planMarkerIndex finds "PLAN:" where a sentence or line starts, or -1.
+func planMarkerIndex(body string) int {
+	upper := strings.ToUpper(body)
+	from := 0
+	for {
+		i := strings.Index(upper[from:], planMarker)
+		if i < 0 {
+			return -1
+		}
+		i += from
+		before := strings.TrimRight(upper[:i], " \t*")
+		if before == "" || strings.ContainsRune(".!?\n:—-", rune(before[len(before)-1])) {
+			return i
+		}
+		from = i + len(planMarker)
+	}
 }
 
 // waitForHandoff registers an agent that has a part but nothing to do yet.
@@ -411,6 +449,16 @@ func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg
 	if stage == stageUnknown {
 		return
 	}
+	// A producer named by the operator is not waiting for anything: nothing
+	// upstream of a builder will ever hand it work. Whatever it said in its
+	// reply -- "standing by", a plan the parser did not read -- the operator
+	// assigned it a part that makes something, so it starts on that part.
+	if !stage.waitsForWork() {
+		s.log.Info("named to produce; starting on the assigned part rather than waiting",
+			"instance", inst.Name, "stage", stage.String())
+		s.startFromPlan(ctx, inst, msg, part)
+		return
+	}
 	conv := msg.ConversationID
 	if conv == "" {
 		conv = vault.GlobalBus.DefaultChannel()
@@ -431,6 +479,75 @@ func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg
 	})
 	s.log.Info("agent is waiting to be handed work",
 		"instance", inst.Name, "stage", stage.String())
+}
+
+// startFromPeerRequest starts the work an agent just promised a colleague,
+// when that colleague is mid-task on a job and this agent is idle.
+func (s *Server) startFromPeerRequest(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) {
+	if inst.State != protocol.InstanceRunning || msg.FromInstanceID == "" {
+		return
+	}
+	job, asker, ok := s.relay.jobOfInstance(msg.FromInstanceID)
+	if !ok {
+		return
+	}
+	// Only for bots on the job: a member, or named in the request. Checker
+	// asked gui-scout something in passing and gui-scout, a bystander with
+	// no part, started a task on the strength of its own polite "I will".
+	if !onJob(job, inst) {
+		s.log.Info("not starting peer-requested work; not on this job",
+			"instance", inst.Name, "asker", asker.Name)
+		return
+	}
+	if s.instanceIsBusy(ctx, inst.ID) {
+		return
+	}
+	task := &protocol.Task{
+		ID:         store.NewID(),
+		InstanceID: inst.ID,
+		Goal: fmt.Sprintf("%s, who is working on the fleet request below, asked you:\n%s\n\n"+
+			"You answered: %s\n\nDo that now, on your own machine. When it is done, publish "+
+			"what you produced with publish_work under a stable name and tell %s with "+
+			"message_peer exactly where it is: the catalog name, or the address of anything "+
+			"you are serving (your machine is http://%s:<port> to colleagues). "+
+			"Do not use ask_human; decide the small things yourself.\n\n"+
+			"The fleet request: %s",
+			asker.Name, clipLine(msg.Content, 800), clipLine(plan, 600), asker.Name,
+			sandboxHost(inst.ID), job.Request),
+		State:     protocol.TaskQueued,
+		MaxSteps:  s.cfg.MaxSteps,
+		CreatedAt: time.Now().UTC(),
+		Params:    map[string]string{protocol.ParamHandoff: "1"},
+	}
+	me := collaborator{InstanceID: inst.ID, Name: inst.Name, Plan: plan, Stage: stageOf(plan)}
+	if !s.relay.claimRound(job, task.ID, me) {
+		s.log.Info("not starting peer-requested work; the job is out of rounds",
+			"instance", inst.Name, "asker", asker.Name)
+		return
+	}
+	bg := context.WithoutCancel(ctx)
+	if err := s.db.CreateTask(bg, task); err != nil {
+		s.log.Warn("could not queue peer-requested work", "instance", inst.Name, "err", err)
+		return
+	}
+	if err := s.runner.Start(bg, task); err != nil {
+		s.log.Warn("could not start peer-requested work", "instance", inst.Name, "err", err)
+		return
+	}
+	s.log.Info("agent started work a colleague asked for",
+		"instance", inst.Name, "asker", asker.Name, "task", task.ID, "round", job.Round)
+}
+
+// onJob reports whether a bot has a part on a job: registered as a member, or
+// named in the request that opened it.
+func onJob(job *collaboration, inst protocol.Instance) bool {
+	for _, m := range job.Members {
+		if m.InstanceID == inst.ID {
+			return true
+		}
+	}
+	_, _, named := mentionSpan(job.Request, inst.Name)
+	return named
 }
 
 // startFromPlan turns an agent's stated part into a task it actually runs.
@@ -510,6 +627,12 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 			// The operator broadcast this and walked away. An agent that stops
 			// to ask them something waits eight minutes for a reply that is
 			// not coming, and everyone waiting on its part waits with it.
+			// Bots are on separate machines. Builder built on its own disk and
+			// never published; Checker, handed the work, searched its own disk.
+			"Every bot has its own machine. Your files are on yours only; a colleague " +
+			"cannot see them unless you publish_work them or serve them -- your machine " +
+			"is reachable to colleagues as http://" + sandboxHost(inst.ID) + ":<port>, so " +
+			"if you run a web server, say that address and port in your report.\n\n" +
 			"This was asked of the fleet, not of you in a conversation: nobody " +
 			"is sitting there waiting to answer questions about it. Do not use " +
 			"ask_human -- decide the small things yourself and say what you " +

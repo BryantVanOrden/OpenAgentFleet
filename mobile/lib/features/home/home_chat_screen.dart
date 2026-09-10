@@ -10,6 +10,7 @@ import '../../core/state.dart';
 import '../../core/theme/theme.dart';
 import '../../core/voice/voice_service.dart';
 import '../../core/widgets/inline_error.dart';
+import '../../core/widgets/thinking.dart';
 import '../fleet_comms/message_tile.dart';
 import 'setup_card.dart';
 
@@ -69,6 +70,10 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
 
   bool _loading = true;
   bool _busy = false;
+  /// When you last spoke to the fleet and nobody has answered yet; the
+  /// reading bubble stays up until a bot's message newer than this arrives.
+  DateTime? _awaitingSince;
+  Timer? _awaitingTimeout;
   bool _listening = false;
   String? _error;
   Timer? _poll;
@@ -106,6 +111,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
   @override
   void dispose() {
     _poll?.cancel();
+    _awaitingTimeout?.cancel();
     _controller.dispose();
     _composerFocus.dispose();
     _scroll.dispose();
@@ -152,8 +158,12 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
       final atBottom = !_scroll.hasClients ||
           _scroll.position.pixels >= _scroll.position.maxScrollExtent - 40;
       final fresh = _newSince(list);
+      final since = _awaitingSince;
+      final answered = since != null &&
+          list.any((m) => m.fromInstanceId.isNotEmpty && m.createdAt.isAfter(since));
       setState(() {
         _messages = list;
+        if (answered) _awaitingSince = null;
         if (setup != null) _setup = setup;
         _loading = false;
         _error = null;
@@ -293,6 +303,11 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
             conversationId: Conversation.broadcastId,
           );
       _controller.clear();
+      _awaitingSince = DateTime.now();
+      _awaitingTimeout?.cancel();
+      _awaitingTimeout = Timer(const Duration(minutes: 2), () {
+        if (mounted) setState(() => _awaitingSince = null);
+      });
       await _refresh();
       _scrollToEnd();
     } catch (err) {
@@ -443,15 +458,20 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
     }
 
     final items = _items();
+    // Presence, under the newest message: who is mid-run right now, and the
+    // fleet reading a message you just sent. Not messages; the channel's
+    // status strip, so it is never in the history.
+    final presence = _presence();
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.all(12),
-      itemCount: items.length + (card == null ? 0 : 1),
+      itemCount: items.length + (card == null ? 0 : 1) + (presence == null ? 0 : 1),
       itemBuilder: (_, i) {
         if (card != null) {
           if (i == 0) return card;
           i -= 1;
         }
+        if (i == items.length) return presence!;
         final item = items[i];
         if (item is _Ephemeral) {
           return CommandResultCard(
@@ -460,8 +480,30 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
           );
         }
         final m = item as PeerMessage;
-        return FleetMessageTile(message: m, speaking: m.id == _speakingId);
+        return MessageEnter(
+          key: ValueKey(m.id),
+          child: FleetMessageTile(message: m, speaking: m.id == _speakingId),
+        );
       },
+    );
+  }
+
+  Widget? _presence() {
+    final lines = <Widget>[];
+    if (_busy || _awaitingSince != null) {
+      lines.add(const ThinkingBubble(who: 'The fleet', hint: 'reading your message', compact: true));
+    }
+    final instances = ref.watch(instancesProvider).valueOrNull ?? const <Instance>[];
+    for (final i in instances) {
+      final tasks = ref.watch(tasksProvider(i.id)).valueOrNull ?? const <Task>[];
+      for (final t in tasks.where((t) => t.isLive)) {
+        lines.add(WorkingLine(name: i.name, step: t.step, maxSteps: t.maxSteps, goal: t.goal));
+      }
+    }
+    if (lines.isEmpty) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: lines),
     );
   }
 

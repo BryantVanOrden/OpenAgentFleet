@@ -25,7 +25,7 @@ import { Markdown } from "../lib/markdown";
 import { speakable } from "../lib/speakable";
 import { SummaryRow, kindChipClass } from "./CommsTab";
 import SetupCard from "./SetupCard";
-import { Button, ErrorNote, cx, relative } from "./ui";
+import { Button, ErrorNote, ThinkingBubble, ThinkingDots, cx, relative } from "./ui";
 
 /**
  * The fleet channel: one chat with the whole fleet. The home page's "Fleet"
@@ -71,6 +71,19 @@ export default function FleetChannel({ role }: { role: string }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [runningChip, setRunningChip] = useState<string | null>(null);
+  // When you last spoke to the fleet and nobody has answered yet. The reading
+  // bubble stays up until a bot's message newer than this arrives, or two
+  // minutes pass -- a reply on a local model takes longer than the POST.
+  const [awaitingSince, setAwaitingSince] = useState<number | null>(null);
+  useEffect(() => {
+    if (awaitingSince === null) return;
+    if (messages.some((m) => m.from_instance_id && new Date(m.created_at).getTime() > awaitingSince)) {
+      setAwaitingSince(null);
+      return;
+    }
+    const t = setTimeout(() => setAwaitingSince(null), 120_000);
+    return () => clearTimeout(t);
+  }, [awaitingSince, messages]);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -295,6 +308,7 @@ export default function FleetChannel({ role }: { role: string }) {
         conversation_id: BROADCAST_ID,
         kind: "message",
       });
+      setAwaitingSince(Date.now());
       setDraft("");
       setError(null);
       await refresh();
@@ -440,6 +454,7 @@ export default function FleetChannel({ role }: { role: string }) {
               ),
             )
           )}
+          {!loading && <WorkingRows instances={instances} tasks={tasks} busy={busy || awaitingSince !== null} />}
         </div>
       </div>
 
@@ -502,6 +517,38 @@ export default function FleetChannel({ role }: { role: string }) {
 
 /** One message in the stream: yours on the right, verbatim; an agent's on the
  *  left with its name and kind; Oaf's as a card of its own. */
+/**
+ * Who is working right now, under the last message: one line per running task
+ * with its step count, and a thinking bubble for the fleet while a message you
+ * just sent is being read. Nothing here is a message; it is the channel's
+ * presence strip.
+ */
+function WorkingRows({ instances, tasks, busy }: { instances: Instance[]; tasks: Task[]; busy: boolean }) {
+  const live = tasks.filter((t) => t.state === "running" || t.state === "queued");
+  if (live.length === 0 && !busy) return null;
+  return (
+    <div className="space-y-1.5 pt-1">
+      {busy && <ThinkingBubble who="The fleet" hint="reading your message" compact />}
+      {live.map((t) => {
+        const name = instances.find((i) => i.id === t.instance_id)?.name ?? t.instance_id.slice(0, 8);
+        return (
+          <div key={t.id} className="msg-enter flex items-center gap-2 pl-1 text-xs text-ink-400" role="status">
+            <span className="thinking-avatar grid size-6 shrink-0 place-items-center rounded-full bg-ink-800 text-[10px] font-bold text-ink-200">
+              {name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="shrink-0 font-medium text-ink-200">{name}</span>
+            <span className="shrink-0 whitespace-nowrap">is working</span>
+            <ThinkingDots className="shrink-0 text-live-500" />
+            <span className="min-w-0 truncate text-ink-500">
+              step {t.step}/{t.max_steps} · {t.goal}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MessageRow({ message }: { message: PeerMessage }) {
   if (message.kind === "summary") return <SummaryRow message={message} />;
   if (isSystemMessage(message)) return <OafRow message={message} />;
@@ -509,7 +556,7 @@ function MessageRow({ message }: { message: PeerMessage }) {
   const mine = !message.from_instance_id;
   if (mine) {
     return (
-      <div className="flex justify-end">
+      <div className="msg-enter flex justify-end">
         <div className="max-w-[75%] rounded-2xl bg-live-500/15 px-3.5 py-2 ring-1 ring-inset ring-live-500/30">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-ink-100">You</span>
@@ -526,7 +573,7 @@ function MessageRow({ message }: { message: PeerMessage }) {
   }
 
   return (
-    <div className="flex justify-start">
+    <div className="msg-enter flex justify-start">
       <div className="max-w-[80%] rounded-2xl bg-ink-800 px-3.5 py-2">
         <div className="flex items-center gap-2">
           <span className="truncate text-xs font-bold text-ink-100">
@@ -545,7 +592,7 @@ function MessageRow({ message }: { message: PeerMessage }) {
  *  agent said this. */
 function OafRow({ message }: { message: PeerMessage }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="msg-enter flex items-start gap-3">
       <img
         src={mascot}
         alt="Oaf"

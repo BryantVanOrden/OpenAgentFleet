@@ -456,6 +456,44 @@ can happen from it.
   boundary and `/stop @bot` are the operator's controls. Nothing stops a run
   on cost alone.
 
+## Sessions on your own devices
+
+A session with Oaf can act on the operator's PC or phone. That is the one
+place the platform reaches outside its sandboxes on purpose, so the rules
+are stated here rather than implied.
+
+- **The device connects out; nothing connects in.** `fleetctl host` and the
+  phone register a device and long-poll `/api/oaf/devices/{id}/jobs` with the
+  owner's token. There is no listener on the device and no inbound port.
+  Killing the process ends the device's availability at once; the
+  orchestrator only ever holds a queue of jobs it hopes someone will pick up.
+- **Folder jail.** Every path in a job is resolved against the roots given on
+  the command line (`--root`, repeatable) and refused if it lands outside
+  them, after symlink resolution (`RootJail` in
+  `sdk/python/agentfleet/host.py`). Shell commands run with the working
+  directory inside a root, but a shell is a shell: `cat ../secret` is stopped
+  only by the approval prompt, not by the jail. Give a session the narrowest
+  folder that does the job.
+- **Approval before state changes.** A shell command, a file write and an
+  `open_url` ask in the terminal and wait; reads, listings and searches do
+  not. `--yes` turns the asking off for that process and is meant for a
+  session you are watching. With no terminal to ask on, the host refuses.
+- **Ownership is checked on both ends.** A device belongs to the user who
+  registered it; sessions list and use only their owner's devices; a job's
+  result is accepted only from the device it was queued for. Oaf's `fleet`
+  tool runs slash commands as the session's owner with that user's
+  permissions, never as an operator by default.
+- **Attachments are untrusted input.** Files and images pasted into a session
+  are stored under the session and shown to the model; a hostile document can
+  talk Oaf into a tool call the same way a hostile web page can talk a bot
+  into one. The approval prompt is the control, which is why it exists for
+  writes and shell and not only for the sandboxed bots.
+- **`/loop` keeps running when you are not looking.** A repeating job
+  replays the turn under the owner's identity at every tick until
+  `/cancel`; `/jobs` lists what is armed. The same approval rules apply on
+  the device, so a loop that needs a write stalls at the prompt rather than
+  proceeding — unless the device was started with `--yes`.
+
 ## Agent-authored apps
 
 The shared work catalog lets an agent publish an *app* — one HTML document —

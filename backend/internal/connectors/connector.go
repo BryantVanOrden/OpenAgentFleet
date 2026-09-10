@@ -43,6 +43,12 @@ type Request struct {
 	MaxTokens   int
 	// JSONOnly asks the provider for strict JSON output where it supports it.
 	JSONOnly bool
+	// JSONSchema, when set with JSONOnly, is the shape the JSON must take.
+	// Providers that can enforce a grammar (llama.cpp, Ollama, OpenAI) are
+	// sent it; the rest fall back to plain JSON mode. The LAN gateway
+	// honoured json_object on short prompts and ignored it on long ones --
+	// every agent turn -- and honoured json_schema on both.
+	JSONSchema map[string]any
 	// DisableThinking suppresses a reasoning model's separate thinking pass.
 	// Only set it where the reasoning is genuinely unwanted — a health ping
 	// with a tiny token budget, say. Leave it off for agent turns: the
@@ -53,6 +59,10 @@ type Request struct {
 type Response struct {
 	Text         string
 	Model        string
+	// Truncated is set when the provider stopped the reply at its output
+	// limit (finish_reason "length"). A cut-off action is not a refusal to
+	// act, and the loop's correction has to say so.
+	Truncated bool
 	PromptTokens int
 	OutputTokens int
 	// CachedTokens is the part of PromptTokens the provider served from its

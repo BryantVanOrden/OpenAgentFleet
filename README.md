@@ -370,6 +370,9 @@ fleetctl deploy --archetype cyber_ops --name "nightly-scanner"
 # Run task and stream live execution
 fleetctl run <bot_id> "Refactor backend authentication and run tests" --wait
 
+# Let Oaf work on this machine, inside one folder, asking before it runs anything
+fleetctl host --root ~/projects/site
+
 # Multi-agent swarms & voice synthesis
 fleetctl swarm list
 fleetctl voice speak "All systems operational." --voice shadow

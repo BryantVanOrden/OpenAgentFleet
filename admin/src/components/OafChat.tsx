@@ -15,7 +15,7 @@ import { commandPrefix, commandText, filterCommands } from "../lib/fleetChat";
 import { Markdown } from "../lib/markdown";
 import { speakable } from "../lib/speakable";
 import { shortPath } from "./SessionRail";
-import { Button, ErrorNote, Field, cx, inputClass, relative } from "./ui";
+import { Button, ErrorNote, Field, ThinkingBubble, cx, inputClass, relative } from "./ui";
 
 /**
  * One session with Oaf: the chat as an agent.
@@ -396,10 +396,17 @@ export default function OafChat({
             messages.map((m) => <Row key={m.id} message={m} />)
           )}
           {busy && (
-            <div className="flex items-center gap-2 pl-10 text-xs text-ink-400">
-              <span className="size-1.5 animate-pulse rounded-full bg-live-500" />
-              Oaf is working…
-            </div>
+            <ThinkingBubble
+              who="Oaf"
+              hint={thinkingHint(messages)}
+              avatar={
+                <img
+                  src={mascot}
+                  alt=""
+                  className="thinking-avatar mt-1 size-7 shrink-0 rounded-full object-contain"
+                />
+              }
+            />
           )}
         </div>
       </div>
@@ -537,7 +544,7 @@ function Row({ message: m }: { message: PeerMessage }) {
   const atts = (m.data?.attachments as OafAttachment[] | undefined) ?? [];
   if (fromOaf) {
     return (
-      <div className="flex items-start gap-3">
+      <div className="msg-enter flex items-start gap-3">
         <img src={mascot} alt="" className="mt-1 size-7 shrink-0 object-contain" />
         <div className="min-w-0 max-w-[85%]">
           <div className="mb-1 flex items-baseline gap-2 text-xs">
@@ -555,7 +562,7 @@ function Row({ message: m }: { message: PeerMessage }) {
     );
   }
   return (
-    <div className="flex justify-end">
+    <div className="msg-enter flex justify-end">
       <div className="min-w-0 max-w-[80%]">
         <div className="mb-1 flex items-baseline justify-end gap-2 text-xs">
           <span className="text-ink-500">{relative(m.created_at)}</span>
@@ -584,13 +591,22 @@ function Row({ message: m }: { message: PeerMessage }) {
   );
 }
 
+/** What Oaf is doing while the reply is pending: after a tool call lands, it
+ *  is reading the result and deciding the next step. */
+function thinkingHint(messages: PeerMessage[]): string | undefined {
+  const last = messages[messages.length - 1];
+  if (!last || last.kind !== "tool") return undefined;
+  const tool = (last.data?.tool as string) || last.content.split(" ")[0];
+  return last.data?.failed === true ? `${tool} failed, choosing another way` : `read the ${tool} result, deciding what is next`;
+}
+
 function ToolRow({ message: m }: { message: PeerMessage }) {
   const [open, setOpen] = useState(false);
   const failed = m.data?.failed === true;
   const tool = (m.data?.tool as string) || m.content.split(" ")[0];
   const result = (m.data?.result as string) || "";
   return (
-    <div className="pl-10">
+    <div className="msg-enter pl-10">
       <button
         onClick={() => setOpen((v) => !v)}
         className={cx(

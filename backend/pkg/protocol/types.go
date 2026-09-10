@@ -732,6 +732,10 @@ type Action struct {
 	WorkName       string         `json:"work_name,omitempty"`
 	WorkKind       string         `json:"work_kind,omitempty"`
 	WorkWorkspace  string         `json:"work_workspace,omitempty"`
+	// Path is a file on the agent's own machine to publish, for publish_work
+	// when the content is not given inline. A 6 KB app.js pasted into a JSON
+	// string is a lot to ask of a model; a path is a line.
+	Path string `json:"path,omitempty"`
 	SessionCookies string         `json:"session_cookies,omitempty"` // cookies JSON for share_session
 	SnapshotName   string         `json:"snapshot_name,omitempty"`   // for snapshot action
 	RollbackID     string         `json:"rollback_id,omitempty"`     // for rollback action

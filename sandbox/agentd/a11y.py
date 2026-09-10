@@ -12,7 +12,12 @@ unavailable should reduce the agent to vision-only, not take it down.
 from __future__ import annotations
 
 import functools
-from dataclasses import dataclass, field
+import json
+import os
+import subprocess
+import sys
+import time
+from dataclasses import asdict, dataclass, field
 
 try:
     import pyatspi
@@ -53,6 +58,60 @@ class Node:
     @property
     def center(self) -> tuple[int, int]:
         return self.x + self.w // 2, self.y + self.h // 2
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Node":
+        children = [cls.from_dict(c) for c in d.get("children", [])]
+        return cls(**{k: v for k, v in d.items() if k != "children"}, children=children)
+
+
+# ---------------------------------------------------------------------------
+# Isolation. AT-SPI can wedge -- on 2026-09-09 every Registry call blocked for
+# good while Firefox showed a long page, and agentd, calling it inline with
+# the GIL held, stopped answering everything, health included. A restarted
+# agentd hung again on its first observe. So the server process never touches
+# pyatspi: each query runs in a child (a11y_child.py) with a hard timeout, and
+# a child that does not answer costs one query, not the daemon.
+#
+# AGENTD_A11Y_INPROC=1 is set by the child itself, so the same functions run
+# the real thing there and the wrapper here.
+
+INPROC = os.environ.get("AGENTD_A11Y_INPROC") == "1"
+CHILD_TIMEOUT = float(os.environ.get("AGENTD_A11Y_TIMEOUT", "8"))
+_wedged_at: float | None = None
+
+
+def wedged() -> bool:
+    """Whether the last accessibility query timed out (cleared by a success)."""
+    return _wedged_at is not None
+
+
+def _child(call: str, *args, timeout: float | None = None):
+    """Run one query in a fresh interpreter; None if it did not answer in time."""
+    global _wedged_at
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "a11y_child.py")
+    try:
+        proc = subprocess.run(
+            [sys.executable, script, call, json.dumps(list(args))],
+            capture_output=True, text=True, timeout=timeout or CHILD_TIMEOUT,
+            env=dict(os.environ, AGENTD_A11Y_INPROC="1"),
+        )
+    except subprocess.TimeoutExpired:
+        _wedged_at = time.time()
+        return None
+    except Exception:
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        result = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    _wedged_at = None
+    return result
 
 
 def _extents(acc):
@@ -124,7 +183,7 @@ def _walk(acc, depth: int, budget: list[int]) -> Node | None:
     return node
 
 
-def tree() -> list[Node]:
+def _tree_inproc() -> list[Node]:
     """Accessible tree for every application on the desktop."""
     if not AVAILABLE:
         return []
@@ -255,7 +314,7 @@ def find(label: str, role: str | None = None) -> Node | None:
     return None
 
 
-def at_point(x: int, y: int) -> Node | None:
+def _at_point_inproc(x: int, y: int) -> Node | None:
     """Deepest accessible element under a screen coordinate.
 
     Used by the recorder to answer "what did the human actually click?" — the
@@ -312,7 +371,7 @@ def _descend_to_point(acc, x: int, y: int, depth: int) -> Node | None:
     return None
 
 
-def window_title_at(x: int, y: int) -> str:
+def _window_title_at_inproc(x: int, y: int) -> str:
     """Title of the top-level window containing a point."""
     if not AVAILABLE:
         return ""
@@ -337,6 +396,36 @@ def window_title_at(x: int, y: int) -> str:
     return ""
 
 
-@functools.lru_cache(maxsize=1)
+def tree() -> list[Node]:
+    """One root per application, nested. In the server this is a child-process
+    query with a timeout; in the child it is the real walk."""
+    if INPROC:
+        return _tree_inproc()
+    if not AVAILABLE:
+        return []
+    result = _child("tree")
+    if not result:
+        return []
+    return [Node.from_dict(d) for d in result]
+
+
+def at_point(x: int, y: int) -> Node | None:
+    if INPROC:
+        return _at_point_inproc(x, y)
+    if not AVAILABLE:
+        return None
+    result = _child("at_point", x, y)
+    return Node.from_dict(result) if result else None
+
+
+def window_title_at(x: int, y: int) -> str:
+    if INPROC:
+        return _window_title_at_inproc(x, y)
+    if not AVAILABLE:
+        return ""
+    result = _child("window_title_at", x, y)
+    return result if isinstance(result, str) else ""
+
+
 def status() -> dict:
-    return {"available": AVAILABLE}
+    return {"available": AVAILABLE, "wedged": wedged()}

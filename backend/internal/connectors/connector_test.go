@@ -710,8 +710,8 @@ func TestPickAndPickInt(t *testing.T) {
 	if got := pickInt(0, 20); got != 20 {
 		t.Errorf("pickInt(0, 20) = %d", got)
 	}
-	if got := pickInt(0, 0); got != 1024 {
-		t.Errorf("pickInt(0, 0) = %d, want the 1024 floor", got)
+	if got := pickInt(0, 0); got != defaultMaxTokens {
+		t.Errorf("pickInt(0, 0) = %d, want the %d default", got, defaultMaxTokens)
 	}
 }
 
