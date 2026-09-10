@@ -411,9 +411,14 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		// Reading is not progress. A run whose last eight steps were all
 		// reads has understood enough; the next step has to change something.
 		if readsOnly(history, 8) && isRead(action) {
-			outcome += "\n(Your last eight steps have all been reads and nothing has been written or " +
-				"run. You have seen these files. Make the first concrete change now -- write one " +
-				"file, or run the thing -- and read again only if that fails.)"
+			// Two ways out, because a builder whose files are finished spent a
+			// whole window re-reading them: it believed the work was done and
+			// nothing told it that done is an action.
+			outcome += "\n(Your last eight steps have all been reads and nothing has been written, " +
+				"run or published. You have seen these files. If the work is finished, finish: " +
+				"publish_work each file (work_name + path) and then reply with the done action " +
+				"and a summary. If it is not finished, make the next concrete change now -- write " +
+				"one file, or run the thing -- and read again only if that fails.)"
 		}
 
 		_ = r.db.AppendStep(ctx, &protocol.StepRecord{

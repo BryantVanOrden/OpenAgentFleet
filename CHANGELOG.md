@@ -92,7 +92,10 @@ semantic versioning.
   again, sixty steps of `cat` and no edit.
 - A command run for the third time in six turns is called out in its result
   as a loop, with the output right there; eight reads in a row with nothing
-  written are called out as reading instead of building.
+  written are called out, with both ways out named: publish and finish with
+  `done` if the work is complete, or make the next change. A builder whose
+  files were finished spent a whole window re-reading them, believing it was
+  done and never told that done is an action.
 - A cut-off reply (finish reason `length`) and a reply that narrated instead
   of acting get different corrections; the raw reply is logged.
 - Once a reply has been cut off, the model is told the limit it is actually
