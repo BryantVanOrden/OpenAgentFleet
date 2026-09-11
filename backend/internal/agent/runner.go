@@ -217,6 +217,8 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		sameCount   int
 		stalls      int
 		parseErrors int
+		// emptyReplies counts consecutive replies with no content at all.
+		emptyReplies int
 		// outputCap is the smallest output length at which a reply of this run
 		// was cut off, 0 while none has been. Once known it is put in the prompt.
 		outputCap int
@@ -367,6 +369,28 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			r.fail(ctx, task, "every model provider failed: "+err.Error())
 			return
 		}
+
+		// An empty reply is not a malformed action. The LAN gateway strips
+		// reasoning blocks server-side and a reply that was all thinking comes
+		// back as no content at all; its maintainer's guidance is "the model
+		// produced no answer, retry". It does not spend one of the three parse
+		// failures, but three in a row is a model that is not answering.
+		if strings.TrimSpace(resp.Text) == "" {
+			emptyReplies++
+			if emptyReplies >= 3 {
+				r.fail(ctx, task, "model returned three empty replies in a row")
+				return
+			}
+			r.log.Warn("empty model reply", "task", task.ID, "step", task.Step+1,
+				"output_tokens", resp.OutputTokens, "truncated", resp.Truncated)
+			history = append(history, turnSummary{
+				Step:    task.Step + 1,
+				Action:  "(empty reply)",
+				Outcome: "Your reply had no content -- all thinking and no answer. Reply with the action object only.",
+			})
+			continue
+		}
+		emptyReplies = 0
 
 		action, err := ParseAction(resp.Text)
 		if err != nil {

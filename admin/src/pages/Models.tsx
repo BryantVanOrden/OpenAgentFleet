@@ -142,7 +142,7 @@ export default function Models({ role }: { role: string }) {
                 model: KIND_HINTS.antigravity.model,
                 vision: true,
                 temperature: 0.2,
-                max_tokens: 1024,
+                max_tokens: 4096,
                 priority: providers.length * 10 + 10,
                 enabled: true,
               })
@@ -1416,7 +1416,7 @@ function EngineModal({
               type="number"
               min={64}
               className={inputClass}
-              value={draft.max_tokens ?? 1024}
+              value={draft.max_tokens ?? 4096}
               onChange={(e) => set({ max_tokens: Number(e.target.value) })}
             />
           </Field>

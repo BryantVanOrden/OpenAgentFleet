@@ -42,7 +42,7 @@ func (s *Server) handleUpsertProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.MaxTokens <= 0 {
-		p.MaxTokens = 1024
+		p.MaxTokens = 4096
 	}
 	if p.Priority <= 0 {
 		p.Priority = 100

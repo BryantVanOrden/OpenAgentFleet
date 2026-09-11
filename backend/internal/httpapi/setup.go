@@ -273,7 +273,7 @@ func draftProvider(base, model string) protocol.Provider {
 		BaseURL:   v1Of(base),
 		Model:     model,
 		Priority:  1,
-		MaxTokens: 2048,
+		MaxTokens: 4096,
 		Enabled:   true,
 	}
 }

@@ -31,9 +31,17 @@ semantic versioning.
 - A markdown fence inside the action (a shell command writing a README with a
   ```bash block) no longer truncates the reply to the README's code block: a
   fence only counts as a wrapper when it comes before the object.
-- Default output limit raised from 1,024 to 4,096 tokens when neither the
-  request nor the provider sets one; a shell command in the `code` field (or
-  Python in `text`) is read as what it is.
+- Output limit defaults are 4,096 tokens everywhere a provider gets one: the
+  connector fallback (was 1,024), the console's new-provider form (was
+  1,024), the provider endpoint's backfill (was 1,024) and the setup wizard's
+  draft (was 2,048). The "gateway caps output at 2,048" seen in the soak was
+  the wizard's 2,048 on the provider record, forwarded faithfully. A shell
+  command in the `code` field (or Python in `text`) is read as what it is.
+- A reply with no content at all is "the model produced no answer": the
+  turn is retried with a one-line correction and does not spend one of the
+  three parse failures. Three empty replies in a row fail the task. The LAN
+  gateway now strips reasoning blocks server-side, and an all-thinking
+  answer arrives empty.
 - A reply that opens with a status sentence and commits in the next ("I'm
   idle. I'll take the code…") is read as the commitment it is, and `PLAN:`
   is found at the start of any sentence. A producer the operator named is
