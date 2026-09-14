@@ -71,6 +71,11 @@ semantic versioning.
 - `read_work` on a bot's own published file says so and opens nothing; it
   used to open a bare copy of index.html in a new Firefox tab each time a
   builder confirmed its files were published.
+- A producer whose part named no verb the stage scorer knew ("run one curl,
+  send Checker the addresses, reply done") finished into a switch with no
+  case for it, and the hand-off vanished without a log line. An unknown
+  stage now hands on like a build, and fix, ship, serve, restart, deploy
+  and republish count as building.
 - Sandboxes answer to three names on their network: `af-<id12>`,
   `af-<full id>` and the bot's own name (`http://checker:8000`).
 - A reply with no content at all is "the model produced no answer": the

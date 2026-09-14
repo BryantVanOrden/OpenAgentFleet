@@ -63,7 +63,7 @@ func (s relayStage) String() string {
 	case stageReview:
 		return "review"
 	}
-	return "unknown"
+	return "part"
 }
 
 // stageOf reads an agent's stated part.
@@ -119,7 +119,11 @@ func stageOf(plan string) relayStage {
 		"spec", "specs", "plan the", "architecture")
 	count(stageBuild, "write", "writes", "writing", "build", "builds", "building",
 		"implement", "implements", "code", "produce", "produces", "create",
-		"creates", "creating", "generate", "generates")
+		"creates", "creating", "generate", "generates",
+		// The verbs a builder is given on a later round, when the thing
+		// exists and the part is to fix, serve or ship it.
+		"fix", "fixes", "fixing", "ship", "serve", "serving", "restart", "deploy",
+		"republish", "install")
 	// "Verify every feature yourself before you report" is a builder checking
 	// its own work, not a testing role. Each self-reference cancels one test
 	// word.
@@ -441,7 +445,13 @@ func (c *collaboration) successorFor(finished collaborator) (collaborator, bool)
 	switch finished.Stage {
 	case stageDesign:
 		want = []relayStage{stageBuild}
-	case stageBuild:
+	case stageBuild, stageUnknown:
+		// An agent whose part named no verb the scorer knows -- "run one
+		// curl, send Checker the addresses, reply done" -- was started as
+		// a producer, and a producer's work goes to whoever tests or
+		// reviews. Round three of the Fleet Tasks soak: Builder finished,
+		// this switch had no case for it, and the hand-off vanished
+		// without a log line.
 		want = []relayStage{stageTest, stageReview}
 	case stageTest:
 		want = []relayStage{stageReview, stageBuild}
