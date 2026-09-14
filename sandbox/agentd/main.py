@@ -210,6 +210,7 @@ def observe(req: ObserveRequest) -> dict:
 class ActRequest(BaseModel):
     action: str
     target: str | None = None
+    url: str | None = None
     role: str | None = None
     mark: int | None = None
     coordinates: list[int] | None = None
@@ -315,6 +316,10 @@ def act(req: ActRequest) -> dict:
             return {"ok": False, "detail": "assert needs an expression"}
         matched, detail = inject.assert_condition(req.text, ALLOW_SHELL)
         return {"ok": True, "matched": matched, "detail": detail}
+
+    if kind == "open_url":
+        ok, detail = inject.open_url(req.url or req.text or req.target or "")
+        return {"ok": ok, "detail": detail}
 
     if kind == "shell":
         if not ALLOW_SHELL:

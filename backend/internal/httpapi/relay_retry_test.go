@@ -32,10 +32,39 @@ func TestStageOfScoresABuilderWhoMentionsTests(t *testing.T) {
 		"write tests.html and test_store.py": stageBuild,
 		// A tie still goes to the more specific reading.
 		"I will write the test plan": stageTest,
+		// Run 17: Checker's clause had no "test" in it and scored as a builder
+		// on "write"; it started building instead of waiting for Builder.
+		"you own quality. When Builder's part reaches you, open the addresses with the open_url " +
+			"action, run through the app as a real user: add three tasks, edit one, complete one, " +
+			"delete one. Write a numbered findings list ordered by severity with repro steps, " +
+			"publish it with publish_work as fleet-tasks/findings.md": stageTest,
 	}
 	for plan, want := range cases {
 		if got := stageOf(plan); got != want {
 			t.Errorf("stageOf(%.60q...) = %s, want %s", plan, got, want)
+		}
+	}
+}
+
+func TestAPartThatWaitsOnAColleagueIsDownstream(t *testing.T) {
+	yes := []string{
+		"When Builder's part reaches you, open the addresses",
+		"Whenever Builder reports a version, test it",
+		"I will wait for Builder to confirm the server is up and send me the URLs",
+		"once Designer publishes the spec, build it",
+	}
+	no := []string{
+		"In /home/agent/fleet-tasks create a single-page task tracker",
+		"I will build the app and tell Checker when it is ready",
+	}
+	for _, s := range yes {
+		if !defersToColleague(s) {
+			t.Errorf("%q waits on a colleague", s)
+		}
+	}
+	for _, s := range no {
+		if defersToColleague(s) {
+			t.Errorf("%q does not wait on anyone", s)
 		}
 	}
 }

@@ -142,7 +142,7 @@ is a loop regardless of pixels.
 ### 1.8 Action vocabulary gaps
 
 Ours: `click double_click right_click type key scroll drag wait wait_for focus
-shell assert ask_human done fail`.
+open_url shell assert ask_human done fail`.
 
 | Missing | Why it matters |
 |---|---|

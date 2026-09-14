@@ -453,7 +453,7 @@ func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg
 	// upstream of a builder will ever hand it work. Whatever it said in its
 	// reply -- "standing by", a plan the parser did not read -- the operator
 	// assigned it a part that makes something, so it starts on that part.
-	if !stage.waitsForWork() {
+	if !stage.waitsForWork() && !defersToColleague(part) {
 		s.log.Info("named to produce; starting on the assigned part rather than waiting",
 			"instance", inst.Name, "stage", stage.String())
 		s.startFromPlan(ctx, inst, msg, part)
@@ -590,7 +590,7 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 	// Whoever was named first starts -- what they need is either in the
 	// catalog or was never coming -- and everyone named after them waits to be
 	// handed it, which is the order the operator wrote down.
-	if s.stageForAgent(ctx, inst, msg, plan).waitsForWork() {
+	if stage := s.stageForAgent(ctx, inst, msg, plan); stage.waitsForWork() || s.partDefers(ctx, inst, msg, plan) {
 		if !s.namedFirst(ctx, inst, msg) {
 			s.waitForHandoff(ctx, inst, msg)
 			return
@@ -869,6 +869,17 @@ func (s *Server) stageForAgent(ctx context.Context, inst protocol.Instance, msg 
 		}
 	}
 	return stageOf(plan)
+}
+
+// partDefers reports whether the operator's assignment for this agent, or
+// failing that its own plan, says it waits on a colleague's output.
+func (s *Server) partDefers(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) bool {
+	if instances, err := s.db.ListInstances(ctx); err == nil {
+		if part := assignmentFor(msg.Content, inst.Name, instances); part != "" {
+			return defersToColleague(part)
+		}
+	}
+	return defersToColleague(plan)
 }
 
 // namedSomeoneElse reports whether the message named agents and this is not

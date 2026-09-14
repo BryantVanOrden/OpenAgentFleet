@@ -67,6 +67,7 @@ func TestEveryAdvertisedActionParses(t *testing.T) {
 		protocol.ActRightClick:   `{"action":"right_click","mark":2}`,
 		protocol.ActType:         `{"action":"type","text":"hello"}`,
 		protocol.ActKey:          `{"action":"key","key":"ctrl+s"}`,
+		protocol.ActOpenURL:      `{"action":"open_url","url":"http://af-2f74f6ae-0bd:8000"}`,
 		protocol.ActScroll:       `{"action":"scroll","amount":5}`,
 		protocol.ActDrag:         `{"action":"drag","coordinates":[1,2],"to":[3,4]}`,
 		protocol.ActWait:         `{"action":"wait"}`,

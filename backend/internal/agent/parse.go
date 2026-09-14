@@ -12,7 +12,7 @@ var validActions = map[protocol.ActionKind]bool{
 	protocol.ActClick: true, protocol.ActDoubleClick: true, protocol.ActRightClick: true,
 	protocol.ActType: true, protocol.ActKey: true, protocol.ActScroll: true,
 	protocol.ActDrag: true, protocol.ActWait: true, protocol.ActWaitFor: true,
-	protocol.ActFocus: true, protocol.ActShell: true, protocol.ActPython: true,
+	protocol.ActFocus: true, protocol.ActOpenURL: true, protocol.ActShell: true, protocol.ActPython: true,
 	protocol.ActSpawnAgent: true, protocol.ActMountTool: true,
 	protocol.ActUnmountTool: true, protocol.ActCallTool: true,
 	protocol.ActDeepSearch: true, protocol.ActRemember: true,
@@ -90,6 +90,15 @@ func ParseAction(raw string) (protocol.Action, error) {
 		}
 		if strings.TrimSpace(firstNonEmpty(a.SubGoal, a.Text, a.Question)) == "" {
 			return a, fmt.Errorf("delegate_task needs a sub_goal")
+		}
+	case protocol.ActOpenURL:
+		// The address arrives in url, text or target; the model has used each.
+		if a.URL == "" {
+			a.URL = firstNonEmpty(a.Text, a.Target)
+		}
+		a.URL = strings.TrimSpace(a.URL)
+		if a.URL == "" {
+			return a, fmt.Errorf("open_url needs the address in url")
 		}
 	case protocol.ActKey:
 		if a.Key == "" {

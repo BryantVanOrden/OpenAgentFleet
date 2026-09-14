@@ -21,8 +21,9 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|call_mcp|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|open_url|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|call_mcp|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
+  "url": "web address to open in the desktop browser (for open_url)",
   "mark": 1,
   "coordinates": [x, y],
   "to": [x, y],
@@ -70,6 +71,9 @@ Rules:
 - One action per turn. Do not batch.
 - After an action that starts something slow (a build, a page load, an install),
   use "wait_for" with the text you expect, not a bare "wait".
+- To open a web address, use "open_url" with "url". Do not click the address bar
+  and type an address: open_url opens it in a browser tab in one step and reports
+  the page title. Follow it with "wait_for" on something you expect on the page.
 - Your work is not finished until you have SEEN it work on screen: run it, open it,
   read the result in the screenshot, and fix what is wrong. Say "done" only for a
   goal you have verified this way, never because a step count is high. If your
@@ -531,6 +535,8 @@ func summarise(a protocol.Action) string {
 			q = a.Text
 		}
 		return fmt.Sprintf("deep_search %q", clip(q, 80))
+	case protocol.ActOpenURL:
+		return "open_url " + clip(a.URL, 80)
 	case protocol.ActWaitFor:
 		return fmt.Sprintf("wait_for %q", clip(a.Text, 60))
 	case protocol.ActAssert:

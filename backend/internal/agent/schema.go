@@ -83,12 +83,20 @@ func buildActionSchema() map[string]any {
 			"description": "What you see, what it means for the goal, and why this action is the next step. Written before the action.",
 		}},
 		{"action", map[string]any{"type": "string", "enum": verbs}},
+		// `text` third: the command for shell, the words for type, the message
+		// for message_peer. It is decided straight after the verb, while the
+		// thought is fresh. Twenty fields further down, the model twice chose
+		// "shell", filled in key, timeout and summary, and never the command.
+		{"text", map[string]any{
+			"type":        "string",
+			"description": "The command for shell, the text to type, the message for message_peer, the memory for remember. Required by those actions.",
+		}},
 	}
 	t := reflect.TypeOf(protocol.Action{})
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		name := strings.Split(f.Tag.Get("json"), ",")[0]
-		if name == "" || name == "-" || name == "thought" || name == "action" {
+		if name == "" || name == "-" || name == "thought" || name == "action" || name == "text" {
 			continue
 		}
 		props = append(props, struct {

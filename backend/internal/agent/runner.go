@@ -221,8 +221,8 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 		emptyReplies int
 		// outputCap is the smallest output length at which a reply of this run
 		// was cut off, 0 while none has been. Once known it is put in the prompt.
-		outputCap int
-		humanReply  string
+		outputCap  int
+		humanReply string
 	)
 
 	for task.Step < task.MaxSteps {
@@ -741,6 +741,17 @@ func (r *Runner) execute(
 			// next belongs at the top, where a small model will still be
 			// looking.
 			opened := ""
+			// A bot reading back its own published file needs no copy opened
+			// on its desktop: the original is on its disk and probably on
+			// screen already. Builder, told to confirm five files were
+			// published, read each and got a new Firefox tab of a bare
+			// index.html each time, then spent steps closing them.
+			if w.CreatedBy == inst.ID {
+				return fmt.Sprintf("This is your own published %s %q (version %d, %d bytes); the original "+
+					"is on your disk. It is in the catalog, so a colleague can read_work it -- no need "+
+					"to republish unless you change it.\n%s%s",
+					w.Kind, w.Name, w.Version, len(w.Content), body, suffix), terminalNone
+			}
 			if path, ok := r.materialize(ctx, inst.ID, w); ok {
 				// A copy of one file, opened locally. When the author is
 				// serving the real thing, the copy is the wrong thing to

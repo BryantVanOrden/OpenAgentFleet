@@ -12,7 +12,9 @@ exception that ends the run.
 from __future__ import annotations
 
 import os
+import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -146,6 +148,101 @@ def focus_window(title: str) -> tuple[bool, str]:
             return False, f"could not focus {title!r}: {out}"
     time.sleep(0.3)
     return True, f"focused {title!r}"
+
+
+BROWSER_SCHEMES = ("http://", "https://", "file://")
+
+
+def _firefox_windows() -> list[str]:
+    """Visible Firefox browser windows, oldest first. Dialogs are not windows."""
+    code, out = _run(["xdotool", "search", "--onlyvisible", "--class", "firefox"], timeout=5)
+    if code != 0:
+        return []
+    wins = []
+    for wid in out.split():
+        _, name = _run(["xdotool", "getwindowname", wid], timeout=5)
+        name = name.strip()
+        if name and name != "Close Firefox":
+            wins.append(wid)
+    return wins
+
+
+def _close_firefox_dialogs() -> int:
+    """Close "Close Firefox" profile-lock dialogs; a stack of sixteen of them
+    is what a tester's desktop looked like after a run of second instances."""
+    code, out = _run(["xdotool", "search", "--name", "^Close Firefox$"], timeout=5)
+    if code != 0 or not out.strip():
+        return 0
+    n = 0
+    for wid in out.split():
+        _run(["xdotool", "windowclose", wid], timeout=5)
+        n += 1
+    return n
+
+
+def open_url(url: str) -> tuple[bool, str]:
+    """Open a web address in the desktop browser, in one step.
+
+    Not gated by the shell switch: opening a page is something the address bar
+    already lets every agent do, only in one step instead of twenty. A tester
+    handed http://af-...:8001 spent nineteen steps on ctrl+l, ctrl+a and the
+    padlock icon and stalled; this is that whole dance as one action.
+
+    Done through the browser window that is already open -- activate it,
+    ctrl+l, type, Return -- rather than by launching `firefox --new-tab`. The
+    launch looked right and was wrong: on the sandbox the second process could
+    not reach the first over D-Bus, fell back to opening the same profile, hit
+    its lock and put up a "Close Firefox" dialog instead of a tab. Sixteen of
+    them, on one desktop, in one run. Only when no browser window exists at
+    all is one launched.
+    """
+    url = (url or "").strip()
+    if not url:
+        return False, "open_url needs an address"
+    # A bare host:port gets http://. Anything that already names a scheme --
+    # javascript:, data:, ftp: -- is judged as it is, not made into "http://javascript:".
+    # A colon followed by digits is a port (host:8001), not a scheme.
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:(?!\d+(/|$))", url):
+        url = "http://" + url
+    if not url.lower().startswith(BROWSER_SCHEMES):
+        return False, f"refusing to open {url!r}: only http, https and file addresses can be opened"
+
+    _close_firefox_dialogs()
+    wins = _firefox_windows()
+    if wins:
+        wid = wins[-1]
+        code, out = _run(["xdotool", "windowactivate", "--sync", wid], timeout=10)
+        if code != 0:
+            return False, f"could not bring the browser window to the front: {out.strip()}"
+        time.sleep(0.4)
+        for step in (["xdotool", "key", "--clearmodifiers", "ctrl+l"],
+                     ["xdotool", "type", "--clearmodifiers", "--delay", "12", "--", url],
+                     ["xdotool", "key", "--clearmodifiers", "Return"]):
+            code, out = _run(step, timeout=30)
+            if code != 0:
+                return False, f"the browser did not take the address: {out.strip()}"
+            time.sleep(0.25)
+        time.sleep(2.5)
+        _, title = _run(["xdotool", "getactivewindow", "getwindowname"], timeout=5)
+        return True, f"opened {url} in the browser (window now: {title.strip() or 'Firefox'})"
+
+    browser = shutil.which("firefox") or shutil.which("xdg-open")
+    if not browser:
+        return False, "no browser is installed on this desktop"
+    env = dict(os.environ)
+    env["DISPLAY"] = os.environ.get("DISPLAY", ":1")
+    try:
+        subprocess.Popen([browser, url], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as e:
+        return False, f"could not start the browser: {e}"
+    # A cold start takes a few seconds; wait for the window rather than guess.
+    for _ in range(20):
+        time.sleep(0.5)
+        if _firefox_windows():
+            break
+    time.sleep(1.5)
+    return True, f"opened {url} in a new browser window; the page should be on screen now"
 
 
 def shell(command: str, allow: bool, timeout: int = 600) -> tuple[bool, str, int]:

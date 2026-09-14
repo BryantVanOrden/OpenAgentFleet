@@ -295,6 +295,7 @@ const (
 	ActWait         ActionKind = "wait"
 	ActWaitFor      ActionKind = "wait_for"      // poll until text appears on screen
 	ActFocus        ActionKind = "focus"         // raise a window by title
+	ActOpenURL      ActionKind = "open_url"      // open a web address in the desktop browser
 	ActShell        ActionKind = "shell"         // gated by Instance.ShellAccess
 	ActPython       ActionKind = "python"        // persistent Python REPL execution in sandbox
 	ActSpawnAgent   ActionKind = "spawn_agent"   // recursive sub-agent delegation
@@ -729,13 +730,18 @@ type Action struct {
 	// Shared work catalog. WorkName is what other agents refer to the item
 	// by, so a second publish under the same name is an edit rather than a
 	// duplicate; WorkKind is "file", "app" or "workspace".
-	WorkName       string         `json:"work_name,omitempty"`
-	WorkKind       string         `json:"work_kind,omitempty"`
-	WorkWorkspace  string         `json:"work_workspace,omitempty"`
+	WorkName      string `json:"work_name,omitempty"`
+	WorkKind      string `json:"work_kind,omitempty"`
+	WorkWorkspace string `json:"work_workspace,omitempty"`
 	// Path is a file on the agent's own machine to publish, for publish_work
 	// when the content is not given inline. A 6 KB app.js pasted into a JSON
 	// string is a lot to ask of a model; a path is a line.
 	Path string `json:"path,omitempty"`
+	// URL is the web address for open_url. A tester handed a colleague's
+	// http://af-...:8001 spent nineteen steps on the address bar (ctrl+l,
+	// ctrl+a, a click on the padlock, repeat) and stalled; opening an address
+	// is one action, not a GUI exercise.
+	URL            string         `json:"url,omitempty"`
 	SessionCookies string         `json:"session_cookies,omitempty"` // cookies JSON for share_session
 	SnapshotName   string         `json:"snapshot_name,omitempty"`   // for snapshot action
 	RollbackID     string         `json:"rollback_id,omitempty"`     // for rollback action

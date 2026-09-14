@@ -84,20 +84,20 @@ func (m *Manager) Tiers() []protocol.TierProfile { return m.tiers }
 
 // CreateRequest is what the API hands to the manager.
 type CreateRequest struct {
-	Name              string                     `json:"name"`
-	ArchetypeID       string                     `json:"archetype_id,omitempty"`
-	SystemPrompt      string                     `json:"system_prompt,omitempty"`
-	PreinstalledTools []string                   `json:"preinstalled_tools,omitempty"`
-	Tier              protocol.Tier              `json:"tier"`
+	Name              string        `json:"name"`
+	ArchetypeID       string        `json:"archetype_id,omitempty"`
+	SystemPrompt      string        `json:"system_prompt,omitempty"`
+	PreinstalledTools []string      `json:"preinstalled_tools,omitempty"`
+	Tier              protocol.Tier `json:"tier"`
 	// Driver overrides the tier's virtualisation backend for this instance.
 	// "qemu" boots the sandbox as a real VM (agentfleet/sandbox:latest-vm,
 	// built by `make sandbox-vm`); empty keeps the tier's default.
-	Driver protocol.Driver `json:"driver,omitempty"`
-	Override          *protocol.ResourceOverride `json:"override,omitempty"`
-	Egress            protocol.EgressPolicy      `json:"egress"`
-	ShellAccess       bool                       `json:"shell_access"`
-	SudoAccess        bool                       `json:"sudo_access"`
-	Labels            map[string]string          `json:"labels,omitempty"`
+	Driver      protocol.Driver            `json:"driver,omitempty"`
+	Override    *protocol.ResourceOverride `json:"override,omitempty"`
+	Egress      protocol.EgressPolicy      `json:"egress"`
+	ShellAccess bool                       `json:"shell_access"`
+	SudoAccess  bool                       `json:"sudo_access"`
+	Labels      map[string]string          `json:"labels,omitempty"`
 	// OrgID is the department the bot is created into. A bot can be shared
 	// with more afterwards; creating into several at once is not a thing
 	// anyone has asked to do.
@@ -309,6 +309,14 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 	}
 
 	containerName := "af-" + inst.ID[:12]
+	// Three names on the sandbox network: the container name, the same form
+	// with the full instance id, and the bot's own name. Checker, told its
+	// colleague's app was at http://af-<id>:8001, typed the full uuid and got
+	// nothing; and a colleague's name is what a model actually remembers.
+	aliases := []string{containerName, "af-" + inst.ID}
+	if h := sanitiseHostname(inst.Name); h != "sandbox" && h != containerName {
+		aliases = append(aliases, h)
+	}
 	spec := containerCreate{
 		Image:    p.Image,
 		Hostname: sanitiseHostname(inst.Name),
@@ -344,7 +352,7 @@ func (m *Manager) boot(ctx context.Context, inst *protocol.Instance, p protocol.
 		},
 		NetworkingConfig: &networkingConfig{
 			EndpointsConfig: map[string]endpointSettings{
-				m.cfg.SandboxNetwork: {Aliases: []string{containerName}},
+				m.cfg.SandboxNetwork: {Aliases: aliases},
 			},
 		},
 	}

@@ -37,6 +37,42 @@ semantic versioning.
   draft (was 2,048). The "gateway caps output at 2,048" seen in the soak was
   the wizard's 2,048 on the provider record, forwarded faithfully. A shell
   command in the `code` field (or Python in `text`) is read as what it is.
+- New action `open_url`: opens a web address in the desktop browser in one
+  step, on every tier including the ones without a shell. A tester handed a
+  colleague's `http://af-…:8001` spent nineteen steps on the address bar
+  (ctrl+l, ctrl+a, the padlock icon, repeat) and stalled; the prompt now
+  says never to drive the address bar for an address.
+- The relay hands work on when the producer's part *ends*, not at its first
+  `publish_work`. Builder published five files at steps 12–16 and spent the
+  next twenty checking them and composing the announcement with the
+  address; Checker was started at step 12 with one file named, no address
+  and a fragment of a thought for "what they reported". The hand-off brief
+  now carries everything the part published, its closing report, and the
+  producer's last message to the successor. A publish from a part parked
+  on `ask_human` still hands on at once.
+- A part that stalled (the same action repeated until the runner gave up)
+  is restarted like a system failure, up to twice, with a note saying what
+  it repeated and to use `open_url` for addresses. Handing a stalled test
+  on as "they did not finish" tested nothing.
+- A hand-off whose successor is busy waits for it instead of being dropped,
+  and a successor running its own take on the same request (a tester that
+  did not wait) is superseded: its run is cancelled and the real work handed
+  to it. A dropped hand-off was a job that died with the work in the catalog
+  and nobody told.
+- A part that says it waits on a colleague ("when Builder's part reaches
+  you", "whenever Builder reports a version", "I will wait for Builder to
+  send me the URLs") is parked to be handed work whatever verbs it uses, and
+  the tester's vocabulary now includes quality, findings, bugs, defects and
+  repro. A tester's clause with no "test" in it scored as a builder on
+  "write" and it started building.
+- `text` is the third property in the action grammar, straight after the
+  verb. Twenty fields down the model twice chose "shell", filled in key,
+  timeout and summary and never the command.
+- `read_work` on a bot's own published file says so and opens nothing; it
+  used to open a bare copy of index.html in a new Firefox tab each time a
+  builder confirmed its files were published.
+- Sandboxes answer to three names on their network: `af-<id12>`,
+  `af-<full id>` and the bot's own name (`http://checker:8000`).
 - A reply with no content at all is "the model produced no answer": the
   turn is retried with a one-line correction and does not spend one of the
   three parse failures. Three empty replies in a row fail the task. The LAN

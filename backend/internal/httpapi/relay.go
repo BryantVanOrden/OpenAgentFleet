@@ -108,8 +108,13 @@ func stageOf(plan string) relayStage {
 	}
 	count(stageReview, "review", "reviews", "reviewing", "audit", "audits", "auditing",
 		"critique", "quality assurance", "qa report")
-	count(stageTest, "test", "tests", "testing", "verify", "verifies", "verifying",
-		"validate", "validates", "check it", "try it")
+	count(stageTest, "test", "tests", "testing", "tester", "verify", "verifies", "verifying",
+		"validate", "validates", "check it", "try it",
+		// Run 17: "you own quality ... run through the app as a real user ...
+		// write a numbered findings list ordered by severity with repro steps"
+		// scored build 1 (write), test 0, and the tester started building.
+		"quality", "qa", "findings", "bug", "bugs", "defect", "defects", "repro",
+		"as a real user", "user would")
 	count(stageDesign, "design", "designs", "designing", "concept", "mechanic", "mechanics",
 		"spec", "specs", "plan the", "architecture")
 	count(stageBuild, "write", "writes", "writing", "build", "builds", "building",
@@ -130,6 +135,34 @@ func stageOf(plan string) relayStage {
 	}
 	return best
 }
+
+// defersToColleague reports whether a part or plan says it waits on somebody
+// else's output -- "when Builder's part reaches you", "whenever Builder
+// reports a version", "I will wait for Builder to send me the URLs". Such a
+// part is downstream whatever verbs it uses, and an agent that starts on it
+// at once tests nothing and is busy when the real work arrives.
+func defersToColleague(text string) bool {
+	m := defersRe.FindStringSubmatch(strings.ToLower(text))
+	if m == nil {
+		return false
+	}
+	subject := m[1]
+	if subject == "" {
+		subject = m[2]
+	}
+	// "tell Checker when it is ready" waits on nothing; the subject has to
+	// be somebody.
+	switch subject {
+	case "it", "this", "that", "they", "everything", "all", "you", "i", "we", "the", "a", "my", "your", "our":
+		return false
+	}
+	return true
+}
+
+var defersRe = regexp.MustCompile(
+	`\b(?:wait(?:s|ing)? (?:for|until) ([a-z0-9'_-]+)|` +
+		`(?:when|whenever|once|after) ([a-z0-9'_-]+)(?: [a-z]+){0,3} ` +
+		`(?:reports?|reaches you|hands?|sends?|publishes|finishes|is ready|is done|is up))\b`)
 
 // collaborator is one agent's place in a job.
 type collaborator struct {
@@ -163,6 +196,25 @@ type collaboration struct {
 	// that said nothing about the work -- a reply the parser could not read, a
 	// provider outage -- and were started again. Bounded by maxPartRetries.
 	Retries map[string]int
+	// Published is what each member has put in the catalog during its
+	// current part, handed on with the part when it ends rather than the
+	// moment the first file lands. See handOffFrom.
+	Published map[string][]publishedItem
+}
+
+// publishedItem is one catalog entry a part produced: how to describe it to
+// the next agent, and the name a fix would be republished under.
+type publishedItem struct {
+	desc, name string
+}
+
+// describePublished lists what a part produced, most recent last.
+func describePublished(items []publishedItem) string {
+	descs := make([]string, 0, len(items))
+	for _, it := range items {
+		descs = append(descs, it.desc)
+	}
+	return strings.Join(descs, "; ")
 }
 
 // maxPartRetries is how many times one agent's part is restarted after a
@@ -252,11 +304,12 @@ func (r *relay) jobFor(request, thread string) *collaboration {
 		return job
 	}
 	job := &collaboration{
-		Request: request,
-		Thread:  thread,
-		Handed:  map[string]bool{},
-		Retries: map[string]int{},
-		Started: time.Now(),
+		Request:   request,
+		Thread:    thread,
+		Handed:    map[string]bool{},
+		Retries:   map[string]int{},
+		Published: map[string][]publishedItem{},
+		Started:   time.Now(),
 	}
 	r.jobs[request] = job
 	// A backstop: jobs are superseded by the next request, but a mistake
@@ -281,6 +334,37 @@ func (r *relay) register(taskID string, job *collaboration, c collaborator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.byTask[taskID] = taskOwner{job: job, member: c}
+}
+
+// notePublished records a catalog item an agent published while its part was
+// still running, to go with the part when it ends.
+func (r *relay) notePublished(taskID string, it publishedItem) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	owner, ok := r.byTask[taskID]
+	if !ok {
+		return
+	}
+	if owner.job.Published == nil {
+		owner.job.Published = map[string][]publishedItem{}
+	}
+	id := owner.member.InstanceID
+	owner.job.Published[id] = append(owner.job.Published[id], it)
+}
+
+// published returns, and forgets, what an agent published during the part a
+// task belongs to. Retries and marathon windows keep the same member, so the
+// list survives them; it is cleared only when the part is handed on.
+func (r *relay) published(taskID string) []publishedItem {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	owner, ok := r.byTask[taskID]
+	if !ok || owner.job.Published == nil {
+		return nil
+	}
+	out := owner.job.Published[owner.member.InstanceID]
+	delete(owner.job.Published, owner.member.InstanceID)
+	return out
 }
 
 // rebind moves a task's place on the job to the task that continues it.
@@ -445,7 +529,19 @@ func (s *Server) watchForHandoffs(ctx context.Context) {
 				result = "They did not finish: " + fmt.Sprint(payload["error"]) +
 					". Whatever they left in the catalog is what there is."
 			}
-			s.handOff(ctx, ev.TaskID, result, "")
+			// What the part published while it ran goes with it. The last
+			// item is what a fix would be republished under.
+			name := ""
+			if items := s.relay.published(ev.TaskID); len(items) > 0 {
+				name = items[len(items)-1].name
+				if state == protocol.TaskFailed {
+					result += " They had published " + describePublished(items) + "."
+				} else {
+					result = "They published " + describePublished(items) +
+						".\nTheir closing report: " + result
+				}
+			}
+			s.handOff(ctx, ev.TaskID, result, name)
 		}
 	}
 }
@@ -455,12 +551,18 @@ func (s *Server) watchForHandoffs(ctx context.Context) {
 // The model's own verdict ("agent gave up", or whatever it said in a fail
 // action) is not one of these; retrying an agent that decided the task was
 // impossible only makes it decide again.
+//
+// A stall -- the same action repeated until the runner gave up -- is neither
+// the machinery nor a verdict. It is a tester stuck on an address bar, and a
+// fresh window told what it repeated and what to do instead gets past it,
+// where handing the job on as "they did not finish" tests nothing.
 func systemFailure(err string) bool {
 	for _, p := range []string{
 		"model would not produce a valid action",
 		"every model provider failed",
 		"could not observe the desktop",
 		"stalled and could not reach the operator",
+		"stalled ",
 	} {
 		if strings.HasPrefix(err, p) {
 			return true
@@ -482,19 +584,29 @@ func (s *Server) retryFailedPart(ctx context.Context, taskID, errText string) bo
 	if err != nil || old == nil {
 		return false
 	}
+	note := fmt.Sprintf("\n\nYour previous attempt at this stopped at step %d, "+
+		"not because of anything you did wrong: %s. Anything you already created is "+
+		"still on disk. Look at what exists, then continue from there rather than "+
+		"starting over. Answer with one JSON action object per turn, nothing else.",
+		old.Step, clipLine(errText, 200))
+	if strings.Contains(errText, "without making progress") {
+		note = fmt.Sprintf("\n\nYour previous attempt at this stalled at step %d, repeating "+
+			"one action that was not working (%s). Do not do that again. To open a web "+
+			"address use open_url with the address -- never the address bar. If a click "+
+			"is not taking, use the keyboard, or ask the author with message_peer for the "+
+			"exact address or a screenshot. Anything you already created is still on "+
+			"disk. Answer with one JSON action object per turn, nothing else.",
+			old.Step, clipLine(errText, 160))
+	}
 	task := &protocol.Task{
 		ID:         store.NewID(),
 		InstanceID: old.InstanceID,
 		OwnerID:    old.OwnerID,
-		Goal: old.Goal + fmt.Sprintf("\n\nYour previous attempt at this stopped at step %d, "+
-			"not because of anything you did wrong: %s. Anything you already created is "+
-			"still on disk. Look at what exists, then continue from there rather than "+
-			"starting over. Answer with one JSON action object per turn, nothing else.",
-			old.Step, clipLine(errText, 200)),
-		State:     protocol.TaskQueued,
-		MaxSteps:  old.MaxSteps,
-		Params:    old.Params,
-		CreatedAt: time.Now().UTC(),
+		Goal:       old.Goal + note,
+		State:      protocol.TaskQueued,
+		MaxSteps:   old.MaxSteps,
+		Params:     old.Params,
+		CreatedAt:  time.Now().UTC(),
 	}
 	job, member, ok := s.relay.retry(taskID, task.ID)
 	if !ok {
@@ -532,8 +644,48 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 	if !ok {
 		return
 	}
-	if !s.readyForHandoff(ctx, successor.InstanceID) {
+	bg := context.WithoutCancel(ctx)
+	// A successor already running its own take on this same request -- a
+	// tester that did not wait -- is superseded by the work actually handed
+	// to it. Run 17: Checker started at the brief, was still poking at a
+	// stale tab when Builder finished, and the hand-off was dropped because
+	// it was "busy".
+	if own, ok := s.relay.liveTaskOnJob(c, successor.InstanceID); ok {
+		if !s.runner.Cancel(own) {
+			_ = s.db.UpdateTaskState(bg, own, protocol.TaskCancelled, 0,
+				"superseded by work handed on from "+finished.Name, "")
+		}
+		s.relay.forget(own)
+		s.log.Info("cancelled a successor's own run to hand it the work", "task", own, "to", successor.Name)
+	}
+	if !s.readyForHandoff(bg, successor.InstanceID) {
+		// Busy on something else. The hand-off waits for it rather than
+		// being dropped: a dropped hand-off is a job that dies with the
+		// work in the catalog and nobody told.
+		s.log.Info("successor is busy; the hand-off waits", "to", successor.Name, "from", finished.Name)
+		go func() {
+			for i := 0; i < 90; i++ {
+				time.Sleep(30 * time.Second)
+				if s.readyForHandoff(bg, successor.InstanceID) {
+					s.startHandoff(bg, c, finished, successor, result, produced)
+					return
+				}
+			}
+			s.log.Warn("hand-off abandoned; the successor never came free", "to", successor.Name)
+		}()
 		return
+	}
+	s.startHandoff(bg, c, finished, successor, result, produced)
+}
+
+// startHandoff tells the thread and starts the successor on the work.
+func (s *Server) startHandoff(ctx context.Context, c *collaboration, finished, successor collaborator, result, produced string) {
+	// The producer's own words to its successor -- "v1 is live at
+	// http://af-...:8001, please test: 1. ... 2. ..." -- are the best brief
+	// there is, and sat in a thread the hand-off never mentioned. Read
+	// before the hand-off line below is posted, so that is not the last word.
+	if last := s.lastWordFrom(ctx, finished.InstanceID, successor.InstanceID, c.Started); last != "" {
+		result += "\n\nTheir last message to you: " + clipLine(last, 700)
 	}
 
 	// Say it in the thread as well as starting the work. A handoff nobody can
@@ -548,7 +700,7 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 			"%s\n\n%s\n\n"+
 			"The original request was: %s",
 		finished.Name, finished.Stage, successor.Stage,
-		clipLine(result, 600), successor.Plan,
+		clipLine(result, 1800), successor.Plan,
 		briefFor(finished.Stage, successor.Stage, produced),
 		machinesNote(finished), c.Request)
 
@@ -566,7 +718,7 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 		// three such waits in twenty minutes on one run.
 		Params: map[string]string{protocol.ParamHandoff: "1"},
 	}
-	bg := context.WithoutCancel(ctx)
+	bg := ctx
 	if err := s.db.CreateTask(bg, task); err != nil {
 		s.log.Warn("could not queue a handoff", "to", successor.Name, "err", err)
 		return
@@ -582,6 +734,29 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 
 	s.log.Info("handed work on", "from", finished.Name, "to", successor.Name,
 		"stage", successor.Stage.String(), "round", c.Round)
+}
+
+// lastWordFrom is the most recent thing one agent said to another (directly or
+// in the fleet channel) since a job began.
+func (s *Server) lastWordFrom(ctx context.Context, from, to string, since time.Time) string {
+	msgs, err := s.db.ListPeerMessages(ctx, to, 200)
+	if err != nil {
+		return ""
+	}
+	last := ""
+	for _, m := range msgs {
+		if m.FromInstanceID != from || !m.CreatedAt.After(since) {
+			continue
+		}
+		if m.Kind == peerSummaryKind || m.Kind == peerSystemKind {
+			continue
+		}
+		if m.ToInstanceID != to && m.ToInstanceID != "broadcast" {
+			continue
+		}
+		last = m.Content
+	}
+	return last
 }
 
 // sandboxHost is the name a bot's machine answers to on the sandbox network,
@@ -699,13 +874,29 @@ func (s *Server) handOffFrom(ctx context.Context, instanceID, produced, name str
 		return
 	}
 	switch task.State {
-	case protocol.TaskRunning, protocol.TaskAwaitingHuman, protocol.TaskQueued:
-		// Still this agent's current work.
+	case protocol.TaskRunning:
+		// Still working: remember it and hand on when the part ends.
+		//
+		// Handing on at the first publish was measured wrong. Builder
+		// published five files at steps 12-16 and spent the next twenty
+		// steps checking them in Firefox and composing the announcement
+		// with the address; Checker was started at step 12 with a brief
+		// that named one file, gave no address and quoted a fragment of a
+		// thought for "what they reported". It guessed a hostname, fought
+		// the address bar for nineteen steps and stalled. The part's own
+		// closing report and its last message are the brief the tester
+		// needs, and both exist only when the part ends.
+		s.relay.notePublished(taskID, publishedItem{desc: produced, name: name})
+		return
+	case protocol.TaskAwaitingHuman, protocol.TaskQueued:
+		// Parked is live -- the case this exists for.
 	default:
 		s.relay.forget(taskID)
 		return
 	}
-	s.handOff(ctx, taskID, "They published "+produced, name)
+	earlier := s.relay.published(taskID)
+	items := append(earlier, publishedItem{desc: produced, name: name})
+	s.handOff(ctx, taskID, "They published "+describePublished(items), name)
 }
 
 // taskFor returns the live task an agent is running as part of a job.
@@ -787,6 +978,19 @@ func (s *Server) readyForHandoff(ctx context.Context, instanceID string) bool {
 		s.log.Info("cleared a parked task to accept a handoff", "task", id)
 	}
 	return true
+}
+
+// liveTaskOnJob returns the task an agent is running as part of this job, if
+// any.
+func (r *relay) liveTaskOnJob(job *collaboration, instanceID string) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for taskID, owner := range r.byTask {
+		if owner.job == job && owner.member.InstanceID == instanceID {
+			return taskID, true
+		}
+	}
+	return "", false
 }
 
 // forget drops a task the relay should no longer act on.
