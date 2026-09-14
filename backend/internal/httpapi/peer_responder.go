@@ -520,7 +520,7 @@ func (s *Server) startFromPeerRequest(ctx context.Context, inst protocol.Instanc
 		Params:    map[string]string{protocol.ParamHandoff: "1"},
 	}
 	me := collaborator{InstanceID: inst.ID, Name: inst.Name, Plan: plan, Stage: stageOf(plan)}
-	if !s.relay.claimRound(job, task.ID, me) {
+	if !s.relay.claimRound(job, task.ID, me, msg.FromInstanceID) {
 		s.log.Info("not starting peer-requested work; the job is out of rounds",
 			"instance", inst.Name, "asker", asker.Name)
 		return

@@ -251,6 +251,11 @@ type relay struct {
 type taskOwner struct {
 	job    *collaboration
 	member collaborator
+	// asker is the colleague whose message started this task, for a
+	// peer-requested run; empty for a part started by the operator or the
+	// relay. When that colleague's own part ends, this run already is the
+	// hand-off.
+	asker string
 }
 
 func newRelay() *relay {
@@ -660,7 +665,17 @@ func (s *Server) handOff(ctx context.Context, taskID, result, produced string) {
 	// to it. Run 17: Checker started at the brief, was still poking at a
 	// stale tab when Builder finished, and the hand-off was dropped because
 	// it was "busy".
-	if own, ok := s.relay.liveTaskOnJob(c, successor.InstanceID); ok {
+	if own, asker, ok := s.relay.liveTaskOnJob(c, successor.InstanceID); ok {
+		// Started by the finisher's own message ("v1 is live at ..., please
+		// test") it already is this hand-off. Round four: Builder messaged
+		// Checker, Checker began testing, Builder replied done fifteen
+		// seconds later; cancelling the test to restart it from the brief
+		// would throw away the only thing that was going right.
+		if asker == finished.InstanceID {
+			s.log.Info("successor is already on it from the finisher's own request",
+				"from", finished.Name, "to", successor.Name, "task", own)
+			return
+		}
 		if !s.runner.Cancel(own) {
 			_ = s.db.UpdateTaskState(bg, own, protocol.TaskCancelled, 0,
 				"superseded by work handed on from "+finished.Name, "")
@@ -937,7 +952,7 @@ func (r *relay) jobOfInstance(instanceID string) (*collaboration, collaborator, 
 // claimRound spends one of a job's rounds on a peer-requested task and
 // registers it. It reports false when the job has no rounds left, which is
 // what stops two agents asking each other for things forever.
-func (r *relay) claimRound(job *collaboration, taskID string, c collaborator) bool {
+func (r *relay) claimRound(job *collaboration, taskID string, c collaborator, asker string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if job.Round >= maxRelayRounds {
@@ -948,13 +963,19 @@ func (r *relay) claimRound(job *collaboration, taskID string, c collaborator) bo
 	for _, m := range job.Members {
 		if m.InstanceID == c.InstanceID {
 			found = true
+			// The stage it registered with -- the tester the operator named
+			// -- outranks whatever its reply to a colleague happened to
+			// score, so that when this run ends the work flows on by role.
+			if c.Stage == stageUnknown {
+				c.Stage = m.Stage
+			}
 			break
 		}
 	}
 	if !found {
 		job.Members = append(job.Members, c)
 	}
-	r.byTask[taskID] = taskOwner{job: job, member: c}
+	r.byTask[taskID] = taskOwner{job: job, member: c, asker: asker}
 	return true
 }
 
@@ -992,15 +1013,15 @@ func (s *Server) readyForHandoff(ctx context.Context, instanceID string) bool {
 
 // liveTaskOnJob returns the task an agent is running as part of this job, if
 // any.
-func (r *relay) liveTaskOnJob(job *collaboration, instanceID string) (string, bool) {
+func (r *relay) liveTaskOnJob(job *collaboration, instanceID string) (taskID, asker string, ok bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for taskID, owner := range r.byTask {
+	for id, owner := range r.byTask {
 		if owner.job == job && owner.member.InstanceID == instanceID {
-			return taskID, true
+			return id, owner.asker, true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // forget drops a task the relay should no longer act on.

@@ -17,11 +17,17 @@ func TestBuilderFinishingAfterAPeerRequestStillHandsToChecker(t *testing.T) {
 	if !ok || asker.Name != "Builder" {
 		t.Fatalf("Builder should be on the job: ok=%v asker=%s", ok, asker.Name)
 	}
-	if !r.claimRound(job, "checker-task", tester) {
+	// Checker's reply to Builder scored no stage; it keeps the tester's role
+	// it was parked with, so its own finish will flow back to Builder.
+	if !r.claimRound(job, "checker-task", member("t", "Checker", stageUnknown), "b") {
 		t.Fatal("Checker should be able to claim a round")
 	}
-	if own, ok := r.liveTaskOnJob(job, "t"); !ok || own != "checker-task" {
-		t.Fatalf("Checker's peer-requested task should be live on the job, got %q %v", own, ok)
+	own, askedBy, ok := r.liveTaskOnJob(job, "t")
+	if !ok || own != "checker-task" || askedBy != "b" {
+		t.Fatalf("Checker's peer-requested task should be live on the job with Builder as asker, got %q %q %v", own, askedBy, ok)
+	}
+	if st := r.byTask["checker-task"].member.Stage; st != stageTest {
+		t.Fatalf("Checker should keep the tester's stage, got %s", st)
 	}
 
 	c, finished, successor, ok := r.next("task-1")

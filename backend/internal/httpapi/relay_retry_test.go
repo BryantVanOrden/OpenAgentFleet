@@ -175,11 +175,11 @@ func TestPeerRequestsSpendRoundsAndStopAtTheLimit(t *testing.T) {
 	}
 	b := member("b", "Builder", stageBuild)
 	for i := 0; i < maxRelayRounds; i++ {
-		if !r.claimRound(job, fmt.Sprintf("peer-%d", i), b) {
+		if !r.claimRound(job, fmt.Sprintf("peer-%d", i), b, "t") {
 			t.Fatalf("round %d should be allowed", i)
 		}
 	}
-	if r.claimRound(job, "peer-too-many", b) {
+	if r.claimRound(job, "peer-too-many", b, "t") {
 		t.Fatal("the round limit should stop the ping-pong")
 	}
 	if len(job.Members) != 2 {
