@@ -174,6 +174,11 @@ semantic versioning.
   under the newest message with the step count. Honours reduced-motion.
 
 ### Docs
+- A landing page at `site/` (plain HTML, CSS and JavaScript, no build): an
+  agent drives a mock desktop in the hero and hovering hands you the
+  mouse; scrolling scrubs the perceive-decide-act loop, the fleet hand-off
+  and the operator take-over; light and dark; deployed to GitHub Pages by
+  `.github/workflows/pages.yml`.
 - Architecture, Security and Roadmap now describe sessions, devices and
   `fleetctl host`; the security model states the folder jail, the approval
   prompt and what `--yes` gives up. README hero recaptured on the current
