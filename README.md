@@ -26,6 +26,8 @@
   <img src="https://img.shields.io/badge/Linux_Desktop-Sandboxed_XFCE-E95420?style=for-the-badge&logo=linux&logoColor=white" alt="Linux Desktop" />
 </p>
 
+<p align="center"><a href="https://bryantvanorden.github.io/OpenAgentFleet/"><strong>bryantvanorden.github.io/OpenAgentFleet</strong></a> — the tour, with an agent driving a desktop you can take over.</p>
+
 <p align="center">
   <strong>Self-hosted computer-use agents. Every agent gets its own Linux desktop.</strong><br>
   Watch them work live in your browser — and click into the screen to take over at any moment.<br>
