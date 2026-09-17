@@ -1,33 +1,31 @@
 ---
-name: 🐛 Bug Report
-about: Create a report to help us improve OpenAgentFleet (Non-security bugs only)
-title: "[BUG] "
+name: Bug report
+about: Something is broken. Security problems go through SECURITY.md instead.
+title: ""
 labels: ["bug"]
 assignees: ''
 ---
 
-> [!CAUTION]
-> **Is this a security vulnerability or sandbox breakout?**
-> **DO NOT** use this public form. Report security issues privately per our [Security Policy](https://github.com/BryantVanOrden/OpenAgentFleet/blob/master/SECURITY.md) to `supermanismebvo123@gmail.com`.
+### What happened
 
-### 📌 Describe the Bug
-A clear and concise description of what the bug is.
+### How to reproduce it
 
-### 🔁 Reproduction Steps
-1. Deploy bot archetype `...`
-2. Run goal `...`
-3. Observe error `...`
+1.
+2.
+3.
 
-### 💻 Environment & Versions
-- **OS**: [e.g. Ubuntu 22.04, macOS 14, Windows 11]
-- **Deployment**: [e.g. Docker Compose, Native Go]
-- **Vision Model**: [e.g. Gemini 2.5 Pro, Claude 3.5 Sonnet, Ollama qwen2.5vl]
-- **Component**: [e.g. Orchestrator, Sandbox Agentd, Python SDK, Admin Web, Flutter App]
+### What you expected
 
-### 📜 Relevant Logs or Error Output
+### Where
+
+- OS:
+- How it is running (Docker Compose, `make backend`, other):
+- Model provider and model:
+- Component (orchestrator, sandbox agentd, console, app, SDK):
+- Version or commit:
+
+### Logs
+
 ```text
-(Paste relevant logs here)
+docker compose logs api --since 10m, or the relevant part of it
 ```
-
-### 💡 Expected Behavior
-A clear and concise description of what you expected to happen.

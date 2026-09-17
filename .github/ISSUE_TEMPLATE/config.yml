@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 🛡️ Report a Security Vulnerability
+  - name: Report a security vulnerability
     url: https://github.com/BryantVanOrden/OpenAgentFleet/security/advisories/new
-    about: Please report security vulnerabilities privately via GitHub Security Advisories or by emailing supermanismebvo123@gmail.com.
-  - name: 💬 Community Discussion & Questions
+    about: Privately, through a GitHub security advisory. See SECURITY.md.
+  - name: Questions and discussion
     url: https://github.com/BryantVanOrden/OpenAgentFleet/discussions
-    about: Ask questions, share bot archetypes, and discuss workflows with the community.
+    about: Ask how something works, show what you built, argue about the roadmap.

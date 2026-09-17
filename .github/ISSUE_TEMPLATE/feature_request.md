@@ -1,19 +1,17 @@
 ---
-name: 💡 Feature Request
-about: Suggest an idea or new bot archetype for OpenAgentFleet
-title: "[FEATURE] "
+name: Feature request
+about: Something the fleet should be able to do.
+title: ""
 labels: ["enhancement"]
 assignees: ''
 ---
 
-### 🚀 Feature Summary
-A clear and concise description of the proposed feature or archetype.
+### The problem
 
-### 🎯 Motivation & Problem Statement
-What problem does this feature solve? What workflows would it enable?
+<!-- What you are trying to get done and what stops you today. -->
 
-### 🛠️ Proposed Solution & Architecture
-Describe how this could be implemented across Go Backend, Sandbox `agentd`, React Admin, Python SDK, or Flutter Companion.
+### What you want instead
 
-### 💡 Alternative Solutions Considered
-Any alternative approaches or workarounds you've considered.
+### What you have tried
+
+<!-- Workarounds, other tools, a half-built version. Optional. -->
