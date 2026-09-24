@@ -125,6 +125,29 @@ cd backend
 go test -v ./...
 ```
 
+The store tests, and the tests that exercise it through the API, skip
+unless `AGENTFLEET_TEST_DSN` points at a throwaway Postgres (they create and
+drop tables):
+
+```bash
+docker run -d --name af-testdb -e POSTGRES_PASSWORD=test -e POSTGRES_DB=agentfleet_test -p 55439:5432 postgres:16
+AGENTFLEET_TEST_DSN=postgres://postgres:test@127.0.0.1:55439/agentfleet_test?sslmode=disable go test ./...
+```
+
+The ticket engine (`internal/tickets`) and the external-agent adapters
+(`internal/external`) test against in-memory fakes, so they need neither a
+database nor a CLI; run them with `-race`, since both are concurrent.
+
+### Python SDK and `fleetctl`
+```bash
+cd sdk/python
+python -m unittest discover -s tests
+```
+
+`test_runtimes.py` drives the host's Claude Code, Codex and Hermes runners
+against fake CLIs placed with `AGENTFLEET_<RUNTIME>_BIN`, so no agent CLI
+needs to be installed.
+
 ### Sandbox Python tests
 ```bash
 cd sandbox/agentd
@@ -137,6 +160,14 @@ python -m unittest discover -p "test_*.py"
 ```bash
 cd admin
 npm run build
+npx vitest run
+```
+
+### Flutter app
+```bash
+cd mobile
+flutter analyze
+flutter test
 ```
 
 ### End-to-End Smoke Tests
@@ -195,6 +226,8 @@ as a unit test.
 | `backend/internal/fleet/` | Docker Engine REST API client, hardware tier management, cgroups and quota enforcement |
 | `backend/internal/connectors/` | Model gateways (OpenAI, Anthropic, Gemini, Antigravity, Ollama, OpenAI-compatible), the fallback chain, and role-based routing through model combinations |
 | `backend/internal/pipeline/` | Multi-bot DAG pipelines. Independent stages run concurrently; edge conditions decide whether a stage runs or is skipped |
+| `backend/internal/tickets/` | The ticket engine: checkout, blockers, reviews and verdicts, escalation up the org chart, liveness, verifiers, budgets |
+| `backend/internal/external/` | Runs tickets on external agents: Claude Code, Codex and Hermes through `fleetctl host`, OpenClaw over its gateway protocol, webhooks; per-run callback tokens |
 | `backend/internal/swarm/` | Shared-blackboard multi-bot swarms, with a task per member and peer review of artifacts |
 | `backend/internal/memory/` | Episodic memory behind `remember` and `recall`: private per bot, plus a shared fleet pool |
 | `backend/internal/mcp/` | MCP client — JSON-RPC 2.0 over stdio and Streamable HTTP |
@@ -213,4 +246,5 @@ as a unit test.
 | `sandbox/agentd/` | In-sandbox daemon (`main.py`, `a11y.py`, `capture.py`, `inject.py`, `recorder.py`, `repl.py`, `som.py`, `snapshot.py`, `search.py`, `voice.py`) |
 | `admin/` | React 19 + TypeScript + Vite + Tailwind CSS admin console |
 | `mobile/` | Flutter companion app with live desktop streaming and push notification triage |
+| `sdk/python/` | The `open-agent-fleet` package: the Python SDK, the `fleetctl` CLI, and `fleetctl host` with its agent-CLI runners (`runtimes.py`) |
 | `scripts/` | `doctor.sh` preflight, `smoke.sh` end-to-end test, `quickstart.sh` / `quickstart.ps1` bootstrap, `screenshots.mjs` |

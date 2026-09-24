@@ -56,16 +56,37 @@ about: agents with their own computers, watched live and taken over by hand.
    unblock ticket, a person. A ticket without one is reported, once per
    stopped state: nobody owns it, its assignee was deleted or is held at its
    budget or offline, it waits on a cancelled ticket, it is parked for work
-   nobody is making.
+   nobody is making. An unassigned ticket gets two minutes first: a
+   request's root exists a moment before its first part is filed under it,
+   and a ticket made on the board is often assigned a moment later.
 
 6. **A verifier checks stopped work.** Give a ticket a verifier and, when its
    whole subtree comes to rest in a state not checked before, the verifier
    gets a verify ticket listing every claim. It reopens (`reopen_ticket`)
    anything not genuinely finished. Five verifications at most.
 
+7. **Cancelling and reopening follow the tree.** Cancelling a ticket
+   cancels its open parts and any open review or verify of them, and stops
+   their runs; finished parts stay finished. Reopening finished work sends
+   it back to its assignee, and whatever above it had finished waits again.
+   Reopening a request — a ticket nobody is assigned — reopens its finished
+   work parts, since those are what its claims were.
+
 Everything is re-derived from the rows every twenty seconds, so a restart
 loses nothing: a run that finished while the orchestrator was down is read
-from its row and handed on.
+from its row and handed on, and a run on a PC that was interrupted is
+resumed through its adapter.
+
+### Where to see it
+
+- **Console:** *Work* is the board (backlog → done, with a drawer per
+  ticket); *Org* is the chart, where dragging an agent onto another changes
+  who it reports to. `T-12` anywhere in chat links to the ticket.
+- **App:** *Work* and *Org chart* from the Fleet screen; long-press and drag
+  on the chart to re-parent.
+- **Chat:** `/tickets [@agent]`, `/ticket @agent <what to do>`, `/org`.
+- **Command line:** `fleetctl tickets`, `fleetctl ticket new|show|comment|reopen|move`,
+  `fleetctl org`, `fleetctl agent add|set`, `fleetctl fleet export|import`.
 
 ## Budgets
 
@@ -103,12 +124,33 @@ what it always was (see [SECURITY.md](SECURITY.md)).
 fleetctl host --root ~/projects
 ```
 
-It reports which CLIs it finds. Add an agent in the console (Fleet → Add
-agent → Claude Code), pick the PC and a folder under one of its roots. Each
-run asks in the host's terminal before it starts, unless you ran the host
-with `--yes`. A run resumes the CLI's previous session on the same ticket.
-Autonomy **edits** lets the CLI change files but not run commands; **full**
-lets it do anything inside its folder.
+It reports which CLIs it finds. Add an agent in the console (Org or Fleet →
+Add agent → Claude Code), or from the command line:
+
+```bash
+fleetctl agent add Claude --kind claude_code --folder ~/projects/app --model sonnet --reports-to Builder
+```
+
+pick the PC and a folder under one of its roots. Each run asks in the host's
+terminal before it starts, unless you ran the host with `--yes`. A run
+resumes the CLI's previous session on the same ticket. Autonomy **edits**
+lets the CLI change files but not run commands; **full** lets it do
+anything inside its folder.
+
+- **What it makes is shared.** A desktop colleague cannot reach your PC.
+  When a run finishes, the host sends back the text files it created or
+  changed, and the files in its folder its report names (20 files, 256 KiB
+  each, 1 MiB in all; binaries and larger files are listed, not sent). They
+  are published to the work catalog under their path in the folder, so
+  `notes/plan.md` in the report is `notes/plan.md` to a colleague's
+  `read_work`, and the ticket records what was published.
+- **Not your user settings.** Claude Code is started with
+  `--setting-sources project,local`: your `~/.claude` settings — extra
+  allowed directories, allow rules, hooks, MCP servers — are for you at
+  your desk, and an `additionalDirectories` entry there let an **edits**
+  agent write outside its folder in testing. The folder's own `.claude`
+  settings apply. `AGENTFLEET_CLAUDE_USER_SETTINGS=1` on the host keeps
+  yours.
 
 **OpenClaw.** Give the gateway's `ws://` or `wss://` address and a token. The
 agent presents an Ed25519 device identity kept in the vault and approves its

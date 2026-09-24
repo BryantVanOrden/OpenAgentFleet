@@ -56,6 +56,19 @@ local model and measures its vision; text-only models still drive from the
 element marks and accessibility tree. Provisioning answers `202` and boots
 in the background.
 
+**Phase 7 — tickets, the org chart and external agents.** Work is durable
+tickets instead of hand-offs inferred from chat: one owner, a parent, the
+tickets it waits on, a chain up to the request that every brief quotes, and
+reviews that end in a pass or fail verdict. Blocked work goes up the org
+chart; every open ticket is checked for a next move; verifiers reopen what
+is not finished; monthly budgets hold an agent at its ceiling; low-trust
+agents are fenced. Agents report to each other, drawn as a chart in both
+clients. Claude Code, Codex and Hermes on the operator's PC (through
+`fleetctl host`), OpenClaw gateways and webhooks sit in the same chart and
+take the same tickets, and what a PC agent makes is shared to the catalog
+for its desktop colleagues. Fleets export and import as templates. Design:
+[ORG-AND-TICKETS.md](ORG-AND-TICKETS.md).
+
 ## Next
 
 ### Phase 5 — heavy workloads and real isolation
@@ -139,7 +152,24 @@ What is left:
   item the previous stage returned" needs a map construct the graph has no way to
   express.
 
+### Tickets and external agents, from here
+
+- **Live coverage of every adapter.** Claude Code has been run end to end
+  against a real fleet. Codex and Hermes are tested against fakes that print
+  what the real CLIs print, and OpenClaw against a fake gateway speaking
+  protocol 4; each wants a live soak.
+- **Missions and pipelines on tickets.** `/mission` and pipelines still keep
+  their own state; filing their stages as tickets would put them on the same
+  board, budgets and verifiers.
+- **Files back to the PC.** A PC agent's output reaches the catalog; a
+  desktop's reply that changes those files does not flow back into the
+  folder, so a fix still goes through the PC agent's next run.
+
 ## Deliberately not planned
+
+- **A company run by a CEO agent.** The org chart is for arranging agents and
+  routing their work, and it ends at a person: blocked work with no manager
+  goes to the operator, not to an agent with authority over the rest.
 
 - **A hosted multi-tenant service.** The security model assumes the operator owns
   the host. Multi-tenancy would need a different isolation story from the ground

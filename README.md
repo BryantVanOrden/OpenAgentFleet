@@ -31,7 +31,8 @@
 <p align="center">
   <strong>Self-hosted computer-use agents. Every agent gets its own Linux desktop.</strong><br>
   Watch them work live in your browser — and click into the screen to take over at any moment.<br>
-  Your hardware, your models, phone alerts when an agent needs a human.
+  Your hardware, your models, phone alerts when an agent needs a human.<br>
+  Arrange them in an org chart, hand out work as tickets, and put Claude Code, Codex, Hermes or OpenClaw beside them.
 </p>
 
 <p align="center">
@@ -392,6 +393,14 @@ fleetctl run <bot_id> "Refactor backend authentication and run tests" --wait
 
 # Let Oaf work on this machine, inside one folder, asking before it runs anything
 fleetctl host --root ~/projects/site
+
+# Put the Claude Code on this machine in the fleet, reporting to Builder
+fleetctl agent add Claude --kind claude_code --folder ~/projects/site --reports-to Builder
+
+# Tickets and the org chart
+fleetctl ticket new "Fix the checkout bug" --to Claude --review-by Checker
+fleetctl tickets
+fleetctl org
 
 # Multi-agent swarms & voice synthesis
 fleetctl swarm list

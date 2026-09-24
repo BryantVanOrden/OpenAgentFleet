@@ -143,6 +143,7 @@ Departments are organisations. There is no `/api/departments` prefix.
 | `GET` | `/api/instances/{id}/observe` | any | One observation: WebP frame, active window, AT-SPI tree, frame hash. |
 | `POST` | `/api/instances/{id}/act` | operator | Manual takeover — send one action as if the agent had chosen it. |
 | `PUT` | `/api/instances/{id}/access` | operator | Shell access, sudo, voice, voice speed (`voice_speed`, 0.5–2.0, or 0 for the app default) and the bot's personality (`system_prompt`). The personality is read when a prompt is built, so a change lands on the next reply without restarting anything. |
+| `PUT` | `/api/instances/{id}/profile` | operator | The agent's place in the org chart and its limits: any of `title`, `capabilities`, `reports_to` (an agent id, or `""` for the operator; a loop is refused), `trust` (`standard`\|`low`), `connection` and `token` for an external agent, and `budget_month_usd` / `budget_warn_pct` (admin only). See [section 5b](#5b-tickets-and-the-org-chart). |
 | `PUT` | `/api/instances/{id}/org` | operator | Which departments the bot belongs to. Takes `org_ids` — the whole set, replaced wholesale, so two administrators editing at once disagree about the result rather than composing into a third set neither chose. The older single `org_id` form is still accepted. A bot can be in several departments; a member of any of them can reach it. |
 | `GET` | `/api/instances/{id}/grants` | operator | Per-bot permission grants. |
 | `PUT` | `/api/instances/{id}/grants` | operator | Set a per-bot permission grant. |
@@ -170,10 +171,78 @@ setting the setuid bit on `/usr/bin/sudo`, and can be changed later through
 `PUT /api/instances/{id}/access`. See [SECURITY.md](SECURITY.md) for what that
 does and does not guarantee.
 
+**External agents.** The same endpoint adds an agent that is not a desktop,
+answering `201` at once (nothing is provisioned):
+
+```json
+{
+  "name": "Claude", "kind": "claude_code",
+  "title": "Staff engineer", "reports_to": "<builder id>",
+  "capabilities": "Edits the web app in a real checkout",
+  "budget_month_usd": 20, "trust": "standard",
+  "connection": { "device_id": "<pc id>", "cwd": "C:/work/app", "model": "sonnet", "autonomy": "edits" }
+}
+```
+
+`kind` is `claude_code`, `codex` or `hermes` (a PC running `fleetctl host`
+that reported that CLI; `cwd` must be under one of its roots), `openclaw`
+(`connection.url` is `ws://` or `wss://`, `agent_id` optional, `token`
+required) or `webhook` (`connection.url` is `http(s)://`, `token` optional).
+A token is sealed in the vault and never returned. Desktops take the same
+org fields. Start, stop, pause and resume answer `400` for an external
+agent: it has no desktop.
+
 ### `POST /api/instances/{id}/act`
 Manual takeover. `shell`, `python`, `mount_tool` and `call_tool` are refused with
 `403` when the instance has shell access disabled — the same gate the agent loop
 applies, deliberately duplicated so takeover cannot be used to route around it.
+
+---
+
+## 5b. Tickets and the org chart
+
+Work is tickets; agents report to each other. How the engine moves work —
+checkout, blockers, reviews and verdicts, escalation, verifiers, budgets —
+is in [ORG-AND-TICKETS.md](ORG-AND-TICKETS.md). `{id}` for a ticket accepts
+its id or its reference (`T-12`, `#12`, `12`).
+
+| Method | Path | Role | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/tickets` | any | `?status=todo,in_progress&assignee=<id>&parent=<id>&roots=1&limit=` → `[TicketView]`, newest first. |
+| `POST` | `/api/tickets` | operator | `{title, description?, kind?, status?, priority?, assignee_id?, parent_id?, blocked_by?: [ref], reviewer_id?, verifier_id?, budget_usd?, thread?}` → `201 TicketView`. It starts when its blockers are done and its assignee is free. |
+| `GET` | `/api/tickets/{id}` | any | `{ticket, ancestry[], children[], blockers[], dependents[], comments[], runs[]}`. |
+| `PATCH` | `/api/tickets/{id}` | operator | Any of `title, description, status, priority, assignee_id, reviewer_id, verifier_id, parent_id, budget_usd, blocked_by`. `in_progress` is refused (a run takes a ticket). A status change stops a live run. **Cancelling cancels the ticket's open descendants and any open review or verify of them.** |
+| `DELETE` | `/api/tickets/{id}` | operator | Stops its run; children move up to its parent. `204`. |
+| `POST` | `/api/tickets/{id}/comments` | operator | `{body}` → `TicketComment`. |
+| `POST` | `/api/tickets/{id}/reopen` | operator | `{reason}` → `TicketView`. Sends finished work back with what is missing; whatever above it had finished waits again. A ticket with no assignee (a request) reopens its finished work parts instead. `403` while it is being worked. |
+| `GET` | `/api/org` | any | `{nodes: [OrgNode], kinds: [{kind, label, on_device}]}` — every agent you can see, who it reports to, what it is working on, spend this month against its budget, and whether it can take work now. |
+| `GET` | `/api/fleet/export` | admin | The fleet as a `FleetTemplate` (version 1): agents, kinds, titles, reporting lines by name, capabilities, budgets, trust, and connections without device ids or tokens. |
+| `POST` | `/api/fleet/import` | admin | `{template, dry_run?, rename?}` → `{created[], skipped[], renamed[], notes[]}`. A taken name is skipped, or renamed ("Builder 2") with `rename`. |
+
+Errors: `400` for a bad reference or field, including a reporting loop or
+a blocker cycle; `403` for a refused move (a low-trust agent handing out
+work, reopening what is being worked); `409` when another run holds the
+ticket.
+
+The shapes (`TicketView`, `TicketComment`, `OrgNode`, `AgentConnection`)
+are in [ORG-AND-TICKETS.md](ORG-AND-TICKETS.md#shapes). Comment `kind` is
+one of `comment`, `system`, `result`, `verdict`, `published`, `retry` and
+`review_brief`.
+
+### Run callbacks
+
+For external agents. Authenticated with the run's own token
+(`Authorization: Bearer afr_…`, 48 hours, one run), not a user — it is what
+a webhook receives as `callback.token` and a local CLI finds in
+`$AGENTFLEET_RUN_TOKEN`.
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/runs/{taskId}` | The run's ticket, its brief and its colleagues. |
+| `POST` | `/api/runs/{taskId}/progress` | `{text}` — a line in the run's steps. |
+| `POST` | `/api/runs/{taskId}/complete` | `{status: done\|failed, result, verdict?, cost_usd?, input_tokens?, output_tokens?, model?}` — finishes a webhook run that answered `202`. |
+| `POST` | `/api/runs/{taskId}/tickets` | `{target, title, text}` — hands part of the ticket to a colleague by name; the run's ticket waits for it. Refused for a low-trust agent. |
+| `POST` | `/api/runs/{taskId}/comments` | `{body}` — a note on the run's ticket. |
 
 ---
 
@@ -397,10 +466,11 @@ recorded as `running` indefinitely.
 | `POST` | `/api/oaf/sessions/{id}/attachments` | operator | Upload one file (multipart `file`, or a raw body with `Content-Type` and `X-Filename`) → `{id, name, content_type, size, url}`. Images reach the model as pictures, text files inline. |
 | `GET` | `/api/oaf/sessions/{id}/attachments/{attachmentId}/{name}` | any | The stored file. |
 | `GET` | `/api/oaf/devices` | any | Your devices with `online` (seen in the last 90 s). |
-| `POST` | `/api/oaf/devices` | operator | Register or refresh a device: `{id?, name, kind: "pc"|"phone", platform?, roots: [folder], auto_approve}`. What `fleetctl host` and the phone call. |
+| `POST` | `/api/oaf/devices` | operator | Register or refresh a device: `{id?, name, kind: "pc"|"phone", platform?, roots: [folder], auto_approve, runtimes?: ["claude_code"|"codex"|"hermes"]}`. What `fleetctl host` and the phone call; `runtimes` are the agent CLIs the host found. |
 | `DELETE` | `/api/oaf/devices/{id}` | operator | Forget a device; sessions bound to it lose their device. |
 | `GET` | `/api/oaf/devices/{id}/jobs?wait=20` | operator | Long-poll for pending jobs (claims them). The device's heartbeat. |
-| `POST` | `/api/oaf/devices/{id}/jobs/{jobId}/result` | operator | `{state: done|failed|denied, result?, error?}`. |
+| `POST` | `/api/oaf/devices/{id}/jobs/{jobId}/result` | operator | `{state: done|failed|denied, result?, error?}`. For an `agent_run` job `result` is JSON: `{answer, session_id?, model?, input_tokens?, output_tokens?, cached_tokens?, cost_usd?, is_error?, error?, exit_code?, files?: [{path, content}], unshared?: [path]}` — `files` are published to the work catalog under their path. |
+| `POST` | `/api/oaf/devices/{id}/jobs/{jobId}/progress` | operator | `{events: [{kind: text|tool|status, text}]}` → `{cancel: bool}`. A running `agent_run` job reports every few seconds and stops when told to. |
 | `GET` | `/api/swarms` | any | List swarms, newest first. |
 | `POST` | `/api/swarms` | operator | Create a swarm and start a task per member. |
 | `GET` | `/api/swarms/{id}` | any | One swarm and its blackboard. |
@@ -775,6 +845,9 @@ The topics emitted by the backend, in full:
 | `chat` | A chat message. |
 | `manual.act` | An operator sent an action through takeover. |
 | `record.started` / `record.stopped` | A demonstration recording began or ended. |
+| `ticket` | A ticket was created or changed (payload: `Ticket`). |
+| `ticket.comment` | A comment was added to a ticket (payload: `TicketComment`). |
+| `work` | Something was published to the work catalog (payload: `WorkItem`). |
 | `skill.refined` | A skill was refined from a trace. |
 | `skill.synthesized` | A skill was extracted from a run that had none. |
 

@@ -105,3 +105,22 @@ itself from Settings (`phone_device_card.dart`, `core/device/phone_device_servic
 The per-agent chat lost its Plan / Run buttons on both — one box, the agent
 reads intent (`chat.go` `intentToAct`) — and recording is only offered in the
 desktop view on both.
+
+## Addendum — tickets, the org chart and external agents (2026-09-24)
+
+| Feature | Console | App |
+|---|---|---|
+| Org chart from `/api/org`: kind, title, what each agent is on, spend against budget | `pages/Org.tsx`, `lib/orgLayout.ts` | `features/org/org_chart_screen.dart`, `org_layout.dart` |
+| Re-parent by dragging one agent onto another; loops refused before the drop | pointer drag on the chart | long-press drag |
+| Agent profile: title, reports to, capabilities, trust, budget (admin) | `components/OrgAgentPanel.tsx` | `features/org/agent_profile_sheet.dart` |
+| Work: tickets by status, search and filters | `pages/Work.tsx` (board) | `features/work/work_screen.dart` (tabs) |
+| Ticket detail: chain, blockers, reviewer and verifier, runs, comments by kind, shared files, reopen, cancel (with its open parts) | `components/TicketDrawer.tsx` | `features/work/ticket_detail_screen.dart` |
+| New ticket with parent and blockers | `components/NewTicketDialog.tsx` | `features/work/new_ticket_sheet.dart` |
+| Add agent by kind: desktop, Claude Code, Codex, Hermes (PC + folder), OpenClaw, webhook | `components/AddAgentDialog.tsx` | `features/dashboard/add_agent_sheet.dart` |
+| External agents on Fleet and their own screen: connection and runs, no desktop controls | `pages/Fleet.tsx`, `pages/InstanceDetail.tsx` | `fleet_screen.dart`, `instance_screen.dart` |
+| `T-12` in chat opens the ticket | `lib/markdown.tsx` | `core/markdown/markdown_lite.dart` |
+| Fleet template export/import with dry run | `components/FleetTemplateCard.tsx` (Settings) | — (admin task; the console and `fleetctl fleet`) |
+
+Both refresh on the `ticket` and `ticket.comment` socket events. The chat
+commands `/tickets`, `/ticket @agent` and `/org` come from the shared
+catalogue, so both clients have them with no client code.
