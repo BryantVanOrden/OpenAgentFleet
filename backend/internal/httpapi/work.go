@@ -72,8 +72,28 @@ func (s *Server) handleListWork(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK,
-		visibleWork(accessFrom(r.Context()), all, s.workAuthorOrgs(r.Context())))
+	items := visibleWork(accessFrom(r.Context()), all, s.workAuthorOrgs(r.Context()))
+	// ?name= is how a ticket opens a file it shared ("notes/names.md"):
+	// the app fetched the whole catalog, every item's content with it, to
+	// find one name. ?content=0 lists without the bodies.
+	if name := r.URL.Query().Get("name"); name != "" {
+		matched := make([]protocol.WorkItem, 0, 1)
+		for _, it := range items {
+			if it.Name == name {
+				matched = append(matched, it)
+			}
+		}
+		items = matched
+	}
+	if r.URL.Query().Get("content") == "0" {
+		light := make([]protocol.WorkItem, len(items))
+		for i, it := range items {
+			it.Size, it.Content = len(it.Content), ""
+			light[i] = it
+		}
+		items = light
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) handleGetWork(w http.ResponseWriter, r *http.Request) {

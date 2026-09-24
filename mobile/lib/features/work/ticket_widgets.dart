@@ -345,7 +345,7 @@ Future<void> openCatalogItem(
   final navigator = Navigator.of(context);
   List<WorkItem> items;
   try {
-    items = await api.workItems();
+    items = await api.workItems(name: name);
   } catch (err) {
     messenger.showSnackBar(SnackBar(content: Text('$err')));
     return;

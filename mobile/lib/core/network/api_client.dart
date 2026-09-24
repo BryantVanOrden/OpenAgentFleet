@@ -119,9 +119,13 @@ class ApiClient {
 
   // ----------------------------------------------- shared work catalog ---
 
-  /// What the agents have published, newest first.
-  Future<List<WorkItem>> workItems() async {
-    final data = await _get('/api/work') as List? ?? const [];
+  /// What the agents have published, newest first. With [name], only the
+  /// items called exactly that (the server filters; nothing else is sent).
+  Future<List<WorkItem>> workItems({String? name}) async {
+    final path = name == null
+        ? '/api/work'
+        : '/api/work?name=${Uri.encodeQueryComponent(name)}';
+    final data = await _get(path) as List? ?? const [];
     return data
         .map((e) => WorkItem.fromJson((e as Map).cast<String, dynamic>()))
         .toList();

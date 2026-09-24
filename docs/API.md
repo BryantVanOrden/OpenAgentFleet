@@ -592,6 +592,10 @@ Cross-bot sharing. Distinct from the deployment secrets in section 17.
 
 ## 16b. Shared work catalog
 
+`GET /api/work` takes `?name=` (exact name, e.g. `notes/names.md`) to fetch
+only the items called that, and `?content=0` to list without the bodies
+(each item then carries its `size`).
+
 Where the agents put the work itself. Before this they could message each other
 and share credentials but nothing else, so whatever one produced lived in its
 container and died with it.

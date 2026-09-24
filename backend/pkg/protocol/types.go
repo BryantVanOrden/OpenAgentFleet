@@ -1028,6 +1028,9 @@ type WorkItem struct {
 	Description string `json:"description,omitempty"`
 	Content     string `json:"content,omitempty"`
 	MIME        string `json:"mime,omitempty"`
+	// Size is the content's length in bytes, filled in when a listing
+	// leaves the content out (GET /api/work?content=0).
+	Size int `json:"size,omitempty"`
 
 	// CreatedBy is an instance id for a bot, empty for the operator.
 	CreatedBy     string `json:"created_by,omitempty"`
