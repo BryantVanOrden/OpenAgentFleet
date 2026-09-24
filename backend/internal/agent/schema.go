@@ -39,6 +39,13 @@ func init() {
 // ActionSchema is the JSON schema of protocol.Action: `thought` first, then
 // `action` limited to the verbs the loop accepts, then every other field by
 // its JSON name and type, nothing else allowed. Callers must not modify it.
+//
+// It is one branch per action that has fields it cannot do without, each
+// naming those fields as required and non-empty right after the verb, and a
+// last branch for every other action. With only thought and action
+// required, a small model chose create_ticket and never wrote the
+// instructions, six turns in a row; the parser could only refuse it, and the
+// ticket blocked. Under the grammar the field is written or the verb is not.
 func ActionSchema() map[string]any {
 	return actionSchema
 }
@@ -67,6 +74,38 @@ func (p orderedProps) MarshalJSON() ([]byte, error) {
 	}
 	b.WriteByte('}')
 	return b.Bytes(), nil
+}
+
+// requiredFields are the fields an action cannot be carried out without, in
+// the order the model should write them. The parser's own recoveries (a
+// command read from text, instructions from the title) still apply to
+// providers that cannot enforce a schema.
+var requiredFields = map[protocol.ActionKind][]string{
+	protocol.ActType:         {"text"},
+	protocol.ActShell:        {"text"},
+	protocol.ActAssert:       {"text"},
+	protocol.ActWaitFor:      {"text"},
+	protocol.ActRemember:     {"text"},
+	protocol.ActSpeak:        {"text"},
+	protocol.ActMsgPeer:      {"text"},
+	protocol.ActKey:          {"key"},
+	protocol.ActOpenURL:      {"url"},
+	protocol.ActPython:       {"code"},
+	protocol.ActDelegateTask: {"target", "sub_goal"},
+	protocol.ActSpawnAgent:   {"sub_goal"},
+	protocol.ActMountTool:    {"tool_name", "tool_handler"},
+	protocol.ActUnmountTool:  {"tool_name"},
+	protocol.ActCallTool:     {"tool_name"},
+	protocol.ActDeepSearch:   {"query"},
+	protocol.ActRecall:       {"query"},
+	protocol.ActShareSecret:  {"secret_key", "secret_val"},
+	protocol.ActShareSession: {"session_domain", "session_cookies"},
+	protocol.ActCreateTicket: {"target", "title", "text"},
+	protocol.ActReopenTicket: {"ticket", "text"},
+	protocol.ActPublishWork:  {"work_name"},
+	protocol.ActReadWork:     {"work_name"},
+	protocol.ActDone:         {"summary"},
+	protocol.ActFail:         {"summary"},
 }
 
 func buildActionSchema() map[string]any {
@@ -109,10 +148,57 @@ func buildActionSchema() map[string]any {
 			Schema map[string]any
 		}{name, sch})
 	}
+	byName := map[string]map[string]any{}
+	for _, p := range props {
+		byName[p.Name] = p.Schema
+	}
+
+	var branches []any
+	var rest []string
+	for _, v := range verbs {
+		need := requiredFields[protocol.ActionKind(v)]
+		if len(need) == 0 {
+			rest = append(rest, v)
+			continue
+		}
+		branches = append(branches, branch(props, byName, map[string]any{"type": "string", "enum": []string{v}}, need))
+	}
+	if len(rest) > 0 {
+		branches = append(branches, branch(props, byName, map[string]any{"type": "string", "enum": rest}, nil))
+	}
+	return map[string]any{"anyOf": branches}
+}
+
+// branch is the object schema for one set of verbs: thought, the verb, the
+// fields it needs (required, non-empty), then everything else, optional.
+func branch(all orderedProps, byName map[string]map[string]any, verb map[string]any, need []string) map[string]any {
+	props := orderedProps{{"thought", byName["thought"]}, {"action", verb}}
+	required := []string{"thought", "action"}
+	seen := map[string]bool{"thought": true, "action": true}
+	for _, n := range need {
+		sch := map[string]any{}
+		for k, v := range byName[n] {
+			sch[k] = v
+		}
+		if sch["type"] == "string" {
+			sch["minLength"] = 1
+		}
+		props = append(props, struct {
+			Name   string
+			Schema map[string]any
+		}{n, sch})
+		required = append(required, n)
+		seen[n] = true
+	}
+	for _, p := range all {
+		if !seen[p.Name] {
+			props = append(props, p)
+		}
+	}
 	return map[string]any{
 		"type":                 "object",
 		"properties":           props,
-		"required":             []string{"thought", "action"},
+		"required":             required,
 		"additionalProperties": false,
 	}
 }
