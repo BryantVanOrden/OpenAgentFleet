@@ -106,7 +106,7 @@
 
 /* ------------------------------------------------------------ base */
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   margin: 0;
@@ -117,6 +117,7 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 img { max-width: 100%; display: block; }
 a { color: inherit; }
@@ -387,7 +388,9 @@ p { margin: 0; }
   background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-soft);
   display: grid; place-items: center; align-content: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
 }
-.orbit-core img { height: 44%; width: auto; }
+.orbit-core { min-height: 0; overflow: visible; }
+.orbit-core img { height: 13cqw; width: auto; }
+.orbit-core span { font-size: clamp(9px, 2.4cqw, 12px); }
 .ring { position: absolute; inset: 0; animation: spin 60s linear infinite; }
 .ring::before { content: ""; position: absolute; inset: 9%; border-radius: 50%; border: 1px dashed var(--line-strong); }
 .node {
@@ -534,9 +537,159 @@ p { margin: 0; }
 .foot nav a { text-decoration: none; color: var(--text-muted); }
 .foot nav a:hover { color: var(--text); }
 
+/* ------------------------------------------------------------ depth */
+/* hero: a grid floor running away from you, and the stage leaning toward the pointer */
+.hero { position: relative; isolation: isolate; }
+.hero-floor {
+  position: absolute; z-index: -1; left: -30%; right: -30%; bottom: -18%; height: 68%; pointer-events: none;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--line-strong) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--line-strong) 70%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(520px) rotateX(74deg); transform-origin: 50% 100%;
+  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 88%); mask-image: linear-gradient(to top, #000 10%, transparent 88%);
+  animation: floor-run 4.5s linear infinite; opacity: .55;
+}
+@keyframes floor-run { to { background-position: 0 64px, 0 64px; } }
+.hero-glow {
+  position: absolute; z-index: -1; width: 46vw; aspect-ratio: 1; right: -6vw; top: -4vw; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, var(--accent-soft), transparent 70%); filter: blur(10px);
+  animation: glow-drift 14s ease-in-out infinite alternate;
+}
+@keyframes glow-drift { to { transform: translate(-6vw, 5vw) scale(1.15); } }
+.hero-stage {
+  --rx: 4deg; --ry: -9deg; transform-style: preserve-3d;
+  transform: perspective(1400px) rotateX(var(--rx)) rotateY(var(--ry)); transition: transform .5s cubic-bezier(.2, .7, .2, 1);
+}
+.hero-stage .stage-chrome { transform: translateZ(40px); }
+.hero-stage .ticker { transform: translateZ(70px); box-shadow: var(--shadow); }
+.hero-stage.driving { --rx: 0deg; --ry: 0deg; }
+.hero-agents { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: .88rem; color: var(--text-muted); }
+.hero-agents .ha { display: inline-flex; align-items: center; gap: 6px; color: var(--text-soft); font-weight: 500; }
+.hero-agents img { width: 16px; height: 16px; }
+
+/* logos drawn as masks, so they take the theme's ink */
+.logo-hermes {
+  display: inline-block; width: 46px; height: 46px; background: var(--text);
+  -webkit-mask: url(assets/agents/hermes.svg) center / contain no-repeat; mask: url(assets/agents/hermes.svg) center / contain no-repeat;
+}
+.logo-hermes.sm { width: 16px; height: 16px; }
+.logo-webhook { display: inline-grid; place-items: center; width: 46px; height: 46px; color: var(--cool); }
+.logo-webhook svg { width: 40px; height: 40px; }
+
+/* sections tip up out of the page */
+.reveal { transform: perspective(900px) translateY(26px) rotateX(9deg); transform-origin: 50% 100%; }
+
+/* models: the orbit laid flat in space, nodes standing up as they pass */
+.orbit { perspective: 900px; aspect-ratio: 1 / .78; }
+.orbit-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(58deg); }
+.orbit-3d .ring { transform-style: preserve-3d; }
+.orbit .orbit-core { z-index: 2; width: 28%; top: 44%; box-shadow: var(--shadow); }
+.orbit .orbit-core::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -22%; height: 14%; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .28), transparent); filter: blur(4px); }
+.orbit-3d .node { animation-name: counterspin3d; }
+@keyframes counterspin3d {
+  from { transform: translate(-50%, -50%) rotate(var(--a)) translate(41cqw, 0) rotate(calc(-1 * var(--a))) rotateX(-58deg); }
+  to { transform: translate(-50%, -50%) rotate(var(--a)) translate(41cqw, 0) rotate(calc(-1 * var(--a) - 360deg)) rotateX(-58deg); }
+}
+
+/* org chart: tipped back in space, cards rising in order, tickets dropping down the lines */
+.org-scene { perspective: 1200px; }
+.orgtree { transform: rotateX(14deg) rotateY(var(--ory, -8deg)); transform-style: preserve-3d; transition: transform .6s cubic-bezier(.2, .7, .2, 1); }
+.orgtree ul { transform-style: preserve-3d; }
+.orgtree li { transform-style: preserve-3d; }
+.onode { transition: transform .7s cubic-bezier(.2, .7, .2, 1), opacity .7s ease, box-shadow .3s ease; transition-delay: calc(var(--d, 0) * 140ms + 120ms); }
+.org-scene:not(.in) .onode { opacity: 0; transform: translateZ(-120px) translateY(20px); }
+.org-scene.in .onode { transform: translateZ(18px); }
+.org-scene.in .onode:hover { transform: translateZ(46px); box-shadow: var(--shadow); transition-delay: 0s; }
+.onode .av img { width: 16px; height: 16px; }
+.orgtree ul::after {
+  content: ""; position: absolute; left: calc(50% - 3px); top: -3px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 10px 1px var(--accent); animation: ticket-drop 2.6s cubic-bezier(.5, 0, .7, 1) infinite; opacity: 0;
+}
+.orgtree ul ul::after { animation-delay: 1.3s; }
+@keyframes ticket-drop { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } 75% { opacity: 1; } 100% { transform: translateY(24px); opacity: 0; } }
+.ticket-card { transform: translateZ(0); }
+
+/* your agents: a turning ring of cards */
+.agents .band-copy.center h2 { max-width: 20em; margin-left: auto; margin-right: auto; }
+.carousel-scene {
+  --card-w: 176px; --card-h: 214px; --r: 290px;
+  position: relative; height: calc(var(--card-h) + 110px); perspective: 1100px; display: grid; place-items: center;
+  margin: 10px auto 34px; cursor: grab; touch-action: pan-y; user-select: none; outline: none;
+}
+.carousel-scene:active { cursor: grabbing; }
+.carousel-scene:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 24px; }
+.carousel { position: relative; width: var(--card-w); height: var(--card-h); transform-style: preserve-3d; transform: rotateX(-5deg); }
+.acard {
+  position: absolute; inset: 0; padding: 18px 16px; border-radius: 18px; display: grid; align-content: center; justify-items: center; gap: 6px; text-align: center;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--surface) 92%, var(--accent) 8%), var(--surface));
+  border: 1px solid var(--line); box-shadow: var(--shadow-soft);
+  will-change: transform, opacity;
+}
+.acard::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; background: var(--bg); opacity: var(--dim, 0); pointer-events: none; }
+.acard-logo { width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 6px; }
+.acard-logo img { width: 42px; height: 42px; object-fit: contain; }
+.acard.desktop .acard-logo img { width: auto; height: 46px; }
+.acard strong { font-family: var(--font-display); font-size: 1.12rem; letter-spacing: -.015em; }
+.acard .acard-where { font-size: .8rem; color: var(--text-muted); }
+.acard code { margin-top: 6px; font-size: .72rem; padding: 4px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-soft); }
+.acard.claude { border-color: color-mix(in srgb, #d97757 45%, var(--line)); }
+.acard.codex { border-color: color-mix(in srgb, #7a9dff 45%, var(--line)); }
+.acard.openclaw { border-color: color-mix(in srgb, #ff4d4d 40%, var(--line)); }
+.acard.desktop { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.carousel-floor {
+  position: absolute; left: 50%; bottom: 18px; width: min(760px, 96%); height: 90px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 22%, transparent), transparent 75%); filter: blur(6px); pointer-events: none;
+}
+.agents-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(24px, 4vw, 56px); align-items: center; }
+.agents-grid .facts { margin-top: 0; }
+.term3d {
+  border-radius: 14px; overflow: hidden; background: var(--term); border: 1px solid var(--line-strong); box-shadow: var(--shadow);
+  transform: perspective(1100px) rotateY(-10deg) rotateX(4deg); transition: transform .6s cubic-bezier(.2, .7, .2, 1);
+}
+.term3d:hover { transform: perspective(1100px) rotateY(0) rotateX(0); }
+.term3d-bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: color-mix(in srgb, var(--term) 80%, #fff 6%); font-family: var(--font-mono); font-size: 11.5px; color: #8b98ad; }
+.term3d-bar span { width: 10px; height: 10px; border-radius: 50%; background: #3a4a66; }
+.term3d-bar em { font-style: normal; margin-left: 8px; }
+.term3d pre { margin: 0; padding: 14px 16px 16px; min-height: 13.5em; font-size: 12.5px; line-height: 1.65; color: var(--term-text); white-space: pre-wrap; }
+.term3d .p { color: var(--term-prompt); }
+.term3d .ok { color: #4ade80; }
+.term3d .dim { color: #7f8ca0; }
+.term3d .cur { display: inline-block; width: .55em; height: 1.1em; vertical-align: -2px; background: var(--term-text); animation: blink 1s steps(1) infinite; }
+.fine.tm { margin-top: 28px; text-align: center; font-size: .78rem; color: var(--text-dim); }
+.flat .carousel { transform: none; width: 100%; height: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.flat .acard { position: relative; inset: auto; transform: none; min-height: var(--card-h); }
+.flat.carousel-scene { height: auto; perspective: none; cursor: default; }
+.flat .carousel-floor { display: none; }
+@media (max-width: 900px) {
+  .agents-grid { grid-template-columns: 1fr; }
+  .term3d { transform: none; }
+}
+@media (max-width: 560px) {
+  .carousel-scene { --card-w: 132px; --card-h: 176px; --r: 170px; }
+  .acard { padding: 12px 10px; border-radius: 14px; }
+  .acard-logo { width: 50px; height: 50px; }
+  .acard-logo img, .acard-logo .logo-hermes, .logo-webhook { width: 32px; height: 32px; }
+  .acard strong { font-size: .95rem; }
+  .acard code { font-size: .62rem; }
+  .acard.desktop .acard-logo img { height: 34px; }
+  .flat .carousel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .orgtree { transform: rotateX(10deg); }
+}
+
+/* the console frame: glare that follows the pointer */
+.frame { position: relative; }
+.frame::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: var(--glare, 0); transition: opacity .3s ease;
+  background: radial-gradient(600px circle at var(--gx, 50%) var(--gy, 0%), rgba(255, 255, 255, .16), transparent 45%);
+}
+
 /* ------------------------------------------------------------ motion preferences */
 @media (prefers-reduced-motion: reduce) {
-  .ring, .node, .seal-ring, .seal-key, .alert-card, .ticket-card, .live-dot, .thinking span, .pulse, .chip .dot, .rec-dot { animation: none !important; }
+  .ring, .node, .seal-ring, .seal-key, .alert-card, .ticket-card, .live-dot, .thinking span, .pulse, .chip .dot, .rec-dot,
+  .hero-floor, .hero-glow, .orgtree ul::after, .term3d .cur { animation: none !important; }
+  .hero-stage, .orgtree, .term3d { transform: none !important; }
+  .org-scene .onode { opacity: 1 !important; transform: none !important; }
   .reveal { opacity: 1; transform: none; transition: none; }
   .cursor, .win, .step { transition: none; }
 }

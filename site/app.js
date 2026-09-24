@@ -414,14 +414,165 @@
     });
   });
 
-  /* ------------------------------------------------------------ the console frame leans with the scroll */
+  /* ------------------------------------------------------------ the console frame leans with the scroll and the pointer */
   const frame = document.getElementById('consoleFrame');
   if (frame && !reduced && finePointer) {
+    let px = 0, py = 0;
     const lean = () => {
       const r = frame.getBoundingClientRect(); const vh = window.innerHeight;
       const c = clamp((r.top + r.height / 2 - vh / 2) / vh, -1, 1);
-      frame.style.transform = 'perspective(1400px) rotateX(' + (c * 6) + 'deg) translateY(' + (c * -10) + 'px)';
+      frame.style.transform = 'perspective(1400px) rotateX(' + (c * 6 - py * 4) + 'deg) rotateY(' + (px * 5) + 'deg) translateY(' + (c * -10) + 'px)';
     };
     window.addEventListener('scroll', lean, { passive: true }); lean();
+    frame.addEventListener('pointermove', (e) => {
+      const r = frame.getBoundingClientRect();
+      px = (e.clientX - r.left) / r.width * 2 - 1; py = (e.clientY - r.top) / r.height * 2 - 1;
+      frame.style.setProperty('--gx', ((px + 1) * 50).toFixed(1) + '%'); frame.style.setProperty('--gy', ((py + 1) * 50).toFixed(1) + '%');
+      frame.style.setProperty('--glare', '1'); lean();
+    });
+    frame.addEventListener('pointerleave', () => { px = 0; py = 0; frame.style.setProperty('--glare', '0'); lean(); });
   }
+
+  /* ------------------------------------------------------------ depth: the hero leans toward the pointer */
+  const heroSection = document.querySelector('.hero');
+  if (heroSection && heroStage && !reduced && finePointer) {
+    heroSection.addEventListener('pointermove', (e) => {
+      if (driving) return;
+      const r = heroStage.getBoundingClientRect();
+      const x = clamp((e.clientX - (r.left + r.width / 2)) / (r.width / 2), -1.4, 1.4);
+      const y = clamp((e.clientY - (r.top + r.height / 2)) / (r.height / 2), -1.4, 1.4);
+      heroStage.style.setProperty('--ry', (-4 + x * 7).toFixed(2) + 'deg');
+      heroStage.style.setProperty('--rx', (2 - y * 5).toFixed(2) + 'deg');
+    });
+    heroSection.addEventListener('pointerleave', () => { heroStage.style.removeProperty('--ry'); heroStage.style.removeProperty('--rx'); });
+  }
+
+  /* ------------------------------------------------------------ the org chart turns a little with the pointer */
+  const orgScene = document.getElementById('orgScene');
+  if (orgScene && !reduced && finePointer) {
+    const tree = orgScene.querySelector('.orgtree');
+    orgScene.addEventListener('pointermove', (e) => {
+      const r = orgScene.getBoundingClientRect();
+      const x = clamp((e.clientX - (r.left + r.width / 2)) / (r.width / 2), -1, 1);
+      tree.style.setProperty('--ory', (x * 12).toFixed(2) + 'deg');
+    });
+    orgScene.addEventListener('pointerleave', () => tree.style.removeProperty('--ory'));
+  }
+
+  /* ------------------------------------------------------------ your agents: a ring that turns, and can be turned */
+  const ringScene = document.getElementById('agentRing');
+  const carousel = document.getElementById('agentCarousel');
+  if (ringScene && carousel) {
+    const cards = Array.from(carousel.children);
+    const step = 360 / cards.length;
+    if (reduced) {
+      ringScene.classList.add('flat');
+    } else {
+      let angle = 0, vel = 0, dragging = false, lastX = 0, visible = false, snapTo = null, idleT = 0;
+      let spacing = 150, depth = 260, halfW = 600, cardW = 176;
+      // A loop of cards: the one in front faces you, the rest step back and
+      // turn away on either side, and the one going round the far end fades
+      // out and comes back in on the other side.
+      const shade = () => {
+        cards.forEach((c, i) => {
+          const th = ((i * step + angle) % 360 + 540) % 360 - 180; // -180..180, 0 in front
+          const t = th / step;                                     // cards from the front
+          const x = t * spacing, a = Math.abs(t);
+          const z = -Math.min(a, 2.6) * depth / 2.6;
+          const edge = clamp((halfW - Math.abs(x) + cardW * 0.25) / (cardW * 0.5), 0, 1);
+          const wrap = clamp((180 - Math.abs(th)) / (step * 0.55), 0, 1);
+          c.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,' + z.toFixed(1) + 'px) rotateY(' + (-clamp(t, -1.6, 1.6) * 28).toFixed(2) + 'deg)';
+          c.style.opacity = (edge * wrap).toFixed(3);
+          c.style.setProperty('--dim', clamp(a * 0.3, 0, 0.62).toFixed(3));
+          c.style.zIndex = String(100 - Math.round(a * 10));
+        });
+      };
+      const frame = () => {
+        if (!visible) { raf2 = 0; return; }
+        if (!dragging) {
+          if (snapTo !== null) {
+            const d = snapTo - angle; angle += d * 0.12;
+            if (Math.abs(d) < 0.05) { angle = snapTo; snapTo = null; }
+          } else if (Math.abs(vel) > 0.02) { angle += vel; vel *= 0.94; }
+          else if (performance.now() > idleT) { angle -= 0.14; }
+        }
+        carousel.style.setProperty('--spin', angle.toFixed(3) + 'deg');
+        shade();
+        raf2 = requestAnimationFrame(frame);
+      };
+      let raf2 = 0;
+      const wake = () => { if (!raf2 && visible) raf2 = requestAnimationFrame(frame); };
+      ringScene.addEventListener('pointerdown', (e) => {
+        dragging = true; lastX = e.clientX; vel = 0; snapTo = null; ringScene.setPointerCapture(e.pointerId);
+      });
+      ringScene.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - lastX; lastX = e.clientX;
+        angle += dx * 0.35; vel = dx * 0.35; carousel.style.setProperty('--spin', angle + 'deg'); shade();
+      });
+      const release = () => { if (!dragging) return; dragging = false; idleT = performance.now() + 2500; };
+      ringScene.addEventListener('pointerup', release);
+      ringScene.addEventListener('pointercancel', release);
+      ringScene.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const base = Math.round(angle / step) * step;
+        snapTo = base + (e.key === 'ArrowLeft' ? step : -step); vel = 0; idleT = performance.now() + 4000; wake();
+      });
+      const setRadius = () => {
+        const w = ringScene.clientWidth;
+        const cw = parseFloat(getComputedStyle(ringScene).getPropertyValue('--card-w')) || 176;
+        halfW = w / 2; cardW = cw;
+        spacing = w < 600 ? cw * 0.62 : clamp(w * 0.13, cw * 0.72, cw * 0.95);
+        depth = clamp(w * 0.28, 150, 320);
+        shade();
+      };
+      setRadius(); window.addEventListener('resize', setRadius);
+      shade();
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver((es) => es.forEach(e => { visible = e.isIntersecting; if (visible) wake(); })).observe(ringScene);
+      } else { visible = true; wake(); }
+    }
+  }
+
+  /* ------------------------------------------------------------ your agents: the terminal types itself */
+  const termText = document.getElementById('agentTermText');
+  if (termText) {
+    const LINES = [
+      ['cmd', 'fleetctl host --root ~/code/app'],
+      ['out', '<span class="dim">[host]</span> Dev PC registered — folders: ~/code/app'],
+      ['out', '<span class="dim">[host]</span> agent CLIs found: Claude Code, Codex, Hermes'],
+      ['cmd', 'fleetctl agent add Claude --kind claude_code --reports-to Builder'],
+      ['out', '<span class="ok">✓</span> Claude added (claude_code in ~/code/app)'],
+      ['cmd', 'fleetctl ticket new "Fix the login test" --to Claude --review-by Checker'],
+      ['out', '<span class="ok">✓</span> T-21 filed → Claude'],
+      ['out', '<span class="dim">[host]</span> Claude: Edit: src/auth/login.test.ts'],
+      ['out', '<span class="dim">[host]</span> Claude: done after 41s, $0.08 · shared src/auth/login.test.ts'],
+    ];
+    const P = '<span class="p">$</span> ';
+    const full = LINES.map(([k, t]) => (k === 'cmd' ? P + t : t)).join('\n');
+    if (reduced) { termText.innerHTML = full; }
+    else {
+      let started = false;
+      const run = async () => {
+        if (started) return; started = true;
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        for (;;) {
+          let done = '';
+          for (const [k, t] of LINES) {
+            if (k === 'cmd') {
+              for (let i = 1; i <= t.length; i++) { termText.innerHTML = done + P + t.slice(0, i) + '<span class="cur"></span>'; await sleep(26); }
+              done += P + t + '\n'; await sleep(420);
+            } else { done += t + '\n'; termText.innerHTML = done + '<span class="cur"></span>'; await sleep(520); }
+          }
+          await sleep(5200);
+        }
+      };
+      if ('IntersectionObserver' in window) {
+        const io2 = new IntersectionObserver((es) => es.forEach(e => { if (e.isIntersecting) { run(); io2.disconnect(); } }), { threshold: 0.3 });
+        io2.observe(termText);
+      } else run();
+    }
+  }
+
 })();
