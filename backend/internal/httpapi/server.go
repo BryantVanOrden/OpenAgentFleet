@@ -37,11 +37,11 @@ type Server struct {
 	// external runs Claude Code, Codex, Hermes, OpenClaw and webhook agents.
 	external *external.Dispatcher
 	runner   *agent.Runner
-	bus    *bus.Bus
-	vault  *vault.Vault
-	host   *telemetry.HostCollector
-	art    artifacts.Store
-	log    *slog.Logger
+	bus      *bus.Bus
+	vault    *vault.Vault
+	host     *telemetry.HostCollector
+	art      artifacts.Store
+	log      *slog.Logger
 }
 
 func NewServer(

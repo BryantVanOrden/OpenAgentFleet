@@ -165,6 +165,6 @@ func (s *Server) cmdOrg(r *http.Request) commandResult {
 	for _, in := range top {
 		walk(in, 0)
 	}
-	sb.WriteString("\nDrag agents on the Org page to change who reports to whom.")
+	sb.WriteString("\nChange who reports to whom on the Org chart: drag in the console, long-press and drag in the app, or `fleetctl agent set <name> --reports-to <manager>`.")
 	return commandResult{Command: "org", OK: true, Title: fmt.Sprintf("Org chart · %d", len(visible)), Body: sb.String()}
 }

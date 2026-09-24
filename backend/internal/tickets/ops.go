@@ -235,18 +235,25 @@ func (e *Engine) Comment(ctx context.Context, id, body string, by Actor) (*proto
 
 // Reopen sends finished or stopped work back to its assignee with a reason:
 // what a verifier, a manager or the operator found missing.
-func (e *Engine) Reopen(ctx context.Context, id, reason string, by Actor) (*protocol.Ticket, error) {
+// Reopen sends finished work back. It returns the ticket as it now is and
+// who the work went back to ("Builder", or "T-10 (Claude), T-11 (Codex)"
+// for a request).
+func (e *Engine) Reopen(ctx context.Context, id, reason string, by Actor) (*protocol.Ticket, string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	t, err := e.db.Ticket(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if _, err := e.reopenLocked(ctx, t, reason, by); err != nil {
-		return nil, err
+	who, err := e.reopenLocked(ctx, t, reason, by)
+	if err != nil {
+		return nil, "", err
+	}
+	if fresh, err := e.db.Ticket(ctx, t.ID); err == nil {
+		t = fresh
 	}
 	e.Kick()
-	return t, nil
+	return t, who, nil
 }
 
 // reopenLocked sends a ticket back and says who it went back to. A request

@@ -38,10 +38,16 @@ func (e *Engine) livenessLocked(ctx context.Context) {
 		case protocol.TicketTodo:
 			e.checkTodoLocked(ctx, t)
 		case protocol.TicketBacklog:
-			if len(t.BlockedBy) == 0 && e.now().Sub(t.CreatedAt) > e.cfg.BacklogPatience {
+			// Only the engine's own parking spot: a tester that answered a
+			// request before any builder waits in a review with nothing to
+			// review. A ticket a person put in the backlog is there on
+			// purpose, and raising an alert and a push about it every time
+			// was noise.
+			if t.Kind == protocol.TicketReview && t.TargetID == "" && len(t.BlockedBy) == 0 &&
+				e.now().Sub(t.CreatedAt) > e.cfg.BacklogPatience {
 				e.surfaceLocked(ctx, t, "backlog-orphan",
 					fmt.Sprintf("%s is waiting for work nobody is making", t.Ref()),
-					fmt.Sprintf("%s (%s) is parked waiting to be handed something, and no ticket it waits on exists. Give someone the part that makes it, or move it to todo.", t.Ref(), t.Title))
+					fmt.Sprintf("%s (%s) is a review waiting for the work it reviews, and nobody has taken that work. Give someone the part that makes it, or cancel the review.", t.Ref(), t.Title))
 			}
 		case protocol.TicketInReview:
 			if !openReviews[t.ID] && t.ReviewerID != "" {

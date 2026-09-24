@@ -457,6 +457,62 @@ func TestCancellingWorkCancelsItsChecks(t *testing.T) {
 	}
 }
 
+func TestSummaryLineSkipsHeadingsAndDoneWords(t *testing.T) {
+	cases := map[string]string{
+		"## ✓ DONE — T-16\n\nCreated notes/names.md with five names.": "Created notes/names.md with five names.",
+		"**Done.** Created notes/hello.md.":                           "**Done.** Created notes/hello.md.",
+		"Done\n---\nAdded the toggle.":                                "Added the toggle.",
+		"Fixed the null check.":                                       "Fixed the null check.",
+		"## Summary":                                                  "## Summary",
+	}
+	for in, want := range cases {
+		if got := summaryLine(in); got != want {
+			t.Errorf("summaryLine(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestAPersonsBacklogIsNotAnAlert(t *testing.T) {
+	h := newHarness(t)
+	h.agent("b", "Builder")
+	h.agent("c", "Checker")
+	parked := h.ticket(&protocol.Ticket{Title: "Someday", AssigneeID: "b", Status: protocol.TicketBacklog})
+	placeholder := h.ticket(&protocol.Ticket{Title: "Test the build", Kind: protocol.TicketReview, AssigneeID: "c", Status: protocol.TicketBacklog})
+	later := time.Now().UTC().Add(time.Hour)
+	h.e.now = func() time.Time { return later }
+	h.e.Reconcile(h.ctx)
+	var person, engine bool
+	for _, a := range h.db.alerts {
+		person = person || strings.Contains(a.Title, parked.Ref())
+		engine = engine || strings.Contains(a.Title, placeholder.Ref())
+	}
+	if person {
+		t.Error("a ticket a person parked in the backlog raised an alert")
+	}
+	if !engine {
+		t.Error("a review parked for work nobody took is still reported")
+	}
+}
+
+func TestReopeningARequestSaysWhoGotTheWork(t *testing.T) {
+	h := newHarness(t)
+	h.agent("b", "Builder")
+	root := h.ticket(&protocol.Ticket{Title: "Ship it"})
+	work := h.ticket(&protocol.Ticket{Title: "Build it", ParentID: root.ID, AssigneeID: "b"})
+	h.e.Reconcile(h.ctx)
+	h.finish(work.ID, protocol.TaskSucceeded, "built", "", "")
+	if got := h.get(root.ID); got.Status != protocol.TicketDone {
+		t.Fatalf("the request closes with its part: %+v", got)
+	}
+	out, who, err := h.e.Reopen(h.ctx, root.ID, "the page 404s", Actor{Name: "operator"})
+	if err != nil || !strings.Contains(who, work.Ref()+" (Builder)") {
+		t.Fatalf("reopen says which part went back to whom: %v %q", err, who)
+	}
+	if out.Status != protocol.TicketTodo {
+		t.Fatalf("and returns the request as it now is, waiting again: %+v", out)
+	}
+}
+
 func countKind(h *harness, k protocol.TicketKind) int {
 	all, _ := h.db.ListTickets(h.ctx, protocol.TicketFilter{})
 	n := 0

@@ -554,6 +554,12 @@ func (e *Engine) succeededLocked(ctx context.Context, t *protocol.Ticket, task *
 			verdict = verdictFromText(result)
 		}
 		t.Verdict = verdict
+		if result == "" {
+			// A verdict with no words: say what it means, so the ticket's
+			// page is not blank where the check should be.
+			t.Result = verdictSentence(t, verdict)
+			_ = e.db.AddTicketComment(ctx, &protocol.TicketComment{TicketID: t.ID, AuthorID: task.InstanceID, AuthorName: author, Kind: "result", Body: t.Result})
+		}
 		t.Status = protocol.TicketDone
 		_ = e.db.UpdateTicket(ctx, t)
 		e.emit(t)
@@ -779,7 +785,7 @@ func (e *Engine) rollupLocked(ctx context.Context, parentID string) {
 		if k.Kind != protocol.TicketWork {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("- %s %s (%s): %s", k.Ref(), k.Title, e.nameOf(ctx, k.AssigneeID), clip(firstLine(k.Result), 160)))
+		lines = append(lines, fmt.Sprintf("- %s %s (%s): %s", k.Ref(), k.Title, e.nameOf(ctx, k.AssigneeID), clip(summaryLine(k.Result), 160)))
 	}
 	p.Status = protocol.TicketDone
 	p.Result = strings.Join(lines, "\n")
@@ -877,12 +883,53 @@ func clip(s string, n int) string {
 	return cut + "…"
 }
 
+// summaryLine is the first line of a report that says something. Reports
+// open with a heading more often than not, and a request's closing report
+// that read "(Claude): ## ✓ DONE — T-16" for every part said nothing.
+func summaryLine(s string) string {
+	for _, ln := range strings.Split(strings.TrimSpace(s), "\n") {
+		t := strings.TrimSpace(ln)
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "---") {
+			continue
+		}
+		bare := strings.ToLower(strings.Trim(t, "*_>-•✓✔✅ :.!\t"))
+		if bare == "" || isDoneWord(bare) {
+			continue
+		}
+		return strings.TrimLeft(t, "> ")
+	}
+	return firstLine(s)
+}
+
+func isDoneWord(s string) bool {
+	for _, w := range []string{"done", "complete", "completed", "finished", "task complete", "task completed", "summary", "report", "result", "results"} {
+		if s == w || strings.HasPrefix(s, w+" —") || strings.HasPrefix(s, w+" -") {
+			return true
+		}
+	}
+	return false
+}
+
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return s[:i]
 	}
 	return s
+}
+
+func verdictSentence(t *protocol.Ticket, verdict string) string {
+	switch {
+	case t.Kind == protocol.TicketVerify && verdict == protocol.VerdictPass:
+		return "PASS — checked the work and found nothing to reopen."
+	case t.Kind == protocol.TicketVerify:
+		return "FAIL — some of the work was not finished; see the tickets it reopened."
+	case verdict == protocol.VerdictPass:
+		return "PASS — reviewed with no findings."
+	case verdict == protocol.VerdictFail:
+		return "FAIL — the reviewer gave no findings."
+	}
+	return "Finished without a verdict."
 }
 
 func firstNonEmpty(v ...string) string {

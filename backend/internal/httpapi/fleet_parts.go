@@ -241,8 +241,16 @@ func (s *Server) requestRoot(ctx context.Context, msg protocol.PeerMessage) (*pr
 // reviewBrief records how a reviewer said it would check a ticket, so the
 // review ticket it gets later carries the operator's instructions.
 func (s *Server) reviewBrief(ctx context.Context, ticketID string, reviewer protocol.Instance, part string) {
-	if strings.TrimSpace(part) == "" {
+	part = strings.TrimSpace(part)
+	if part == "" {
 		return
+	}
+	// "Checker reviews it" leaves "reviews it", which tells a reviewer
+	// nothing about what to check; the operator's whole request does.
+	if len(strings.Fields(part)) < 8 {
+		if t, err := s.db.Ticket(ctx, ticketID); err == nil && strings.TrimSpace(t.Origin) != "" && t.Origin != part {
+			part += "\n\nThe request, in the operator's words: " + strings.TrimSpace(t.Origin)
+		}
 	}
 	_ = s.db.AddTicketComment(ctx, &protocol.TicketComment{
 		TicketID: ticketID, AuthorID: reviewer.ID, AuthorName: reviewer.Name, Kind: "review_brief", Body: part,

@@ -313,10 +313,13 @@ func (s *Server) handleReopenTicket(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	out, err := s.tickets.Reopen(r.Context(), t.ID, req.Reason, actorFrom(r))
+	out, who, err := s.tickets.Reopen(r.Context(), t.ID, req.Reason, actorFrom(r))
 	if err != nil {
 		failErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.viewTicket(r, out))
+	writeJSON(w, http.StatusOK, struct {
+		ticketView
+		SentBackTo string `json:"sent_back_to,omitempty"`
+	}{s.viewTicket(r, out), who})
 }
