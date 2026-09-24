@@ -146,7 +146,9 @@ func (e *Engine) surfaceLocked(ctx context.Context, t *protocol.Ticket, key, tit
 	}
 	t.StallFingerprint = fp
 	_ = e.db.UpdateTicket(ctx, t)
-	a := &protocol.Alert{Kind: protocol.AlertStalled, Severity: "warn", InstanceID: t.AssigneeID, Title: title, Body: body}
+	// One live alert per ticket: a new problem replaces the last one.
+	e.settleAlerts(t, "Superseded: "+title)
+	a := &protocol.Alert{Kind: protocol.AlertStalled, Severity: "warn", InstanceID: t.AssigneeID, TicketID: t.ID, Title: title, Body: body}
 	if err := e.db.CreateAlert(ctx, a); err == nil && e.hooks.Alert != nil {
 		e.hooks.Alert(ctx, a)
 	}

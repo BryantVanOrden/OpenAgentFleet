@@ -708,10 +708,10 @@ func (s *Store) CreateAlert(ctx context.Context, a *protocol.Alert) error {
 		a.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO alerts(id,kind,severity,instance_id,task_id,title,body,screenshot_id,needs_reply,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		`INSERT INTO alerts(id,kind,severity,instance_id,task_id,title,body,screenshot_id,needs_reply,created_at,ticket_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		a.ID, string(a.Kind), a.Severity, a.InstanceID, a.TaskID, a.Title, a.Body,
-		a.ScreenshotID, a.NeedsReply, a.CreatedAt)
+		a.ScreenshotID, a.NeedsReply, a.CreatedAt, a.TicketID)
 	return norm(err)
 }
 
@@ -725,7 +725,7 @@ func (s *Store) ListAlerts(ctx context.Context, openOnly bool, limit int) ([]pro
 	if limit <= 0 {
 		limit = 100
 	}
-	q := `SELECT id,kind,severity,instance_id,task_id,title,body,screenshot_id,needs_reply,reply,resolved_at,created_at FROM alerts`
+	q := `SELECT id,kind,severity,instance_id,task_id,title,body,screenshot_id,needs_reply,reply,resolved_at,created_at,ticket_id FROM alerts`
 	if openOnly {
 		q += ` WHERE resolved_at IS NULL`
 	}
@@ -740,7 +740,7 @@ func (s *Store) ListAlerts(ctx context.Context, openOnly bool, limit int) ([]pro
 		var a protocol.Alert
 		var kind string
 		if err := rows.Scan(&a.ID, &kind, &a.Severity, &a.InstanceID, &a.TaskID, &a.Title,
-			&a.Body, &a.ScreenshotID, &a.NeedsReply, &a.Reply, &a.ResolvedAt, &a.CreatedAt); err != nil {
+			&a.Body, &a.ScreenshotID, &a.NeedsReply, &a.Reply, &a.ResolvedAt, &a.CreatedAt, &a.TicketID); err != nil {
 			return nil, err
 		}
 		a.Kind = protocol.AlertKind(kind)
@@ -993,6 +993,29 @@ func (s *Store) SetUserDisabled(ctx context.Context, id string, disabled bool) e
 // Used when a task is resumed after a restart: the alert asked a question
 // whose waiter no longer exists, so leaving it open shows a person a decision
 // that nothing is waiting on any more.
+// ResolveTicketAlerts closes a ticket's open alerts and returns their ids.
+func (s *Store) ResolveTicketAlerts(ctx context.Context, ticketID, reply string) ([]string, error) {
+	if ticketID == "" {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx,
+		`UPDATE alerts SET resolved_at = now(), reply = $2
+		  WHERE ticket_id = $1 AND resolved_at IS NULL RETURNING id`, ticketID, reply)
+	if err != nil {
+		return nil, norm(err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) ResolveTaskAlerts(ctx context.Context, taskID, reply string) error {
 	_, err := s.pool.Exec(ctx,
 		`UPDATE alerts SET resolved_at = now(), reply = $2

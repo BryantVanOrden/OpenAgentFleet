@@ -197,17 +197,17 @@ type Task struct {
 	ParentTaskID string            `json:"parent_task_id,omitempty"` // for recursive sub-agents
 	// TicketID is the ticket this run was started for, so its cost and its
 	// outcome belong to that ticket.
-	TicketID string `json:"ticket_id,omitempty"`
-	AutoRefine   bool              `json:"auto_refine,omitempty"`    // trigger skill self-refinement on success
-	State        TaskState         `json:"state"`
-	Step         int               `json:"step"`
-	MaxSteps     int               `json:"max_steps"`
-	ProviderID   string            `json:"provider_id,omitempty"`
-	Error        string            `json:"error,omitempty"`
-	Result       string            `json:"result,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	StartedAt    *time.Time        `json:"started_at,omitempty"`
-	EndedAt      *time.Time        `json:"ended_at,omitempty"`
+	TicketID   string     `json:"ticket_id,omitempty"`
+	AutoRefine bool       `json:"auto_refine,omitempty"` // trigger skill self-refinement on success
+	State      TaskState  `json:"state"`
+	Step       int        `json:"step"`
+	MaxSteps   int        `json:"max_steps"`
+	ProviderID string     `json:"provider_id,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	Result     string     `json:"result,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	EndedAt    *time.Time `json:"ended_at,omitempty"`
 }
 
 // ------------------------------------------------------- perception/action ---
@@ -925,11 +925,14 @@ const (
 
 // Alert is a push-notifiable event that may require an operator response.
 type Alert struct {
-	ID           string     `json:"id"`
-	Kind         AlertKind  `json:"kind"`
-	Severity     string     `json:"severity"` // info | warn | critical
-	InstanceID   string     `json:"instance_id,omitempty"`
-	TaskID       string     `json:"task_id,omitempty"`
+	ID         string    `json:"id"`
+	Kind       AlertKind `json:"kind"`
+	Severity   string    `json:"severity"` // info | warn | critical
+	InstanceID string    `json:"instance_id,omitempty"`
+	TaskID     string    `json:"task_id,omitempty"`
+	// TicketID is the ticket an alert from the ticket engine is about; the
+	// alert closes when that ticket moves on.
+	TicketID     string     `json:"ticket_id,omitempty"`
 	Title        string     `json:"title"`
 	Body         string     `json:"body"`
 	ScreenshotID string     `json:"screenshot_id,omitempty"`
@@ -1126,9 +1129,9 @@ type Device struct {
 	// Runtimes are the agent CLIs installed on the device (claude_code,
 	// codex, hermes), so an external agent is only pointed at a device that
 	// can run it.
-	Runtimes []string  `json:"runtimes"`
-	LastSeen    time.Time `json:"last_seen,omitzero"`
-	CreatedAt   time.Time `json:"created_at"`
+	Runtimes  []string  `json:"runtimes"`
+	LastSeen  time.Time `json:"last_seen,omitzero"`
+	CreatedAt time.Time `json:"created_at"`
 
 	// Online is filled in on read: seen within the last minute.
 	Online bool `json:"online"`

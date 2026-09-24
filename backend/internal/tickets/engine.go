@@ -60,6 +60,7 @@ type DB interface {
 	UpdateTaskState(ctx context.Context, id string, st protocol.TaskState, step int, errMsg, result string) error
 	ListPeerMessages(ctx context.Context, instanceID string, limit int) ([]protocol.PeerMessage, error)
 	CreateAlert(ctx context.Context, a *protocol.Alert) error
+	ResolveTicketAlerts(ctx context.Context, ticketID, reply string) ([]string, error)
 }
 
 var _ DB = (*store.Store)(nil)
@@ -823,6 +824,26 @@ func (e *Engine) systemComment(ctx context.Context, t *protocol.Ticket, body str
 func (e *Engine) emit(t *protocol.Ticket) {
 	if e.hooks.Emit != nil {
 		e.hooks.Emit("ticket", t.AssigneeID, t.TaskID, t)
+	}
+	// Whatever was reported about a ticket is over once it runs or ends.
+	switch t.Status {
+	case protocol.TicketInProgress:
+		e.settleAlerts(t, t.Ref()+" is running now.")
+	case protocol.TicketDone:
+		e.settleAlerts(t, t.Ref()+" is done.")
+	case protocol.TicketCancelled:
+		e.settleAlerts(t, t.Ref()+" was cancelled.")
+	}
+}
+
+// settleAlerts closes a ticket's open alerts and tells the consoles.
+func (e *Engine) settleAlerts(t *protocol.Ticket, why string) {
+	ids, err := e.db.ResolveTicketAlerts(context.Background(), t.ID, why)
+	if err != nil || e.hooks.Emit == nil {
+		return
+	}
+	for _, id := range ids {
+		e.hooks.Emit("alert.resolved", t.AssigneeID, "", map[string]string{"alert_id": id, "by": "Oaf"})
 	}
 }
 

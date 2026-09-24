@@ -421,6 +421,20 @@ func (f *fakeDB) CreateAlert(_ context.Context, a *protocol.Alert) error {
 	return nil
 }
 
+func (f *fakeDB) ResolveTicketAlerts(_ context.Context, ticketID, reply string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var ids []string
+	now := time.Now().UTC()
+	for i := range f.alerts {
+		if f.alerts[i].TicketID == ticketID && f.alerts[i].ResolvedAt == nil {
+			f.alerts[i].ResolvedAt, f.alerts[i].Reply = &now, reply
+			ids = append(ids, f.alerts[i].ID)
+		}
+	}
+	return ids, nil
+}
+
 // fakeRunner records starts and lets tests finish runs.
 type fakeRunner struct {
 	mu       sync.Mutex

@@ -513,6 +513,38 @@ func TestReopeningARequestSaysWhoGotTheWork(t *testing.T) {
 	}
 }
 
+func TestATicketsAlertClosesWhenItMovesOn(t *testing.T) {
+	h := newHarness(t)
+	h.agent("b", "Builder")
+	orphan := h.ticket(&protocol.Ticket{Title: "Nobody's"})
+	later := time.Now().UTC().Add(time.Hour)
+	h.e.now = func() time.Time { return later }
+	h.e.Reconcile(h.ctx)
+	open := func() int {
+		n := 0
+		for _, a := range h.db.alerts {
+			if a.TicketID == orphan.ID && a.ResolvedAt == nil {
+				n++
+			}
+		}
+		return n
+	}
+	if open() != 1 {
+		t.Fatalf("an unowned ticket raises one alert, tied to it: %+v", h.db.alerts)
+	}
+	b := "b"
+	if _, err := h.e.Update(h.ctx, orphan.ID, Patch{AssigneeID: &b}, Actor{Name: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	h.e.Reconcile(h.ctx)
+	if got := h.get(orphan.ID); got.Status != protocol.TicketInProgress {
+		t.Fatalf("assigned, it runs: %+v", got)
+	}
+	if open() != 0 {
+		t.Fatalf("and its alert is closed: %+v", h.db.alerts)
+	}
+}
+
 func countKind(h *harness, k protocol.TicketKind) int {
 	all, _ := h.db.ListTickets(h.ctx, protocol.TicketFilter{})
 	n := 0

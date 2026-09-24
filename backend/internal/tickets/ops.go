@@ -335,6 +335,7 @@ func (e *Engine) Delete(ctx context.Context, id string) error {
 		_, _ = e.db.ReleaseTicket(ctx, t.ID, held)
 		e.run.Cancel(held)
 	}
+	e.settleAlerts(t, t.Ref()+" was deleted.")
 	if d, ok := e.db.(interface {
 		DeleteTicket(ctx context.Context, id string) error
 	}); ok {
