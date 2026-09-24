@@ -81,6 +81,9 @@ flutter:
   assets:
     - assets/branding/
     - assets/agents/
+    # Donation QR codes for Settings → Support this project. Copies of
+    # docs/assets/{xrp,btc}_qr.png; the XRP one encodes the destination tag.
+    - assets/support/
 
 # Launcher icons. Regenerate with:
 #   dart run flutter_launcher_icons
