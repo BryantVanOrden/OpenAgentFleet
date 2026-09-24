@@ -249,4 +249,3 @@ func (s *Server) handleListTelemetryRecords(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, telemetry.GlobalTracker.ListRecords(r.Context(), limit))
 }
-
