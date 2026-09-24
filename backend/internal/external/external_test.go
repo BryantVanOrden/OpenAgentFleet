@@ -31,14 +31,35 @@ type fakeStore struct {
 	devices map[string]*protocol.Device
 	tickets map[string]*protocol.Ticket
 	work    []protocol.WorkItem
+	had     map[string]int
+	changed []store.ExternalFile
 }
 
 func (f *fakeStore) PutWorkItem(_ context.Context, w *protocol.WorkItem) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w.Version = 1
+	if w.ID == "" {
+		w.ID = "work-" + w.Name
+	}
 	f.work = append(f.work, *w)
 	return nil
+}
+
+func (f *fakeStore) RecordExternalFile(_ context.Context, instanceID, itemID, path string, version int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.had == nil {
+		f.had = map[string]int{}
+	}
+	f.had[instanceID+"|"+itemID] = version
+	return nil
+}
+
+func (f *fakeStore) ChangedExternalFiles(_ context.Context, instanceID string) ([]store.ExternalFile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]store.ExternalFile(nil), f.changed...), nil
 }
 
 func newStore() *fakeStore {
@@ -326,6 +347,8 @@ func TestADeviceRunEndToEnd(t *testing.T) {
 	h.db.tasks["t0"] = prev
 	task := &protocol.Task{ID: "t3", InstanceID: "cc", TicketID: "tk", Goal: "You are working on ticket T-7"}
 	h.add(inst, task)
+	// Checker fixed a file Claude shared on an earlier run.
+	h.db.changed = []store.ExternalFile{{ItemID: "work-lib", Path: "src/lib.js", Version: 3, Content: "export const fixed = true", By: "Checker"}}
 
 	if ok, why := h.d.Ready(context.Background(), inst); !ok {
 		t.Fatalf("ready: %s", why)
@@ -347,6 +370,12 @@ func TestADeviceRunEndToEnd(t *testing.T) {
 	}
 	if job == nil || job.Kind != JobKindAgentRun {
 		t.Fatalf("no agent_run job: %+v", job)
+	}
+	if files, _ := job.Args["files"].([]map[string]string); len(files) != 1 || files[0]["path"] != "src/lib.js" || files[0]["content"] != "export const fixed = true" {
+		t.Fatalf("the colleague's newer version goes to the PC with the run: %#v", job.Args["files"])
+	}
+	if p, _ := job.Args["prompt"].(string); !strings.Contains(p, "src/lib.js (version 3, by Checker)") {
+		t.Fatalf("and the brief says so: %s", p)
 	}
 	a := job.Args
 	if a["runtime"] != "claude_code" || a["cwd"] != "C:/work/app" || a["session_id"] != "sess-1" || a["autonomy"] != "full" || a["model"] != "sonnet" {
@@ -380,6 +409,12 @@ func TestADeviceRunEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(k.Result, "Shared with the fleet (read_work): src/app.js") || !strings.Contains(k.Result, "logo.png") {
 		t.Fatalf("the report says what was shared and what was not: %s", k.Result)
+	}
+	h.db.mu.Lock()
+	had := h.db.had["cc|work-lib"]
+	h.db.mu.Unlock()
+	if had != 3 {
+		t.Fatalf("after the run Claude has version 3 of the file it was given, so it is not sent again: %d", had)
 	}
 	if len(h.turns) != 1 || h.turns[0].CostUSD != 0.31 || h.turns[0].ModelName != "claude-sonnet" {
 		t.Fatalf("cost: %+v", h.turns)

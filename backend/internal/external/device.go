@@ -63,11 +63,24 @@ func (d *Dispatcher) runOnDevice(ctx context.Context, r *run) outcome {
 		}
 	}
 	token := MintRunToken(d.cfg.Secret, task.ID, 48*time.Hour)
+	// Files a colleague changed since this agent last had them go into its
+	// folder before it starts, and the brief says so.
+	incoming, _ := d.db.ChangedExternalFiles(ctx, inst.ID)
+	var files []map[string]string
+	var note strings.Builder
+	for _, f := range incoming {
+		files = append(files, map[string]string{"path": f.Path, "content": f.Content})
+		if note.Len() == 0 {
+			note.WriteString("\n\nColleagues changed files you shared; the new versions are now in your folder:\n")
+		}
+		fmt.Fprintf(&note, "- %s (version %d, by %s)\n", f.Path, f.Version, f.By)
+	}
 	args := map[string]any{
 		"runtime":     string(inst.AgentKindOf()),
 		"agent":       inst.Name,
 		"cwd":         c.Cwd,
-		"prompt":      d.Prompt(r, apiHint(ticketRef)),
+		"prompt":      d.Prompt(r, apiHint(ticketRef)) + note.String(),
+		"files":       files,
 		"model":       c.Model,
 		"extra_args":  c.Args,
 		"autonomy":    firstNonEmpty(c.Autonomy, "edits"),
@@ -86,6 +99,13 @@ func (d *Dispatcher) runOnDevice(ctx context.Context, r *run) outcome {
 	if err := d.db.CreateDeviceJob(ctx, job); err != nil {
 		return outcome{err: "agent cli exited: could not queue the run on the device: " + err.Error()}
 	}
+	defer func() {
+		// The host writes them before it starts the CLI; whatever became of
+		// the run, the agent has had these versions.
+		for _, f := range incoming {
+			_ = d.db.RecordExternalFile(context.WithoutCancel(ctx), inst.ID, f.ItemID, f.Path, f.Version)
+		}
+	}()
 	d.mu.Lock()
 	r.jobID = job.ID
 	d.mu.Unlock()

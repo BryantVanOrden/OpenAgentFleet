@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
@@ -35,6 +36,8 @@ type Store interface {
 	SetTaskParam(ctx context.Context, taskID, key, value string) error
 	Ticket(ctx context.Context, id string) (*protocol.Ticket, error)
 	PutWorkItem(ctx context.Context, w *protocol.WorkItem) error
+	RecordExternalFile(ctx context.Context, instanceID, itemID, path string, version int) error
+	ChangedExternalFiles(ctx context.Context, instanceID string) ([]store.ExternalFile, error)
 }
 
 // Secrets opens and stores vault entries.
@@ -309,6 +312,7 @@ func (d *Dispatcher) share(ctx context.Context, r *run, files []ProducedFile) []
 			d.log.Warn("could not share an external agent's file", "agent", r.inst.Name, "path", name, "err", err)
 			continue
 		}
+		_ = d.db.RecordExternalFile(ctx, r.inst.ID, item.ID, name, item.Version)
 		if d.emit != nil {
 			d.emit("work", r.inst.ID, r.task.ID, item)
 		}

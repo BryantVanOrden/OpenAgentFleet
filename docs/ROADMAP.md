@@ -161,9 +161,6 @@ What is left:
 - **Missions and pipelines on tickets.** `/mission` and pipelines still keep
   their own state; filing their stages as tickets would put them on the same
   board, budgets and verifiers.
-- **Files back to the PC.** A PC agent's output reaches the catalog; a
-  desktop's reply that changes those files does not flow back into the
-  folder, so a fix still goes through the PC agent's next run.
 
 ## Deliberately not planned
 

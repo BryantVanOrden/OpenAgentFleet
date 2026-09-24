@@ -191,6 +191,9 @@ class Host:
         if not self.approve(f"let {label} ({agent}) work on {ticket} in {cwd} with {autonomy}", who=agent):
             self._finish(job, "denied", "", "declined in the host terminal")
             return
+        for name in self._write_incoming(cwd, args.get("files") or []):
+            if not self.quiet:
+                print(f"[host] {agent}: {name} updated by a colleague, written into the folder", flush=True)
         if not self.quiet:
             print(f"[host] {agent}: {label} started on {ticket} in {cwd}", flush=True)
 
@@ -209,6 +212,27 @@ class Host:
             cost = f", ${result.cost_usd:.2f}" if result.cost_usd else ""
             print(f"[host] {agent}: {label} {state} after {took:.0f}s{cost}" + (f": {result.error[:200]}" if result.error else ""), flush=True)
         self._finish(job, state, result.to_json(), result.error)
+
+    @staticmethod
+    def _write_incoming(cwd: Path, files: list[dict[str, Any]]) -> list[str]:
+        """Writes the newer versions colleagues published of files this agent
+        shared, inside its folder and nowhere else."""
+        written: list[str] = []
+        root = Path(cwd).resolve()
+        for f in files:
+            rel = str(f.get("path") or "").replace("\\", "/").strip("/")
+            if not rel or any(part == ".." for part in rel.split("/")):
+                continue
+            target = (root / rel).resolve()
+            if root != target and root not in target.parents:
+                continue
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(str(f.get("content") or ""), encoding="utf-8", newline="")
+                written.append(rel)
+            except OSError as exc:
+                print(f"[host] could not write {rel}: {exc}", file=sys.stderr)
+        return written
 
     def _finish(self, job: dict[str, Any], state: str, result: str, error: str) -> None:
         for attempt in range(5):

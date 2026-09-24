@@ -155,6 +155,10 @@ anything inside its folder.
   are published to the work catalog under their path in the folder, so
   `notes/plan.md` in the report is `notes/plan.md` to a colleague's
   `read_work`, and the ticket records what was published.
+- **Changes come back.** When a colleague publishes a newer version of a
+  file the agent shared, the agent's next run writes it into the folder
+  before the CLI starts, and the brief lists what changed and who changed
+  it. The host writes only inside the folder.
 - **Not your user settings.** Claude Code is started with
   `--setting-sources project,local`: your `~/.claude` settings — extra
   allowed directories, allow rules, hooks, MCP servers — are for you at
