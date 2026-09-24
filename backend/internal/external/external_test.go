@@ -27,6 +27,15 @@ type fakeStore struct {
 	jobs    map[string]*protocol.DeviceJob
 	devices map[string]*protocol.Device
 	tickets map[string]*protocol.Ticket
+	work    []protocol.WorkItem
+}
+
+func (f *fakeStore) PutWorkItem(_ context.Context, w *protocol.WorkItem) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w.Version = 1
+	f.work = append(f.work, *w)
+	return nil
 }
 
 func newStore() *fakeStore {
@@ -349,7 +358,9 @@ func TestADeviceRunEndToEnd(t *testing.T) {
 	if cancel, known := h.d.DeviceProgress(context.Background(), job.ID, []ProgressEvent{{Kind: "tool", Text: "Edit app.js"}}); cancel || !known {
 		t.Fatalf("progress on a live run: cancel=%v known=%v", cancel, known)
 	}
-	res, _ := json.Marshal(DeviceResult{Answer: "Fixed the null check in app.js; tests pass.", SessionID: "sess-2", Model: "claude-sonnet", InputTokens: 12000, OutputTokens: 900, CostUSD: 0.31})
+	res, _ := json.Marshal(DeviceResult{Answer: "Fixed the null check in app.js; tests pass.", SessionID: "sess-2", Model: "claude-sonnet", InputTokens: 12000, OutputTokens: 900, CostUSD: 0.31,
+		Files:    []ProducedFile{{Path: "src/app.js", Content: "if (x != null) {}"}, {Path: "../escape.txt", Content: "no"}},
+		Unshared: []string{"logo.png"}})
 	h.db.mu.Lock()
 	h.db.jobs[job.ID].State = protocol.DeviceJobDone
 	h.db.jobs[job.ID].Result = string(res)
@@ -357,6 +368,15 @@ func TestADeviceRunEndToEnd(t *testing.T) {
 	k := h.waitState(t, "t3", protocol.TaskSucceeded)
 	if !strings.Contains(k.Result, "null check") || k.Params["session_id"] != "sess-2" {
 		t.Fatalf("finished: %+v", k)
+	}
+	h.db.mu.Lock()
+	work := append([]protocol.WorkItem(nil), h.db.work...)
+	h.db.mu.Unlock()
+	if len(work) != 1 || work[0].Name != "src/app.js" || work[0].CreatedByName == "" {
+		t.Fatalf("the files it changed are shared by their path, and a path out of its folder is not: %+v", work)
+	}
+	if !strings.Contains(k.Result, "Shared with the fleet (read_work): src/app.js") || !strings.Contains(k.Result, "logo.png") {
+		t.Fatalf("the report says what was shared and what was not: %s", k.Result)
 	}
 	if len(h.turns) != 1 || h.turns[0].CostUSD != 0.31 || h.turns[0].ModelName != "claude-sonnet" {
 		t.Fatalf("cost: %+v", h.turns)

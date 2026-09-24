@@ -31,6 +31,16 @@ type DeviceResult struct {
 	IsError      bool    `json:"is_error,omitempty"`
 	Error        string  `json:"error,omitempty"`
 	ExitCode     int     `json:"exit_code,omitempty"`
+	// Files are the text files the run created or changed in its folder;
+	// Unshared names the rest.
+	Files    []ProducedFile `json:"files,omitempty"`
+	Unshared []string       `json:"unshared,omitempty"`
+}
+
+// ProducedFile is one file an agent left in its folder.
+type ProducedFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 // ProgressEvent is one line the host streams while an agent works.
@@ -176,6 +186,7 @@ func parseDeviceResult(j *protocol.DeviceJob, label string) outcome {
 	out := outcome{
 		answer: res.Answer, model: res.Model, inTokens: res.InputTokens, outTokens: res.OutputTokens,
 		cached: res.CachedTokens, costUSD: res.CostUSD, sessionID: res.SessionID,
+		files: res.Files, unshared: res.Unshared,
 	}
 	if j.State == protocol.DeviceJobDone && !res.IsError {
 		out.ok = true

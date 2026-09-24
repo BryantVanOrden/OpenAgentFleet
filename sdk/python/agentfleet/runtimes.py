@@ -83,9 +83,78 @@ class Result:
     is_error: bool = False
     error: str = ""
     exit_code: int = 0
+    files: list[dict[str, str]] = field(default_factory=list)
+    unshared: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
-        return json.dumps({k: v for k, v in self.__dict__.items() if v not in ("", 0, 0.0, False) or k == "answer"})
+        return json.dumps({k: v for k, v in self.__dict__.items() if v or k == "answer"})
+
+
+# What the fleet is sent of an agent's folder when it finishes: the text files
+# it created or changed, so a colleague on another machine can read them. A
+# desktop colleague cannot reach this PC, and without this the file an agent
+# was asked to write was invisible to whoever had to check it.
+SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv", ".next", ".cache",
+             ".pytest_cache", ".mypy_cache", ".tox", "target", ".gradle", ".idea", ".vscode"}
+MAX_SCAN = 20000
+MAX_FILES = 20
+MAX_FILE_BYTES = 256 * 1024
+MAX_TOTAL_BYTES = 1024 * 1024
+
+
+def snapshot(root: str) -> Optional[dict[str, tuple[int, int]]]:
+    """Path -> (mtime_ns, size) for the files under root, or None when the
+    folder is too big to be worth watching."""
+    out: dict[str, tuple[int, int]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            out[os.path.relpath(full, root)] = (st.st_mtime_ns, st.st_size)
+            if len(out) > MAX_SCAN:
+                return None
+    return out
+
+
+def produced(root: str, before: Optional[dict[str, tuple[int, int]]]) -> tuple[list[dict[str, str]], list[str]]:
+    """The text files created or changed since ``before``, newest first and
+    within the limits, and the names of the changed files that were not."""
+    if before is None:
+        return [], []
+    after = snapshot(root)
+    if after is None:
+        return [], []
+    changed = [p for p, sig in after.items() if before.get(p) != sig]
+    changed.sort(key=lambda p: after[p][0], reverse=True)
+    files: list[dict[str, str]] = []
+    unshared: list[str] = []
+    total = 0
+    for rel in changed:
+        name = rel.replace(os.sep, "/")
+        size = after[rel][1]
+        if len(files) >= MAX_FILES or size > MAX_FILE_BYTES or total + size > MAX_TOTAL_BYTES:
+            unshared.append(name)
+            continue
+        try:
+            with open(os.path.join(root, rel), "rb") as fh:
+                data = fh.read(MAX_FILE_BYTES + 1)
+        except OSError:
+            continue
+        if b"\0" in data[:8192]:
+            unshared.append(name)
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            unshared.append(name)
+            continue
+        files.append({"path": name, "content": text})
+        total += len(data)
+    return files, unshared[:50]
 
 
 @dataclass
@@ -294,6 +363,8 @@ def run_agent(job: dict[str, Any], cwd: str, api_url: str,
         env[str(k)] = str(v)
     env["AGENTFLEET_API_URL"] = api_url
 
+    before = snapshot(cwd)
+
     popen_kw: dict[str, Any] = {}
     if os.name == "nt":
         popen_kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
@@ -390,6 +461,8 @@ def run_agent(job: dict[str, Any], cwd: str, api_url: str,
         r.error = ("".join(stderr_tail[-20:]).strip() or f"exited with code {r.exit_code}")[:2000]
     elif r.is_error and not r.error:
         r.error = "".join(stderr_tail[-20:]).strip()[:2000]
+    if not r.is_error:
+        r.files, r.unshared = produced(cwd, before)
     return ("failed" if r.is_error else "done"), r
 
 

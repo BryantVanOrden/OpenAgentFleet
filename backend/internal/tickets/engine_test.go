@@ -325,15 +325,24 @@ func TestLivenessSurfacesAStuckTicketOnce(t *testing.T) {
 
 	orphan := h.ticket(&protocol.Ticket{Title: "Nobody's"})
 	h.e.Reconcile(h.ctx)
-	found := false
-	for _, a := range h.db.alerts {
-		if strings.Contains(a.Title, "Nobody owns "+orphan.Ref()) {
-			found = true
+	unowned := func() bool {
+		for _, a := range h.db.alerts {
+			if strings.Contains(a.Title, "Nobody owns "+orphan.Ref()) {
+				return true
+			}
 		}
+		return false
 	}
-	if !found {
+	if unowned() {
+		t.Fatal("a ticket made a moment ago is not ownerless yet: its part or its assignee is on the way")
+	}
+	later := time.Now().UTC().Add(ownerlessGrace + time.Minute)
+	h.e.now = func() time.Time { return later }
+	h.e.Reconcile(h.ctx)
+	if !unowned() {
 		t.Fatal("an unowned ticket is surfaced")
 	}
+	found := false
 
 	h.run.notReady["c"] = "its PC is not connected"
 	offline := h.ticket(&protocol.Ticket{Title: "Needs Checker", AssigneeID: "c"})
@@ -389,6 +398,30 @@ func TestAVerifierChecksStoppedWork(t *testing.T) {
 	h.e.Reconcile(h.ctx)
 	if n := countKind(h, protocol.TicketVerify); n != 2 {
 		t.Fatal("but the same state is not verified twice")
+	}
+}
+
+func TestReopeningARequestReopensItsParts(t *testing.T) {
+	h := newHarness(t)
+	h.agent("b", "Builder")
+	h.agent("v", "Verifier")
+	root := h.ticket(&protocol.Ticket{Title: "Write the ideas", VerifierID: "v"})
+	work := h.ticket(&protocol.Ticket{Title: "Ideas file", ParentID: root.ID, AssigneeID: "b"})
+	h.e.Reconcile(h.ctx)
+	h.finish(work.ID, protocol.TaskSucceeded, "Created notes/ideas.md", "", "")
+	all, _ := h.db.ListTickets(h.ctx, protocol.TicketFilter{AssigneeID: "v"})
+	if len(all) != 1 {
+		t.Fatalf("the verifier is woken: %+v", all)
+	}
+	msg, err := h.e.ReopenFromAgent(h.ctx, all[0].TaskID, h.db.instances["v"], root.Ref(), "notes/ideas.md is not in the catalog")
+	if err != nil || !strings.Contains(msg, work.Ref()+" (Builder)") {
+		t.Fatalf("reopening the request sends its finished parts back, and says to whom: %v %q", err, msg)
+	}
+	if got := h.get(work.ID); got.Status != protocol.TicketTodo && got.Status != protocol.TicketInProgress {
+		t.Fatalf("the part is open again: %+v", got)
+	}
+	if got := h.get(root.ID); got.Status != protocol.TicketTodo {
+		t.Fatalf("and the request waits for it: %+v", got)
 	}
 }
 

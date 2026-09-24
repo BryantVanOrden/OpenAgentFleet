@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ type Store interface {
 	TicketTasks(ctx context.Context, ticketID string) ([]protocol.Task, error)
 	SetTaskParam(ctx context.Context, taskID, key, value string) error
 	Ticket(ctx context.Context, id string) (*protocol.Ticket, error)
+	PutWorkItem(ctx context.Context, w *protocol.WorkItem) error
 }
 
 // Secrets opens and stores vault entries.
@@ -97,6 +99,11 @@ type outcome struct {
 	costUSD   float64
 	sessionID string
 	verdict   string
+	// files are what the agent created or changed in its folder, shared to
+	// the catalog so colleagues on other machines can read them.
+	files []ProducedFile
+	// unshared are changed paths too big or not text enough to share.
+	unshared []string
 }
 
 // New builds a dispatcher. emit publishes events; record books a turn's cost.
@@ -239,6 +246,11 @@ func (d *Dispatcher) finish(ctx context.Context, r *run, out outcome) {
 		_ = d.db.SetTaskParam(ctx, task.ID, "session_cwd", inst.Connection.Cwd)
 	}
 
+	var shared []string
+	if out.ok && !stopped {
+		shared = d.share(ctx, r, out.files)
+	}
+
 	switch {
 	case stopped:
 		_ = d.db.UpdateTaskState(ctx, task.ID, protocol.TaskCancelled, r.step, "stopped", "")
@@ -247,6 +259,12 @@ func (d *Dispatcher) finish(ctx context.Context, r *run, out outcome) {
 		answer := strings.TrimSpace(out.answer)
 		if answer == "" {
 			answer = "(the agent finished without a final message)"
+		}
+		if len(shared) > 0 {
+			answer += "\n\nShared with the fleet (read_work): " + strings.Join(shared, ", ") + "."
+		}
+		if len(out.unshared) > 0 {
+			answer += "\nAlso changed, not shared (binary or too large): " + strings.Join(out.unshared, ", ") + "."
 		}
 		if d.verdicts != nil && d.verdicts.RequiresVerdict(ctx, task.ID) {
 			v := firstNonEmpty(out.verdict, leadingVerdict(answer))
@@ -263,6 +281,40 @@ func (d *Dispatcher) finish(ctx context.Context, r *run, out outcome) {
 	}
 	d.log.Info("external run finished", "agent", inst.Name, "kind", inst.AgentKindOf(), "task", task.ID,
 		"ok", out.ok, "stopped", stopped, "cost", out.costUSD)
+}
+
+// share publishes what an agent on a PC made, keyed by its path in the
+// agent's folder, so the name in its report is the name a colleague reads.
+// A desktop colleague cannot reach the operator's PC; without this the
+// file an agent was asked to write was invisible to whoever had to check it.
+func (d *Dispatcher) share(ctx context.Context, r *run, files []ProducedFile) []string {
+	var names []string
+	for _, f := range files {
+		name := strings.TrimSpace(strings.ReplaceAll(f.Path, "\\", "/"))
+		if name == "" || strings.HasPrefix(name, "/") || slices.Contains(strings.Split(name, "/"), "..") {
+			continue
+		}
+		mime := "text/plain"
+		if strings.HasSuffix(strings.ToLower(name), ".html") {
+			mime = "text/html"
+		}
+		item := protocol.WorkItem{
+			Name: name, Kind: protocol.WorkFile, Content: f.Content, MIME: mime,
+			Description:   clip("From "+r.inst.Name+"'s folder on its PC", 300),
+			CreatedBy:     r.inst.ID,
+			CreatedByName: r.inst.Name,
+			OrgID:         protocol.SoleOrg(r.inst.OrgIDs),
+		}
+		if err := d.db.PutWorkItem(ctx, &item); err != nil {
+			d.log.Warn("could not share an external agent's file", "agent", r.inst.Name, "path", name, "err", err)
+			continue
+		}
+		if d.emit != nil {
+			d.emit("work", r.inst.ID, r.task.ID, item)
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 func (d *Dispatcher) emitState(task *protocol.Task, st protocol.TaskState, extra map[string]any) {
@@ -309,6 +361,9 @@ func (d *Dispatcher) Prompt(r *run, apiHint string) string {
 	}
 	b.WriteString(", an agent in an OpenAgentFleet fleet. Work in your folder and finish in this run. " +
 		"Your final message is your report: say what you produced, where it is, and anything left undone.\n")
+	if r.inst.AgentKindOf().OnDevice() {
+		b.WriteString("Text files you create or change in your folder are shared with the fleet when you finish, under their path in the folder, so colleagues on other machines can read them. Refer to them by that path.\n")
+	}
 	if apiHint != "" {
 		b.WriteString(apiHint)
 	}

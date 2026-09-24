@@ -197,27 +197,47 @@ func (e *Engine) Reopen(ctx context.Context, id, reason string, by Actor) (*prot
 	if err != nil {
 		return nil, err
 	}
-	if err := e.reopenLocked(ctx, t, reason, by); err != nil {
+	if _, err := e.reopenLocked(ctx, t, reason, by); err != nil {
 		return nil, err
 	}
 	e.Kick()
 	return t, nil
 }
 
-func (e *Engine) reopenLocked(ctx context.Context, t *protocol.Ticket, reason string, by Actor) error {
+// reopenLocked sends a ticket back and says who it went back to. A request
+// nobody is assigned is reopened through its finished parts, which is what
+// its claims were: a verifier that reopened the request itself reopened it
+// "for nobody", and nothing ever picked it up.
+func (e *Engine) reopenLocked(ctx context.Context, t *protocol.Ticket, reason string, by Actor) (string, error) {
 	if t.Status == protocol.TicketInProgress {
-		return fmt.Errorf("%w: %s is being worked on right now", ErrRefused, t.Ref())
+		return "", fmt.Errorf("%w: %s is being worked on right now", ErrRefused, t.Ref())
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return fmt.Errorf("%w: say what is missing", store.ErrInvalid)
+		return "", fmt.Errorf("%w: say what is missing", store.ErrInvalid)
+	}
+	if t.AssigneeID == "" && t.AssigneeUserID == "" {
+		kids, _ := e.db.Children(ctx, t.ID)
+		var sent []string
+		for i := range kids {
+			k := &kids[i]
+			if k.Kind != protocol.TicketWork || k.Status != protocol.TicketDone {
+				continue
+			}
+			if who, err := e.reopenLocked(ctx, k, reason, by); err == nil {
+				sent = append(sent, k.Ref()+" ("+who+")")
+			}
+		}
+		if len(sent) > 0 {
+			return strings.Join(sent, ", "), nil
+		}
 	}
 	t.Status = protocol.TicketTodo
 	t.Verdict = protocol.VerdictFail
 	t.BlockedReason, t.StallFingerprint = "", ""
 	t.Attempts = 0
 	if err := e.db.UpdateTicket(ctx, t); err != nil {
-		return err
+		return "", err
 	}
 	_ = e.db.AddTicketComment(ctx, &protocol.TicketComment{
 		TicketID: t.ID, AuthorID: by.InstanceID, AuthorUserID: by.UserID, AuthorName: firstNonEmpty(by.Name, "operator"),
@@ -247,7 +267,7 @@ func (e *Engine) reopenLocked(ctx context.Context, t *protocol.Ticket, reason st
 		e.emit(p)
 		cur = p.ParentID
 	}
-	return nil
+	return e.nameOf(ctx, t.AssigneeID), nil
 }
 
 // Delete removes a ticket, stopping its run.
@@ -378,11 +398,12 @@ func (e *Engine) ReopenFromAgent(ctx context.Context, taskID string, inst *proto
 	if !e.mayReopenLocked(ctx, taskID, inst, t) {
 		return "", fmt.Errorf("%w: %s is not yours to reopen — you can reopen work you verify, review, or that someone reporting to you owns", ErrRefused, t.Ref())
 	}
-	if err := e.reopenLocked(ctx, t, reason, Actor{InstanceID: inst.ID, Name: inst.Name}); err != nil {
+	who, err := e.reopenLocked(ctx, t, reason, Actor{InstanceID: inst.ID, Name: inst.Name})
+	if err != nil {
 		return "", err
 	}
 	e.Kick()
-	return fmt.Sprintf("reopened %s for %s: %s", t.Ref(), e.nameOf(ctx, t.AssigneeID), clip(reason, 120)), nil
+	return fmt.Sprintf("reopened %s for %s: %s", t.Ref(), who, clip(reason, 120)), nil
 }
 
 func (e *Engine) mayReopenLocked(ctx context.Context, taskID string, inst *protocol.Instance, t *protocol.Ticket) bool {

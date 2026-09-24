@@ -120,7 +120,10 @@ func ParseAction(raw string) (protocol.Action, error) {
 		if strings.TrimSpace(a.Ticket) == "" {
 			return a, fmt.Errorf("reopen_ticket needs ticket: the ticket number, T-12")
 		}
-		if strings.TrimSpace(firstNonEmpty(a.Text, a.Summary)) == "" {
+		// What is missing is what the agent was thinking when it chose to
+		// reopen. A verifier that found the work absent left text empty three
+		// runs in a row with the reason written out in its thought.
+		if a.Text = strings.TrimSpace(firstNonEmpty(a.Text, a.Summary, a.Thought)); a.Text == "" {
 			return a, fmt.Errorf("reopen_ticket needs text: what is missing")
 		}
 	case protocol.ActDone:

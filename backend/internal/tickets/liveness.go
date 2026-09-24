@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
@@ -61,6 +62,10 @@ func (e *Engine) livenessLocked(ctx context.Context) {
 	}
 }
 
+// ownerlessGrace is how long an unassigned ticket may sit before it is
+// reported as having nobody to start it.
+const ownerlessGrace = 2 * time.Minute
+
 func (e *Engine) checkTodoLocked(ctx context.Context, t *protocol.Ticket) {
 	if t.AssigneeID == "" && t.AssigneeUserID == "" {
 		kids, _ := e.db.Children(ctx, t.ID)
@@ -71,6 +76,12 @@ func (e *Engine) checkTodoLocked(ctx context.Context, t *protocol.Ticket) {
 		}
 		if len(kids) > 0 {
 			e.rollupLocked(ctx, t.ID)
+			return
+		}
+		// A request's root exists a moment before its first part is filed
+		// under it, and a ticket made on the board is often assigned a
+		// moment after it is made. Neither is ownerless yet.
+		if e.now().Sub(t.UpdatedAt) < ownerlessGrace {
 			return
 		}
 		e.surfaceLocked(ctx, t, "unowned",

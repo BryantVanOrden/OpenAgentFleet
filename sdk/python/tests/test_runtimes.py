@@ -109,6 +109,21 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(seen["env_token"], "afr_x")
         self.assertIsNone(seen["nested"], "a parent Claude Code session's variables are stripped")
         self.assertTrue(any("Edit: app.js" in e["text"] for e in reports), reports)
+        self.assertEqual([f["path"] for f in r.files], ["claude-args.json"], "what it wrote is sent to the fleet")
+        self.assertIn('"files"', r.to_json())
+
+    def test_only_changed_text_files_are_shared(self):
+        (self.work / "old.txt").write_text("untouched", encoding="utf-8")
+        (self.work / ".git").mkdir()
+        before = runtimes.snapshot(str(self.work))
+        (self.work / "notes").mkdir()
+        (self.work / "notes" / "ideas.md").write_bytes(b"# Ideas\n")
+        (self.work / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\0\0\0")
+        (self.work / ".git" / "HEAD").write_text("ref: x", encoding="utf-8")
+        (self.work / "big.log").write_text("x" * (runtimes.MAX_FILE_BYTES + 1), encoding="utf-8")
+        files, unshared = runtimes.produced(str(self.work), before)
+        self.assertEqual(files, [{"path": "notes/ideas.md", "content": "# Ideas\n"}])
+        self.assertEqual(sorted(unshared), ["big.log", "logo.png"])
 
     def test_edit_only_autonomy_does_not_skip_permissions(self):
         inv = runtimes.claude_invocation({"prompt": "x"}, ["claude"])
