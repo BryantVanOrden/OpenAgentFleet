@@ -70,6 +70,11 @@ jobs:
           npm run build
           npm test
 
+      - name: Lint React Admin Console
+        run: |
+          cd admin
+          npm run lint
+
       - name: Set up Flutter for Fast Analysis
         uses: subosito/flutter-action@v2
         with:

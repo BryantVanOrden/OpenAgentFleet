@@ -1,25 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, artifactUrl, getToken, setToken, type Alert, type User } from "./lib/api";
 import { useEvents } from "./lib/events";
-import { cx } from "./components/ui";
+import { ThinkingDots, cx } from "./components/ui";
 import ToastHost, { toast } from "./components/Toasts";
 import ThemePicker from "./components/ThemePicker";
+// The shell, sign-in and the chat home are what the first paint shows, so they
+// ship in the entry bundle. Every other page is fetched when first visited.
 import Login from "./pages/Login";
 import Home from "./pages/Home";
-import Fleet from "./pages/Fleet";
-import InstanceDetail from "./pages/InstanceDetail";
-import Skills from "./pages/Skills";
-import Alerts from "./pages/Alerts";
-import Models from "./pages/Models";
-import Settings from "./pages/Settings";
-import Triggers from "./pages/Triggers";
-import Vault from "./pages/Vault";
-import Pipelines from "./pages/Pipelines";
-import Financials from "./pages/Financials";
-import MCPHub from "./pages/MCPHub";
-import Org from "./pages/Org";
-import Work from "./pages/Work";
+const Fleet = lazy(() => import("./pages/Fleet"));
+const InstanceDetail = lazy(() => import("./pages/InstanceDetail"));
+const Skills = lazy(() => import("./pages/Skills"));
+const Alerts = lazy(() => import("./pages/Alerts"));
+const Models = lazy(() => import("./pages/Models"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Triggers = lazy(() => import("./pages/Triggers"));
+const Vault = lazy(() => import("./pages/Vault"));
+const Pipelines = lazy(() => import("./pages/Pipelines"));
+const Financials = lazy(() => import("./pages/Financials"));
+const MCPHub = lazy(() => import("./pages/MCPHub"));
+const Org = lazy(() => import("./pages/Org"));
+const Work = lazy(() => import("./pages/Work"));
+
+/** Stands in for a page whose code is still arriving. */
+function PageLoading() {
+  return (
+    <div className="grid h-full place-items-center text-ink-400" role="status">
+      <ThinkingDots />
+      <span className="sr-only">Loading page…</span>
+    </div>
+  );
+}
 
 const NAV: { to: string; label: string; icon: string; adminOnly?: boolean; end?: boolean }[] = [
   // Exact match: "/" is a prefix of every route, so without `end` the chat
@@ -298,6 +310,7 @@ export default function App() {
         {/* Keyed on the path so each page arrives with the same short rise;
             a route change should feel like turning a page, not a reload. */}
         <div key={location.pathname} className="page-enter h-full">
+        <Suspense fallback={<PageLoading />}>
         <Routes>
           <Route path="/" element={<Home role={user.role} />} />
           <Route path="/fleet" element={<Fleet role={user.role} />} />
@@ -315,6 +328,7 @@ export default function App() {
           <Route path="/settings" element={<Settings role={user.role} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
         </div>
       </main>
 

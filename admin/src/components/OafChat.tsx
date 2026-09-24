@@ -14,6 +14,7 @@ import { useEvents } from "../lib/events";
 import { commandPrefix, commandText, fillCommand, filterCommands } from "../lib/fleetChat";
 import { Markdown } from "../lib/markdown";
 import { speakable } from "../lib/speakable";
+import { speechRecognitionCtor, type SpeechRecognitionLike } from "../lib/speech";
 import { shortPath } from "./SessionRail";
 import { Button, ErrorNote, Field, ThinkingBubble, cx, inputClass, relative } from "./ui";
 
@@ -138,7 +139,7 @@ export default function OafChat({
   const [voiceMode, setVoiceMode] = useState(!!voiceWanted);
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
-  const recognition = useRef<any>(null);
+  const recognition = useRef<SpeechRecognitionLike | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceModeRef = useRef(voiceMode);
   voiceModeRef.current = voiceMode;
@@ -181,7 +182,7 @@ export default function OafChat({
   const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
 
   const startListening = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR = speechRecognitionCtor();
     if (!SR) {
       setError("This browser has no speech recognition. Chrome and Edge do.");
       return;
@@ -191,7 +192,7 @@ export default function OafChat({
     rec.continuous = false;
     rec.interimResults = true;
     rec.lang = navigator.language || "en-US";
-    rec.onresult = (ev: any) => {
+    rec.onresult = (ev) => {
       let text = "";
       for (const res of ev.results) text += res[0].transcript;
       setHeard(text);
@@ -201,7 +202,7 @@ export default function OafChat({
         else setDraft((d) => (d ? d + " " : "") + text.trim());
       }
     };
-    rec.onerror = (ev: any) => {
+    rec.onerror = (ev) => {
       if (ev.error !== "no-speech" && ev.error !== "aborted") setError(`Microphone: ${ev.error}`);
       setListening(false);
     };

@@ -155,7 +155,7 @@ export function layoutTree(items: TreeInput[], opts: LayoutOptions): TreeLayout 
   // Forest: lay the roots side by side with the same contour rule.
   const rootOffsets: number[] = [];
   {
-    let accRight: number[] = [];
+    const accRight: number[] = [];
     roots.forEach((r, idx) => {
       const s = subs.get(r)!;
       let shift = 0;

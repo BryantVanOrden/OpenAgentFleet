@@ -14,5 +14,19 @@ export default defineConfig({
       "/healthz": { target: "http://localhost:8080", changeOrigin: true },
     },
   },
-  build: { outDir: "dist", sourcemap: true },
+  build: {
+    outDir: "dist",
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        // React and the router are most of the entry bundle and change far
+        // less often than the console, so they get a chunk of their own that
+        // stays cached across releases.
+        manualChunks(id) {
+          const vendor = /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|cookie|set-cookie-parser)[\\/]/;
+          if (vendor.test(id)) return "react";
+        },
+      },
+    },
+  },
 });

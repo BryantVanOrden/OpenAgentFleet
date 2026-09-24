@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
 import { speakable } from "../lib/speakable";
+import { speechRecognitionCtor, type SpeechRecognitionLike } from "../lib/speech";
 import { ErrorNote, Modal, cx } from "./ui";
 
 export interface VoiceOption {
@@ -76,7 +77,7 @@ export default function VoiceCoPilot({
   // flash "unavailable" during the first request.
   const [ttsAvailable, setTtsAvailable] = useState<boolean | null>(null);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Declared before the effects that clean up with it: it is a const, so the
@@ -119,21 +120,20 @@ export default function VoiceCoPilot({
 
   useEffect(() => {
     // Check browser SpeechRecognition support
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = speechRecognitionCtor();
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event) => {
         const current = event.resultIndex;
         const text = event.results[current][0].transcript;
         setTranscript(text);
       };
 
-      recognition.onerror = (event: any) => {
+      recognition.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
         setIsListening(false);
       };
