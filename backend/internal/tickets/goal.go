@@ -156,7 +156,7 @@ func (e *Engine) verifyBrief(ctx context.Context, b *strings.Builder, t *protoco
 		}
 		b.WriteString(line + "\n")
 	}
-	b.WriteString("\nDo not accept \"done\" without proof, or \"blocked\" without a named, real blocker. Look at what they published (read_work) and at anything they serve. For every ticket that is not genuinely finished, use reopen_ticket with its ticket number and text saying exactly what is missing. Leave genuinely finished work alone.\n")
+	b.WriteString("\nDo not accept \"done\" without proof, or \"blocked\" without a named, real blocker. Look at what they published (read_work) and at anything they serve. A file's copy in the catalog is the file: read it once and judge what it says — it is not on your disk and you do not need to open it anywhere. For every ticket that is not genuinely finished, use reopen_ticket with its ticket number and text saying exactly what is missing. Leave genuinely finished work alone.\n")
 	if strings.TrimSpace(t.Description) != "" {
 		b.WriteString("Your instructions: " + strings.TrimSpace(t.Description) + "\n")
 	}

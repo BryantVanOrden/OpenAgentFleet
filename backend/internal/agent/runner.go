@@ -797,6 +797,17 @@ func (r *Runner) execute(
 			// on searching the web regardless. What the agent is meant to do
 			// next belongs at the top, where a small model will still be
 			// looking.
+			// A verifier with the file in front of it read it four times,
+			// then tried to open it at file:///home/agent/... on its own
+			// desktop, instead of judging what it had read. What to do next
+			// goes first, where a small model is still looking.
+			if n := r.countPublish(task.ID, "read:"+w.Name); n >= 3 {
+				return fmt.Sprintf("You have now read %s %q %d times in this run and it has not changed; "+
+					"reading it again tells you nothing new, and it is not on your disk to open. Decide now: "+
+					"finish with done (with a verdict if you are reviewing or verifying), or reopen_ticket "+
+					"saying exactly what is missing.\n\n%s %q by %s (version %d):\n%s%s",
+					w.Kind, w.Name, n, w.Kind, w.Name, w.CreatedByName, w.Version, body, suffix), terminalNone
+			}
 			opened := ""
 			// A bot reading back its own published file needs no copy opened
 			// on its desktop: the original is on its disk and probably on
