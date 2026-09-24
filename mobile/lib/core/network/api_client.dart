@@ -303,6 +303,175 @@ class ApiClient {
 
   Future<void> deleteInstance(String id) => _delete('/api/instances/$id');
 
+  /// Add an agent that runs somewhere else: Claude Code, Codex or Hermes on a
+  /// PC running `fleetctl host`, an OpenClaw gateway, or a webhook. No sandbox
+  /// is provisioned. [token] goes to the vault and never comes back.
+  Future<Instance> createExternalInstance({
+    required String kind,
+    required String name,
+    required AgentConnection connection,
+    String title = '',
+    String reportsTo = '',
+    String capabilities = '',
+    String trust = '',
+    String token = '',
+  }) async {
+    final data = await _post('/api/instances', {
+      'kind': kind,
+      'name': name,
+      if (title.isNotEmpty) 'title': title,
+      if (reportsTo.isNotEmpty) 'reports_to': reportsTo,
+      if (capabilities.isNotEmpty) 'capabilities': capabilities,
+      if (trust.isNotEmpty) 'trust': trust,
+      'connection': connection.toJson(),
+      if (token.isNotEmpty) 'token': token,
+    }) as Map;
+    return Instance.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// Edit an agent's place in the org chart and its limits. Every field is
+  /// optional; null leaves it alone. An empty [reportsTo] reports to you.
+  /// Budgets need an admin, and a reporting line that would make a loop is
+  /// refused -- both come back as an [ApiException] carrying the server's
+  /// own words.
+  Future<Instance> setInstanceProfile(
+    String id, {
+    String? title,
+    String? capabilities,
+    String? reportsTo,
+    double? budgetMonthUsd,
+    int? budgetWarnPct,
+    String? trust,
+    AgentConnection? connection,
+    String? token,
+  }) async {
+    final data = await _put('/api/instances/$id/profile', {
+      if (title != null) 'title': title,
+      if (capabilities != null) 'capabilities': capabilities,
+      if (reportsTo != null) 'reports_to': reportsTo,
+      if (budgetMonthUsd != null) 'budget_month_usd': budgetMonthUsd,
+      if (budgetWarnPct != null) 'budget_warn_pct': budgetWarnPct,
+      if (trust != null) 'trust': trust,
+      if (connection != null) 'connection': connection.toJson(),
+      if (token != null) 'token': token,
+    }) as Map;
+    return Instance.fromJson(data.cast<String, dynamic>());
+  }
+
+  // ------------------------------------------------------ org and tickets ---
+
+  Future<OrgChart> orgChart() async {
+    final data = await _get('/api/org') as Map? ?? const {};
+    return OrgChart.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// Tickets, newest activity first as the server orders them. [statuses]
+  /// empty means every status.
+  Future<List<Ticket>> tickets({
+    List<String> statuses = const [],
+    String assignee = '',
+    String parent = '',
+    bool rootsOnly = false,
+    int limit = 500,
+  }) async {
+    final data = await _get('/api/tickets', query: {
+      if (statuses.isNotEmpty) 'status': statuses.join(','),
+      if (assignee.isNotEmpty) 'assignee': assignee,
+      if (parent.isNotEmpty) 'parent': parent,
+      if (rootsOnly) 'roots': '1',
+      'limit': limit,
+    }) as List? ?? const [];
+    return data
+        .map((e) => Ticket.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// One ticket and everything around it. [idOrRef] is its id or "T-12".
+  Future<TicketDetail> ticket(String idOrRef) async {
+    final data =
+        await _get('/api/tickets/${Uri.encodeComponent(idOrRef)}') as Map;
+    return TicketDetail.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<Ticket> createTicket({
+    required String title,
+    String description = '',
+    String kind = '',
+    String status = '',
+    int priority = 0,
+    String assigneeId = '',
+    String parentId = '',
+    List<String> blockedBy = const [],
+    String reviewerId = '',
+    String verifierId = '',
+    double budgetUsd = 0,
+    String thread = '',
+  }) async {
+    final data = await _post('/api/tickets', {
+      'title': title,
+      if (description.isNotEmpty) 'description': description,
+      if (kind.isNotEmpty) 'kind': kind,
+      if (status.isNotEmpty) 'status': status,
+      if (priority != 0) 'priority': priority,
+      if (assigneeId.isNotEmpty) 'assignee_id': assigneeId,
+      if (parentId.isNotEmpty) 'parent_id': parentId,
+      if (blockedBy.isNotEmpty) 'blocked_by': blockedBy,
+      if (reviewerId.isNotEmpty) 'reviewer_id': reviewerId,
+      if (verifierId.isNotEmpty) 'verifier_id': verifierId,
+      if (budgetUsd > 0) 'budget_usd': budgetUsd,
+      if (thread.isNotEmpty) 'thread': thread,
+    }) as Map;
+    return Ticket.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// Change any of a ticket's fields. Null leaves a field alone; an empty id
+  /// clears an assignee, reviewer, verifier or parent.
+  Future<Ticket> patchTicket(
+    String idOrRef, {
+    String? title,
+    String? description,
+    String? status,
+    int? priority,
+    String? assigneeId,
+    String? reviewerId,
+    String? verifierId,
+    String? parentId,
+    double? budgetUsd,
+    List<String>? blockedBy,
+  }) async {
+    final data = await _patch('/api/tickets/${Uri.encodeComponent(idOrRef)}', {
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+      if (status != null) 'status': status,
+      if (priority != null) 'priority': priority,
+      if (assigneeId != null) 'assignee_id': assigneeId,
+      if (reviewerId != null) 'reviewer_id': reviewerId,
+      if (verifierId != null) 'verifier_id': verifierId,
+      if (parentId != null) 'parent_id': parentId,
+      if (budgetUsd != null) 'budget_usd': budgetUsd,
+      if (blockedBy != null) 'blocked_by': blockedBy,
+    }) as Map;
+    return Ticket.fromJson(data.cast<String, dynamic>());
+  }
+
+  Future<void> deleteTicket(String idOrRef) =>
+      _delete('/api/tickets/${Uri.encodeComponent(idOrRef)}');
+
+  Future<TicketComment> commentTicket(String idOrRef, String body) async {
+    final data = await _post(
+        '/api/tickets/${Uri.encodeComponent(idOrRef)}/comments',
+        {'body': body}) as Map;
+    return TicketComment.fromJson(data.cast<String, dynamic>());
+  }
+
+  /// Send finished work back, saying what is missing.
+  Future<Ticket> reopenTicket(String idOrRef, String reason) async {
+    final data = await _post(
+        '/api/tickets/${Uri.encodeComponent(idOrRef)}/reopen',
+        {'reason': reason}) as Map;
+    return Ticket.fromJson(data.cast<String, dynamic>());
+  }
+
   // ----------------------------------------------------------------- voice ---
 
   /// Voices offered by the server's speech service.

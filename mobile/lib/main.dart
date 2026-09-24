@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'core/markdown/markdown_lite.dart';
 import 'core/network/api_client.dart';
 import 'core/notifications/push.dart';
 import 'core/state.dart';
@@ -16,6 +17,7 @@ import 'features/home/home_shell.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/vault/vault_screen.dart';
+import 'features/work/ticket_detail_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -115,6 +117,13 @@ class _OpenAgentFleetAppState extends ConsumerState<OpenAgentFleetApp> {
       _push.init();
     }
     _watchAlertsForNotifications();
+    // "T-12" in any chat bubble opens that ticket. Every surface renders
+    // messages through MarkdownLite, so this is the one place to say how.
+    MarkdownLite.onTicketRef = (context, ticketRef) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => TicketDetailScreen(idOrRef: ticketRef),
+      ));
+    };
   }
 
   /// Notify when an agent stops to ask something.

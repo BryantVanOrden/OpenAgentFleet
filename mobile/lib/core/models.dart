@@ -47,7 +47,50 @@ class Instance {
     this.systemPrompt = '',
     required this.createdAt,
     this.lastError = '',
+    this.kind = AgentKind.desktop,
+    this.reportsTo = '',
+    this.title = '',
+    this.capabilities = '',
+    this.connection = const AgentConnection(),
+    this.budgetMonthUsd = 0,
+    this.budgetWarnPct = 0,
+    this.trust = 'standard',
+    this.hold = '',
   });
+
+  /// How the agent runs: a desktop this fleet provisions, or an external
+  /// runtime. Rows from before kinds existed read as desktops.
+  final String kind;
+
+  /// The agent this one reports to. Empty reports to you.
+  final String reportsTo;
+
+  /// Its job title in the org chart, e.g. "Engineer".
+  final String title;
+
+  /// "When I'm useful": what colleagues read to decide who to ask.
+  final String capabilities;
+
+  /// How an external agent is reached. Empty for a desktop.
+  final AgentConnection connection;
+
+  /// Monthly spend ceiling in dollars. 0 is none.
+  final double budgetMonthUsd;
+
+  /// The percentage of [budgetMonthUsd] at which you are warned. 0 means the
+  /// server default (80).
+  final int budgetWarnPct;
+
+  /// 'standard' or 'low'.
+  final String trust;
+
+  /// Why the agent is not being given work: '' or 'budget'.
+  final String hold;
+
+  bool get isExternal => AgentKind.isExternal(kind);
+  bool get isDesktop => !isExternal;
+  bool get isHeld => hold.isNotEmpty;
+  bool get lowTrust => trust == 'low';
 
   final String id;
   final String name;
@@ -114,7 +157,150 @@ class Instance {
         createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
             DateTime.now(),
         lastError: j['last_error'] as String? ?? '',
+        // Everything below is absent on an orchestrator from before the org
+        // chart, and must read as an ordinary desktop reporting to you.
+        kind: AgentKind.normalise(j['kind'] as String?),
+        reportsTo: j['reports_to'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        capabilities: j['capabilities'] as String? ?? '',
+        connection: AgentConnection.fromJson(
+            ((j['connection'] as Map?) ?? const {}).cast<String, dynamic>()),
+        budgetMonthUsd: (j['budget_month_usd'] as num?)?.toDouble() ?? 0,
+        budgetWarnPct: (j['budget_warn_pct'] as num?)?.toInt() ?? 0,
+        trust: (j['trust'] as String?)?.isNotEmpty == true
+            ? j['trust'] as String
+            : 'standard',
+        hold: j['hold'] as String? ?? '',
       );
+}
+
+/// The kinds of agent the fleet can hold, and what the app knows about each.
+///
+/// Strings rather than an enum: the server may add a kind before the app
+/// knows it, and an unknown kind must still render (with its raw name) rather
+/// than fail to parse.
+class AgentKind {
+  const AgentKind._();
+
+  static const desktop = 'desktop';
+  static const claudeCode = 'claude_code';
+  static const codex = 'codex';
+  static const hermes = 'hermes';
+  static const openClaw = 'openclaw';
+  static const webhook = 'webhook';
+
+  /// In the order the console offers them.
+  static const all = [desktop, claudeCode, codex, hermes, openClaw, webhook];
+
+  /// Empty or missing is a desktop: every row from before kinds existed.
+  static String normalise(String? k) =>
+      (k == null || k.isEmpty) ? desktop : k;
+
+  static bool isExternal(String k) => normalise(k) != desktop;
+
+  /// Run by `fleetctl host` on a PC, in a folder.
+  static bool onDevice(String k) =>
+      k == claudeCode || k == codex || k == hermes;
+
+  static String label(String k) => switch (normalise(k)) {
+        desktop => 'Desktop',
+        claudeCode => 'Claude Code',
+        codex => 'Codex',
+        hermes => 'Hermes',
+        openClaw => 'OpenClaw',
+        webhook => 'Webhook',
+        final other => other,
+      };
+
+  /// One line on what choosing this kind means.
+  static String blurb(String k) => switch (k) {
+        desktop => 'A sandboxed Linux desktop this fleet provisions. You can '
+            'watch it and take over.',
+        claudeCode => 'Claude Code on your PC, working in a folder you pick.',
+        codex => 'Codex on your PC, working in a folder you pick.',
+        hermes => 'Hermes on your PC, working in a folder you pick.',
+        openClaw => 'An OpenClaw gateway. The fleet dials it for each run.',
+        webhook => 'Any service that accepts a POST and answers, now or later.',
+        _ => '',
+      };
+}
+
+/// How an external agent is reached. Never holds a secret: [tokenRef] only
+/// names the vault entry.
+class AgentConnection {
+  const AgentConnection({
+    this.deviceId = '',
+    this.cwd = '',
+    this.model = '',
+    this.args = const [],
+    this.url = '',
+    this.tokenRef = '',
+    this.agentId = '',
+    this.autonomy = '',
+    this.timeoutSec = 0,
+  });
+
+  final String deviceId;
+  final String cwd;
+  final String model;
+  final List<String> args;
+  final String url;
+  final String tokenRef;
+  final String agentId;
+
+  /// 'edits' (the default when empty) or 'full'.
+  final String autonomy;
+  final int timeoutSec;
+
+  bool get hasToken => tokenRef.isNotEmpty;
+  bool get isEmpty => deviceId.isEmpty && url.isEmpty;
+
+  factory AgentConnection.fromJson(Map<String, dynamic> j) => AgentConnection(
+        deviceId: j['device_id'] as String? ?? '',
+        cwd: j['cwd'] as String? ?? '',
+        model: j['model'] as String? ?? '',
+        args: ((j['args'] as List?) ?? const []).map((e) => '$e').toList(),
+        url: j['url'] as String? ?? '',
+        tokenRef: j['token_ref'] as String? ?? '',
+        agentId: j['agent_id'] as String? ?? '',
+        autonomy: j['autonomy'] as String? ?? '',
+        timeoutSec: (j['timeout_sec'] as num?)?.toInt() ?? 0,
+      );
+
+  /// What the server takes. The token ref is the server's to manage and is
+  /// never sent back.
+  Map<String, dynamic> toJson() => {
+        if (deviceId.isNotEmpty) 'device_id': deviceId,
+        if (cwd.isNotEmpty) 'cwd': cwd,
+        if (model.isNotEmpty) 'model': model,
+        if (args.isNotEmpty) 'args': args,
+        if (url.isNotEmpty) 'url': url,
+        if (agentId.isNotEmpty) 'agent_id': agentId,
+        if (autonomy.isNotEmpty) 'autonomy': autonomy,
+        if (timeoutSec > 0) 'timeout_sec': timeoutSec,
+      };
+
+  /// One line saying where the agent lives, for a card or a subtitle.
+  ///
+  /// [short] names only the folder's last part -- `cc-work on Dev PC` rather
+  /// than a Windows temp path that fills the line before the PC is named.
+  String summary({String deviceName = '', bool short = false}) {
+    if (deviceId.isNotEmpty || cwd.isNotEmpty) {
+      final where = deviceName.isNotEmpty ? deviceName : 'a PC';
+      var folder = cwd;
+      if (short) {
+        final parts =
+            cwd.split(RegExp(r'[\\/]')).where((p) => p.isNotEmpty).toList();
+        if (parts.isNotEmpty) folder = parts.last;
+      }
+      return folder.isEmpty ? 'on $where' : '$folder on $where';
+    }
+    if (url.isNotEmpty) {
+      final host = Uri.tryParse(url)?.host ?? '';
+      return host.isEmpty ? url : host;
+    }
+    return 'not connected yet';
+  }
 }
 
 class InstanceStats {
@@ -369,6 +555,7 @@ class OafDevice {
     this.roots = const [],
     this.autoApprove = false,
     this.online = false,
+    this.runtimes = const [],
   });
 
   final String id;
@@ -379,6 +566,14 @@ class OafDevice {
   final bool autoApprove;
   final bool online;
 
+  /// Agent CLIs the host found installed (claude_code, codex, hermes). Empty
+  /// from an older host that did not report them, which means "unknown", not
+  /// "none": the server only refuses a kind when the list is non-empty.
+  final List<String> runtimes;
+
+  /// Whether this device can run an agent of [kind], as far as it has said.
+  bool canRun(String kind) => runtimes.isEmpty || runtimes.contains(kind);
+
   factory OafDevice.fromJson(Map<String, dynamic> j) => OafDevice(
         id: j['id'] as String,
         name: j['name'] as String? ?? '',
@@ -387,6 +582,9 @@ class OafDevice {
         roots: ((j['roots'] as List?) ?? const []).map((e) => e.toString()).toList(),
         autoApprove: j['auto_approve'] as bool? ?? false,
         online: j['online'] as bool? ?? false,
+        runtimes: ((j['runtimes'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
       );
 }
 
@@ -2343,5 +2541,394 @@ class ImportArchetypeResult {
         instanceId: j['instance_id'] as String? ?? '',
         instanceName: j['instance_name'] as String? ?? '',
         instanceStatus: j['instance_status'] as String? ?? '',
+      );
+}
+
+// ------------------------------------------------------------- tickets ---
+
+/// One piece of work: one owner, the ticket it exists for, and the tickets it
+/// waits on. The shape is the server's TicketView; the `ticket` socket event
+/// carries the bare Ticket, without [ref] or the names, so both are derived
+/// or left empty rather than required.
+class Ticket {
+  const Ticket({
+    required this.id,
+    required this.number,
+    required this.title,
+    this.ref = '',
+    this.description = '',
+    this.kind = 'work',
+    this.status = 'todo',
+    this.priority = 0,
+    this.parentId = '',
+    this.targetId = '',
+    this.assigneeId = '',
+    this.assigneeName = '',
+    this.reviewerId = '',
+    this.reviewerName = '',
+    this.verifierId = '',
+    this.verifierName = '',
+    this.thread = '',
+    this.origin = '',
+    this.stage = '',
+    this.taskId = '',
+    this.attempts = 0,
+    this.rounds = 0,
+    this.wakes = 0,
+    this.verdict = '',
+    this.result = '',
+    this.blockedReason = '',
+    this.budgetUsd = 0,
+    this.costUsd = 0,
+    this.blockedBy = const [],
+    this.createdAt,
+    this.updatedAt,
+    this.startedAt,
+    this.doneAt,
+  });
+
+  static const statuses = [
+    'backlog',
+    'todo',
+    'in_progress',
+    'in_review',
+    'blocked',
+    'done',
+    'cancelled',
+  ];
+
+  static const kinds = ['work', 'review', 'verify', 'unblock'];
+
+  static String statusLabel(String s) => switch (s) {
+        'backlog' => 'Backlog',
+        'todo' => 'To do',
+        'in_progress' => 'In progress',
+        'in_review' => 'In review',
+        'blocked' => 'Blocked',
+        'done' => 'Done',
+        'cancelled' => 'Cancelled',
+        _ => s.replaceAll('_', ' '),
+      };
+
+  final String id;
+  final int number;
+
+  /// "T-12". Filled from [number] when the payload did not carry it.
+  final String ref;
+  final String title;
+  final String description;
+
+  /// work | review | verify | unblock
+  final String kind;
+
+  /// backlog | todo | in_progress | in_review | blocked | done | cancelled
+  final String status;
+  final int priority;
+  final String parentId;
+
+  /// For a review, verify or unblock ticket: the ticket it is about.
+  final String targetId;
+  final String assigneeId;
+  final String assigneeName;
+  final String reviewerId;
+  final String reviewerName;
+  final String verifierId;
+  final String verifierName;
+  final String thread;
+
+  /// The operator's own words that started the tree this ticket is in.
+  final String origin;
+  final String stage;
+
+  /// The live run, while one holds the ticket.
+  final String taskId;
+  final int attempts;
+  final int rounds;
+  final int wakes;
+
+  /// 'pass', 'fail' or ''.
+  final String verdict;
+
+  /// The closing report.
+  final String result;
+  final String blockedReason;
+  final double budgetUsd;
+  final double costUsd;
+
+  /// Ids of the tickets this one waits on.
+  final List<String> blockedBy;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? startedAt;
+  final DateTime? doneAt;
+
+  bool get isTerminal => status == 'done' || status == 'cancelled';
+  bool get isOpen => !isTerminal;
+  bool get isRoot => parentId.isEmpty;
+
+  /// Review, verify and unblock tickets are work about other work, and are
+  /// worth marking in a list; ordinary work is not.
+  bool get isMeta => kind != 'work';
+
+  static String _nonEmpty(dynamic v, String fallback) =>
+      v is String && v.isNotEmpty ? v : fallback;
+
+  factory Ticket.fromJson(Map<String, dynamic> j) {
+    final number = (j['number'] as num?)?.toInt() ?? 0;
+    return Ticket(
+      id: j['id'] as String? ?? '',
+      number: number,
+      ref: _nonEmpty(j['ref'], number > 0 ? 'T-$number' : ''),
+      title: j['title'] as String? ?? '',
+      description: j['description'] as String? ?? '',
+      kind: _nonEmpty(j['kind'], 'work'),
+      status: _nonEmpty(j['status'], 'todo'),
+      priority: (j['priority'] as num?)?.toInt() ?? 0,
+      parentId: j['parent_id'] as String? ?? '',
+      targetId: j['target_id'] as String? ?? '',
+      assigneeId: j['assignee_id'] as String? ?? '',
+      assigneeName: j['assignee_name'] as String? ?? '',
+      reviewerId: j['reviewer_id'] as String? ?? '',
+      reviewerName: j['reviewer_name'] as String? ?? '',
+      verifierId: j['verifier_id'] as String? ?? '',
+      verifierName: j['verifier_name'] as String? ?? '',
+      thread: j['thread'] as String? ?? '',
+      origin: j['origin'] as String? ?? '',
+      stage: j['stage'] as String? ?? '',
+      taskId: j['task_id'] as String? ?? '',
+      attempts: (j['attempts'] as num?)?.toInt() ?? 0,
+      rounds: (j['rounds'] as num?)?.toInt() ?? 0,
+      wakes: (j['wakes'] as num?)?.toInt() ?? 0,
+      verdict: j['verdict'] as String? ?? '',
+      result: j['result'] as String? ?? '',
+      blockedReason: j['blocked_reason'] as String? ?? '',
+      budgetUsd: (j['budget_usd'] as num?)?.toDouble() ?? 0,
+      costUsd: (j['cost_usd'] as num?)?.toDouble() ?? 0,
+      blockedBy: ((j['blocked_by'] as List?) ?? const [])
+          .map((e) => '$e')
+          .toList(growable: false),
+      createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
+      updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? ''),
+      startedAt: DateTime.tryParse(j['started_at'] as String? ?? ''),
+      doneAt: DateTime.tryParse(j['done_at'] as String? ?? ''),
+    );
+  }
+}
+
+/// One entry in a ticket's thread.
+class TicketComment {
+  const TicketComment({
+    required this.id,
+    required this.ticketId,
+    required this.body,
+    this.authorId = '',
+    this.authorUserId = '',
+    this.authorName = '',
+    this.kind = 'comment',
+    this.createdAt,
+  });
+
+  /// comment | system | result | verdict | published | retry | review_brief
+  static const kinds = [
+    'comment',
+    'system',
+    'result',
+    'verdict',
+    'published',
+    'retry',
+    'review_brief',
+  ];
+
+  final String id;
+  final String ticketId;
+  final String authorId;
+  final String authorUserId;
+  final String authorName;
+  final String kind;
+  final String body;
+  final DateTime? createdAt;
+
+  /// Written by a person rather than an agent or the engine.
+  bool get byPerson => authorUserId.isNotEmpty;
+
+  factory TicketComment.fromJson(Map<String, dynamic> j) => TicketComment(
+        id: j['id'] as String? ?? '',
+        ticketId: j['ticket_id'] as String? ?? '',
+        authorId: j['author_id'] as String? ?? '',
+        authorUserId: j['author_user_id'] as String? ?? '',
+        authorName: j['author_name'] as String? ?? '',
+        kind: Ticket._nonEmpty(j['kind'], 'comment'),
+        body: j['body'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
+      );
+}
+
+/// Everything a ticket's page shows.
+class TicketDetail {
+  const TicketDetail({
+    required this.ticket,
+    this.ancestry = const [],
+    this.children = const [],
+    this.blockers = const [],
+    this.dependents = const [],
+    this.comments = const [],
+    this.runs = const [],
+  });
+
+  final Ticket ticket;
+
+  /// From the root request down to this ticket's parent: why it matters.
+  final List<Ticket> ancestry;
+  final List<Ticket> children;
+  final List<Ticket> blockers;
+
+  /// Tickets waiting on this one.
+  final List<Ticket> dependents;
+  final List<TicketComment> comments;
+  final List<Task> runs;
+
+  /// Every ticket id this page shows, so a socket event about any of them can
+  /// trigger a refresh.
+  Set<String> get relatedIds => {
+        ticket.id,
+        for (final t in ancestry) t.id,
+        for (final t in children) t.id,
+        for (final t in blockers) t.id,
+        for (final t in dependents) t.id,
+      };
+
+  static List<Ticket> _tickets(dynamic v) => ((v as List?) ?? const [])
+      .whereType<Map>()
+      .map((e) => Ticket.fromJson(e.cast<String, dynamic>()))
+      .toList(growable: false);
+
+  factory TicketDetail.fromJson(Map<String, dynamic> j) => TicketDetail(
+        ticket: Ticket.fromJson(
+            ((j['ticket'] as Map?) ?? const {}).cast<String, dynamic>()),
+        ancestry: _tickets(j['ancestry']),
+        children: _tickets(j['children']),
+        blockers: _tickets(j['blockers']),
+        dependents: _tickets(j['dependents']),
+        comments: ((j['comments'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => TicketComment.fromJson(e.cast<String, dynamic>()))
+            .toList(growable: false),
+        runs: ((j['runs'] as List?) ?? const [])
+            .whereType<Map>()
+            .where((e) => e['id'] is String)
+            .map((e) => Task.fromJson(e.cast<String, dynamic>()))
+            .toList(growable: false),
+      );
+}
+
+// ----------------------------------------------------------- org chart ---
+
+/// One agent in the org chart, with what the chart shows about it.
+class OrgNode {
+  const OrgNode({
+    required this.id,
+    required this.name,
+    this.title = '',
+    this.kind = AgentKind.desktop,
+    this.state = '',
+    this.reportsTo = '',
+    this.capabilities = '',
+    this.trust = 'standard',
+    this.hold = '',
+    this.archetypeId = '',
+    this.busy = false,
+    this.ticketRef = '',
+    this.ticketTitle = '',
+    this.spendMonthUsd = 0,
+    this.budgetMonthUsd = 0,
+    this.openTickets = 0,
+    this.online = false,
+  });
+
+  final String id;
+  final String name;
+  final String title;
+  final String kind;
+  final String state;
+
+  /// The manager's id. Empty reports to you -- and so does an agent whose
+  /// manager the server would not show you.
+  final String reportsTo;
+  final String capabilities;
+  final String trust;
+  final String hold;
+  final String archetypeId;
+
+  /// A run is live; [ticketRef] is the ticket it is on.
+  final bool busy;
+  final String ticketRef;
+  final String ticketTitle;
+  final double spendMonthUsd;
+  final double budgetMonthUsd;
+  final int openTickets;
+  final bool online;
+
+  bool get hasBudget => budgetMonthUsd > 0;
+  double get budgetFraction =>
+      hasBudget ? (spendMonthUsd / budgetMonthUsd).clamp(0.0, 1.0) : 0;
+
+  factory OrgNode.fromJson(Map<String, dynamic> j) => OrgNode(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        kind: AgentKind.normalise(j['kind'] as String?),
+        state: j['state'] as String? ?? '',
+        reportsTo: j['reports_to'] as String? ?? '',
+        capabilities: j['capabilities'] as String? ?? '',
+        trust: Ticket._nonEmpty(j['trust'], 'standard'),
+        hold: j['hold'] as String? ?? '',
+        archetypeId: j['archetype_id'] as String? ?? '',
+        busy: j['busy'] as bool? ?? false,
+        ticketRef: j['ticket_ref'] as String? ?? '',
+        ticketTitle: j['ticket_title'] as String? ?? '',
+        spendMonthUsd: (j['spend_month_usd'] as num?)?.toDouble() ?? 0,
+        budgetMonthUsd: (j['budget_month_usd'] as num?)?.toDouble() ?? 0,
+        openTickets: (j['open_tickets'] as num?)?.toInt() ?? 0,
+        online: j['online'] as bool? ?? false,
+      );
+}
+
+/// An agent kind this server can run, for the add-agent picker.
+class OrgKind {
+  const OrgKind({required this.kind, required this.label, this.onDevice = false});
+
+  final String kind;
+  final String label;
+  final bool onDevice;
+
+  factory OrgKind.fromJson(Map<String, dynamic> j) {
+    final kind = AgentKind.normalise(j['kind'] as String?);
+    return OrgKind(
+      kind: kind,
+      label: Ticket._nonEmpty(j['label'], AgentKind.label(kind)),
+      onDevice: j['on_device'] as bool? ?? AgentKind.onDevice(kind),
+    );
+  }
+}
+
+/// GET /api/org.
+class OrgChart {
+  const OrgChart({this.nodes = const [], this.kinds = const []});
+
+  final List<OrgNode> nodes;
+
+  /// Empty from a server that did not say; callers fall back to
+  /// [AgentKind.all].
+  final List<OrgKind> kinds;
+
+  factory OrgChart.fromJson(Map<String, dynamic> j) => OrgChart(
+        nodes: ((j['nodes'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => OrgNode.fromJson(e.cast<String, dynamic>()))
+            .toList(growable: false),
+        kinds: ((j['kinds'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => OrgKind.fromJson(e.cast<String, dynamic>()))
+            .toList(growable: false),
       );
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'models.dart';
@@ -162,6 +164,132 @@ final meProvider = FutureProvider<CurrentUser>((ref) {
   return ref.read(apiProvider).me();
 });
 
+
+/// A fetch that re-runs when the event bus says something relevant happened.
+///
+/// Ticket and org events come in bursts -- a run finishing touches its
+/// ticket, the parent, a dependent and a comment within a few milliseconds --
+/// so refreshes are debounced and never overlap: one fetch after the burst
+/// rather than five in a row. A refresh that fails keeps the last good value
+/// on screen; only the first load's failure is shown as an error.
+Stream<T> liveFetch<T>(
+  Ref ref,
+  Future<T> Function() fetch,
+  bool Function(FleetEvent event, T? last) relevant, {
+  Duration debounce = const Duration(milliseconds: 350),
+}) {
+  final out = StreamController<T>();
+  T? last;
+  var loaded = false;
+  var inflight = false;
+  var again = false;
+  Timer? timer;
+
+  Future<void> run() async {
+    if (inflight) {
+      again = true;
+      return;
+    }
+    inflight = true;
+    try {
+      final v = await fetch();
+      last = v;
+      loaded = true;
+      if (!out.isClosed) out.add(v);
+    } catch (err, st) {
+      if (!loaded && !out.isClosed) out.addError(err, st);
+    } finally {
+      inflight = false;
+      if (again && !out.isClosed) {
+        again = false;
+        unawaited(run());
+      }
+    }
+  }
+
+  unawaited(run());
+  final sub = ref.watch(fleetEventsProvider).events.listen((e) {
+    if (!relevant(e, last)) return;
+    timer?.cancel();
+    timer = Timer(debounce, run);
+  });
+  ref.onDispose(() {
+    timer?.cancel();
+    sub.cancel();
+    out.close();
+  });
+  return out.stream;
+}
+
+/// The org chart: who reports to whom, what each is on, what each has spent.
+/// Refreshed by anything that moves a box or changes what it shows.
+final orgProvider = StreamProvider<OrgChart>((ref) {
+  ref.watch(sessionProvider);
+  final api = ref.watch(apiProvider);
+  return liveFetch<OrgChart>(
+    ref,
+    api.orgChart,
+    (e, _) =>
+        e.type.startsWith('instance.') ||
+        e.type == 'ticket' ||
+        e.type == 'task.state',
+  );
+});
+
+/// Which tickets the Work screen lists.
+typedef TicketQuery = ({String assignee, bool rootsOnly});
+
+/// Tickets for the Work screen, every status at once so switching tabs is
+/// instant; grouped client-side.
+final ticketsProvider =
+    StreamProvider.family<List<Ticket>, TicketQuery>((ref, q) {
+  ref.watch(sessionProvider);
+  final api = ref.watch(apiProvider);
+  return liveFetch<List<Ticket>>(
+    ref,
+    () => api.tickets(assignee: q.assignee, rootsOnly: q.rootsOnly),
+    (e, _) => e.type == 'ticket',
+  );
+});
+
+/// Whether a socket event touches a ticket page that currently shows [d].
+bool ticketEventTouches(FleetEvent e, TicketDetail d) {
+  final p = e.payload;
+  final id = d.ticket.id;
+  if (e.type == 'ticket.comment') {
+    return p is Map && p['ticket_id'] == id;
+  }
+  if (e.type == 'ticket') {
+    if (p is! Map) return false;
+    if (d.relatedIds.contains(p['id'])) return true;
+    // A new child or a new dependent is not on the page yet.
+    if (p['parent_id'] == id) return true;
+    final blockedBy = p['blocked_by'];
+    return blockedBy is List && blockedBy.contains(id);
+  }
+  if (e.type == 'task.state') {
+    final task = e.taskId ?? '';
+    if (task.isEmpty) return false;
+    return task == d.ticket.taskId || d.runs.any((r) => r.id == task);
+  }
+  return false;
+}
+
+/// One ticket's page, by id or reference ("T-12").
+final ticketDetailProvider =
+    StreamProvider.autoDispose.family<TicketDetail, String>((ref, idOrRef) {
+  final api = ref.watch(apiProvider);
+  return liveFetch<TicketDetail>(
+    ref,
+    () => api.ticket(idOrRef),
+    (e, last) => last != null && ticketEventTouches(e, last),
+  );
+});
+
+/// PCs and phones that have connected themselves, for picking where an
+/// external agent runs.
+final oafDevicesProvider = FutureProvider.autoDispose<List<OafDevice>>(
+    (ref) => ref.watch(apiProvider).oafDevices());
 
 /// Which bottom-nav tab is which, so the shell and the screens agree.
 ///

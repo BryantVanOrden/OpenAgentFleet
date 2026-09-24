@@ -15,9 +15,11 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/agent_kind_badge.dart';
 import '../../core/widgets/window_chip.dart';
 import '../agent_chat/chat_screen.dart';
 import '../admin/bot_access_sheet.dart';
+import '../org/agent_profile_sheet.dart';
 import 'assign_task_sheet.dart';
 import 'memory_screen.dart';
 import 'model_chain_sheet.dart';
@@ -37,18 +39,26 @@ class InstanceScreen extends ConsumerStatefulWidget {
 }
 
 class _InstanceScreenState extends ConsumerState<InstanceScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// True while the Desktop tab is expanded; hides this screen's own chrome.
   bool _desktopFullscreen = false;
 
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  /// Three tabs for a desktop, two for an agent that runs somewhere else --
+  /// it has no desktop to show. Made once the instance is known.
+  TabController? _tabs;
 
-  @override
-  void initState() {
-    super.initState();
-    // The assign-task button belongs to the Activity tab alone, so the FAB
-    // has to follow the tab selection.
-    _tabs.addListener(_onTabChanged);
+  /// The assign-task button belongs to the Activity tab alone, so the FAB
+  /// has to follow the tab selection.
+  TabController _controllerFor(bool external) {
+    final want = external ? 2 : 3;
+    final current = _tabs;
+    if (current != null && current.length == want) return current;
+    current?.removeListener(_onTabChanged);
+    current?.dispose();
+    final next = TabController(length: want, vsync: this)
+      ..addListener(_onTabChanged);
+    _tabs = next;
+    return next;
   }
 
   void _onTabChanged() {
@@ -57,8 +67,8 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
 
   @override
   void dispose() {
-    _tabs.removeListener(_onTabChanged);
-    _tabs.dispose();
+    _tabs?.removeListener(_onTabChanged);
+    _tabs?.dispose();
     super.dispose();
   }
 
@@ -72,11 +82,14 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
     if (instance == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    final external = instance.isExternal;
+    final tabs = _controllerFor(external);
+    final activityTab = external ? 0 : 1;
 
     return Scaffold(
       // Only on the Activity tab: over Desktop it would cover the corner of
       // the remote screen, and Chat has its own composer down there.
-      floatingActionButton: _desktopFullscreen || _tabs.index != 1
+      floatingActionButton: _desktopFullscreen || tabs.index != activityTab
           ? null
           : FloatingActionButton.extended(
               // A stopped bot cannot take work; visibly grey rather than
@@ -101,7 +114,13 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
                 children: [
                   Text(instance.name, overflow: TextOverflow.ellipsis),
                   Text(
-                    '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
+                    external
+                        ? [
+                            if (instance.title.isNotEmpty) instance.title,
+                            instance.connection.summary(short: true),
+                          ].join(' · ')
+                        : '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: Fleet.ink400),
                   ),
                 ],
@@ -110,34 +129,40 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: Center(
-                      child: StateChip(
-                          state: instance.state, live: instance.isRunning)),
+                      // An external agent is always "running" as far as its
+                      // row is concerned; what it is matters more.
+                      child: external
+                          ? AgentKindBadge(instance.kind)
+                          : StateChip(
+                              state: instance.state,
+                              live: instance.isRunning)),
                 ),
                 _ControlMenu(instance: instance),
               ],
               bottom: TabBar(
-                controller: _tabs,
+                controller: tabs,
                 indicatorColor: Fleet.live,
                 labelColor: Fleet.ink100,
                 unselectedLabelColor: Fleet.ink400,
-                tabs: const [
-                  Tab(text: 'Desktop'),
-                  Tab(text: 'Activity'),
-                  Tab(text: 'Chat'),
+                tabs: [
+                  if (!external) const Tab(text: 'Desktop'),
+                  const Tab(text: 'Activity'),
+                  const Tab(text: 'Chat'),
                 ],
               ),
             ),
       body: TabBarView(
-        controller: _tabs,
+        controller: tabs,
         children: [
-          _DesktopTab(
-            instance: instance,
-            onFullscreenChanged: (v) {
-              if (_desktopFullscreen != v) {
-                setState(() => _desktopFullscreen = v);
-              }
-            },
-          ),
+          if (!external)
+            _DesktopTab(
+              instance: instance,
+              onFullscreenChanged: (v) {
+                if (_desktopFullscreen != v) {
+                  setState(() => _desktopFullscreen = v);
+                }
+              },
+            ),
           _ActivityTab(instanceId: instance.id),
           ChatScreen(
             instanceId: instance.id,
@@ -177,8 +202,12 @@ class _ControlMenu extends ConsumerWidget {
             backgroundColor: Fleet.ink850,
             title: const Text('Delete this agent?'),
             content: Text(
-              '"${instance.name}" and everything on its disk will be removed. '
-              'This cannot be undone.',
+              instance.isExternal
+                  ? '"${instance.name}" leaves the fleet and its tickets lose '
+                      'their assignee. Nothing on its PC or service is '
+                      'touched. This cannot be undone.'
+                  : '"${instance.name}" and everything on its disk will be '
+                      'removed. This cannot be undone.',
               style: TextStyle(color: Fleet.ink300),
             ),
             actions: [
@@ -254,6 +283,12 @@ class _ControlMenu extends ConsumerWidget {
         return;
       }
 
+      if (action == 'profile') {
+        await AgentProfileSheet.show(context, instance.id,
+            showOpenAgent: false);
+        return;
+      }
+
         if (action == 'persona') {
           await PersonaSheet.show(context, instance);
           return;
@@ -303,11 +338,32 @@ class _ControlMenu extends ConsumerWidget {
       }
     }
 
+    // Power, shell, sudo and the model chain are all about a sandbox this
+    // fleet runs. An external agent has none, so they are not offered.
+    final desktop = instance.isDesktop;
     return PopupMenuButton<String>(
       onSelected: act,
       color: Fleet.ink850,
       itemBuilder: (_) => [
-        if (instance.isRunning) ...[
+        PopupMenuItem(
+          value: 'profile',
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.badge_outlined),
+            title: const Text('Place in the org'),
+            subtitle: Text(
+              [
+                instance.title.isEmpty ? 'No title' : instance.title,
+                if (instance.lowTrust) 'low trust',
+                if (instance.budgetMonthUsd > 0)
+                  '\$${instance.budgetMonthUsd.toStringAsFixed(0)}/month',
+              ].join(' · '),
+            ),
+          ),
+        ),
+        const PopupMenuDivider(),
+        if (!desktop) ...[]
+        else if (instance.isRunning) ...[
           const PopupMenuItem(
             value: 'pause',
             child: ListTile(
@@ -341,7 +397,7 @@ class _ControlMenu extends ConsumerWidget {
                 leading: Icon(Icons.power_settings_new),
                 title: Text('Start')),
           ),
-        const PopupMenuDivider(),
+        if (desktop) const PopupMenuDivider(),
         PopupMenuItem(
           value: 'voice',
           child: ListTile(
@@ -380,7 +436,7 @@ class _ControlMenu extends ConsumerWidget {
         // Model chains are a deployment-wide concern: which engines the fleet
         // pays for and which one sees a bot's screen. The route is admin-only,
         // so offering the item to everyone else only produced a refusal.
-        if (isAdmin)
+        if (isAdmin && desktop)
           PopupMenuItem(
             value: 'models',
           child: ListTile(
@@ -401,6 +457,7 @@ class _ControlMenu extends ConsumerWidget {
             subtitle: Text('What this bot has kept'),
           ),
         ),
+        if (desktop)
         PopupMenuItem(
           value: 'shell',
           child: ListTile(
@@ -425,6 +482,7 @@ class _ControlMenu extends ConsumerWidget {
         // the handler for this action has been written all along. Leaving the
         // item dead told operators the opposite of how the sandbox works and
         // stranded the only way to revoke root from a misbehaving agent.
+        if (desktop)
         PopupMenuItem(
           value: 'sudo',
           child: ListTile(
@@ -446,7 +504,9 @@ class _ControlMenu extends ConsumerWidget {
             dense: true,
             leading: Icon(Icons.delete_outline, color: Fleet.bad),
             title: Text('Delete', style: TextStyle(color: Fleet.bad)),
-            subtitle: const Text('Removes the agent and its disk'),
+            subtitle: Text(desktop
+                ? 'Removes the agent and its disk'
+                : 'Removes the agent from the fleet'),
           ),
         ),
       ],

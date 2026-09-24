@@ -4,10 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/theme.dart';
+import '../../core/widgets/agent_kind_badge.dart';
 import '../fleet_comms/comms_screen.dart';
+import '../org/org_chart_screen.dart';
 import '../pipelines/pipelines_screen.dart';
 import '../skills/skills_screen.dart';
-import 'provision_sheet.dart';
+import '../work/work_screen.dart';
+import 'add_agent_sheet.dart';
 import '../instance_view/instance_screen.dart';
 
 /// The fleet at a glance: what is running, how hard it is working, and what it
@@ -26,9 +29,14 @@ class FleetScreen extends ConsumerWidget {
       // from the desk, so it gets the primary action rather than living only
       // in the web console.
       floatingActionButton: FloatingActionButton.extended(
+        // A kind first: a desktop goes on to the provisioning sheet, anything
+        // else (Claude Code, Codex, OpenClaw, a webhook...) is a connection.
         onPressed: () async {
-          final created = await ProvisionSheet.show(context);
-          if (created == true) ref.invalidate(instancesProvider);
+          final created = await AddAgentSheet.show(context);
+          if (created == true) {
+            ref.invalidate(instancesProvider);
+            ref.invalidate(orgProvider);
+          }
         },
         icon: const Icon(Icons.add),
         label: const Text('New agent'),
@@ -36,24 +44,21 @@ class FleetScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Fleet'),
         actions: [
-          // Skills are how operators teach the fleet, so they live beside the
-          // agents rather than under Admin — using one changes nothing about
-          // who may do what.
+          // Work and the org chart are about the agents on this screen --
+          // what they are doing and who answers to whom -- so they sit here
+          // with the rest of the fleet's surfaces rather than taking a tab.
           IconButton(
-            tooltip: 'Skills',
-            icon: const Icon(Icons.psychology_outlined),
+            tooltip: 'Work',
+            icon: const Icon(Icons.view_kanban_outlined),
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SkillsScreen()),
+              MaterialPageRoute(builder: (_) => const WorkScreen()),
             ),
           ),
-          // Pipelines are the shape of work the fleet does without you. Off the
-          // tab bar so the chat could have the first slot; still one tap away
-          // from the agents that run the stages.
           IconButton(
-            tooltip: 'Pipelines',
-            icon: const Icon(Icons.account_tree_outlined),
+            tooltip: 'Org chart',
+            icon: const Icon(Icons.lan_outlined),
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PipelinesScreen()),
+              MaterialPageRoute(builder: (_) => const OrgChartScreen()),
             ),
           ),
           // The agents' own conversation belongs beside the agents, not filed
@@ -65,8 +70,60 @@ class FleetScreen extends ConsumerWidget {
               MaterialPageRoute(builder: (_) => const CommsScreen()),
             ),
           ),
+          // Five icons and the live dot do not fit a phone's bar, so on a
+          // narrow screen Skills and Pipelines fold into a menu. On a tablet
+          // they stay one tap away.
+          if (MediaQuery.sizeOf(context).width >= 600) ...[
+            // Skills are how operators teach the fleet, so they live beside
+            // the agents rather than under Admin — using one changes nothing
+            // about who may do what.
+            IconButton(
+              tooltip: 'Skills',
+              icon: const Icon(Icons.psychology_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SkillsScreen()),
+              ),
+            ),
+            // Pipelines are the shape of work the fleet does without you.
+            IconButton(
+              tooltip: 'Pipelines',
+              icon: const Icon(Icons.account_tree_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PipelinesScreen()),
+              ),
+            ),
+          ] else
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              color: Fleet.ink850,
+              onSelected: (v) => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => v == 'skills'
+                      ? const SkillsScreen()
+                      : const PipelinesScreen(),
+                ),
+              ),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'skills',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.psychology_outlined),
+                    title: Text('Skills'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'pipelines',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.account_tree_outlined),
+                    title: Text('Pipelines'),
+                  ),
+                ),
+              ],
+            ),
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 12, left: 4),
             child: Row(
               children: [
                 Container(
@@ -123,6 +180,7 @@ class _InstanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (instance.isExternal) return _ExternalCard(instance: instance);
     final tasks =
         ref.watch(tasksProvider(instance.id)).valueOrNull ?? const <Task>[];
     Task? live;
@@ -238,6 +296,133 @@ class _InstanceCard extends ConsumerWidget {
                     ],
                   ),
                 ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// An agent that runs somewhere else. It has no sandbox, so no CPU or memory
+/// to meter and no desktop to show: what it is, where it lives, and what it
+/// is on.
+class _ExternalCard extends ConsumerWidget {
+  const _ExternalCard({required this.instance});
+
+  final Instance instance;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final node = ref
+        .watch(orgProvider)
+        .valueOrNull
+        ?.nodes
+        .where((n) => n.id == instance.id)
+        .firstOrNull;
+    final devices = AgentKind.onDevice(instance.kind)
+        ? ref.watch(oafDevicesProvider).valueOrNull ?? const <OafDevice>[]
+        : const <OafDevice>[];
+    final device = devices
+        .where((d) => d.id == instance.connection.deviceId)
+        .firstOrNull;
+    final online = node?.online ?? device?.online;
+    final held = instance.isHeld || (node?.hold.isNotEmpty ?? false);
+    final busy = node?.busy ?? false;
+
+    final String status;
+    final Color dot;
+    if (held) {
+      status = 'Held at its budget';
+      dot = Fleet.warn;
+    } else if (online == false) {
+      status = AgentKind.onDevice(instance.kind)
+          ? 'Offline: its PC is not connected'
+          : 'Unreachable';
+      dot = Fleet.ink500;
+    } else if (busy) {
+      final title = node?.ticketTitle ?? '';
+      status = 'Working on ${node?.ticketRef ?? 'a ticket'}'
+          '${title.isEmpty ? '' : ' · $title'}';
+      dot = Fleet.good;
+    } else {
+      status = 'Idle';
+      dot = Fleet.ink300;
+    }
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+              builder: (_) => InstanceScreen(instanceId: instance.id)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          instance.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            if (instance.title.isNotEmpty) instance.title,
+                            instance.connection.summary(
+                                deviceName: device?.name ?? '', short: true),
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Fleet.ink400, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AgentKindBadge(instance.kind),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration:
+                        BoxDecoration(color: dot, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      status,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Fleet.ink300, fontSize: 12.5),
+                    ),
+                  ),
+                  if ((node?.openTickets ?? 0) > 0)
+                    Text('${node?.openTickets} open',
+                        style: TextStyle(color: Fleet.ink400, fontSize: 11.5)),
+                ],
+              ),
+              if (instance.lastError.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(instance.lastError,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Fleet.bad, fontSize: 12)),
               ],
             ],
           ),
