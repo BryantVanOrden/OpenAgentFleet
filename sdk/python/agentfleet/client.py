@@ -173,6 +173,24 @@ class FleetClient:
             body["token"] = token
         return self._post("/api/instances", body)
 
+    def devices(self) -> list[dict[str, Any]]:
+        """Your PCs and phones: name, roots, the agent CLIs each has
+        (runtimes), and whether it is online. A Claude Code, Codex or Hermes
+        agent runs on one of these."""
+        return self._get("/api/oaf/devices") or []
+
+    def export_fleet(self) -> dict[str, Any]:
+        """The fleet as a portable template: agents, titles, reporting
+        lines, capabilities and budgets. Secrets are never included."""
+        return self._get("/api/fleet/export")
+
+    def import_fleet(self, template: dict[str, Any], dry_run: bool = False,
+                     rename: bool = False) -> dict[str, Any]:
+        """Recreates a fleet template here. Agents whose name is taken are
+        skipped, or renamed with rename=True. dry_run reports without
+        creating. Returns {created, skipped, renamed, notes}."""
+        return self._post("/api/fleet/import", {"template": template, "dry_run": dry_run, "rename": rename})
+
     # ------------------------------------------------------------------ Auth ---
 
     def login(self, email: str, password: str) -> str:

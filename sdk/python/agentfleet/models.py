@@ -19,6 +19,20 @@ class InstanceInfo:
     vnc_url: str = ""
     last_error: str = ""
     created_at: str = ""
+    # Where the agent sits and what it is: a desktop this fleet provisions, or
+    # an external agent (claude_code, codex, hermes, openclaw, webhook).
+    kind: str = "desktop"
+    title: str = ""
+    reports_to: str = ""
+    capabilities: str = ""
+    trust: str = "standard"
+    hold: str = ""
+    budget_month_usd: float = 0.0
+    connection: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def external(self) -> bool:
+        return self.kind not in ("", "desktop")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> InstanceInfo:
@@ -34,6 +48,14 @@ class InstanceInfo:
             vnc_url=data.get("vnc_url", ""),
             last_error=data.get("last_error", ""),
             created_at=data.get("created_at", ""),
+            kind=data.get("kind") or "desktop",
+            title=data.get("title", "") or "",
+            reports_to=data.get("reports_to", "") or "",
+            capabilities=data.get("capabilities", "") or "",
+            trust=data.get("trust") or "standard",
+            hold=data.get("hold", "") or "",
+            budget_month_usd=float(data.get("budget_month_usd") or 0),
+            connection=data.get("connection") or {},
         )
 
 

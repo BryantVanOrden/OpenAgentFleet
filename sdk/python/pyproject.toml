@@ -31,8 +31,8 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/BryantVanOrden/OpenAgentFleet"
 Repository = "https://github.com/BryantVanOrden/OpenAgentFleet"
-Documentation = "https://github.com/BryantVanOrden/OpenAgentFleet/tree/main/docs"
-Changelog = "https://github.com/BryantVanOrden/OpenAgentFleet/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/BryantVanOrden/OpenAgentFleet/tree/master/docs"
+Changelog = "https://github.com/BryantVanOrden/OpenAgentFleet/blob/master/CHANGELOG.md"
 Issues = "https://github.com/BryantVanOrden/OpenAgentFleet/issues"
 
 [project.scripts]

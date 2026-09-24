@@ -153,11 +153,13 @@ def cmd_list(args: argparse.Namespace) -> None:
             print("No bot instances found. Run `fleetctl deploy` to provision one.")
             return
 
-        print(f"{'ID':<20} {'NAME':<24} {'ARCHETYPE':<18} {'TIER':<12} {'STATE':<10}")
-        print("-" * 88)
+        print(f"{'ID':<36} {'NAME':<24} {'KIND':<12} {'ARCHETYPE':<18} {'TIER':<12} {'STATE':<10}")
+        print("-" * 116)
         for b in bots:
-            arch = b.archetype_id or "custom"
-            print(f"{b.id:<20} {b.name:<24} {arch:<18} {b.tier:<12} {b.state:<10}")
+            info = b.info
+            arch = b.archetype_id or ("-" if info.external else "custom")
+            tier = "-" if info.external else b.tier
+            print(f"{b.id:<36} {b.name:<24} {info.kind:<12} {arch:<18} {tier:<12} {b.state:<10}")
     except Exception as e:
         print(f"❌ Error: {e}")
 
@@ -750,6 +752,147 @@ def cmd_org(args: argparse.Namespace) -> None:
     print("You")
     walk("", "")
 
+EXTERNAL_KINDS = ["claude_code", "codex", "hermes", "openclaw", "webhook"]
+ON_DEVICE = ("claude_code", "codex", "hermes")
+
+
+def _resolve_device(client: FleetClient, name: Optional[str]) -> dict[str, Any]:
+    devs = client.devices()
+    pcs = [d for d in devs if d.get("kind", "pc") == "pc"]
+    if not name:
+        if len(pcs) == 1:
+            return pcs[0]
+        raise SystemExit("which PC? --device <name>. Connected: "
+                         + (", ".join(d["name"] for d in pcs) or "none -- run `fleetctl host --root <folder>` on it"))
+    for d in pcs:
+        if d["id"] == name or d["id"].startswith(name) or d["name"].lower() == name.lower():
+            return d
+    raise SystemExit(f"no PC called {name!r}; yours: {', '.join(d['name'] for d in pcs) or 'none'}")
+
+
+def _under(path: str, roots: list[str]) -> bool:
+    norm = lambda p: os.path.normcase(os.path.normpath(p))  # noqa: E731
+    p = norm(path)
+    return any(p == norm(r) or p.startswith(norm(r).rstrip("\\/") + os.sep) or p.startswith(norm(r).rstrip("\\/") + "/")
+               for r in roots)
+
+
+def cmd_devices(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    devs = client.devices()
+    if not devs:
+        print("No devices. Run `fleetctl host --root <folder>` on a PC to connect it.")
+        return
+    labels = {"claude_code": "Claude Code", "codex": "Codex", "hermes": "Hermes"}
+    print(f"{'ID':<10} {'NAME':<20} {'ONLINE':<7} {'AGENT CLIS':<26} ROOTS")
+    print("-" * 96)
+    for d in devs:
+        clis = ", ".join(labels.get(r, r) for r in d.get("runtimes") or []) or "-"
+        print(f"{d['id'][:8]:<10} {d['name'][:19]:<20} {'yes' if d.get('online') else 'no':<7} {clis:<26} {'; '.join(d.get('roots') or [])}")
+
+
+def _token_arg(args: argparse.Namespace) -> Optional[str]:
+    if getattr(args, "token_env", None):
+        v = os.environ.get(args.token_env)
+        if not v:
+            raise SystemExit(f"${args.token_env} is not set")
+        return v
+    if getattr(args, "ask_token", False):
+        import getpass
+        return getpass.getpass("token: ") or None
+    return None
+
+
+def cmd_agent(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    if args.action == "add":
+        conn: dict[str, Any] = {}
+        if args.kind in ON_DEVICE:
+            dev = _resolve_device(client, args.device)
+            if args.kind not in (dev.get("runtimes") or []):
+                raise SystemExit(f"{dev['name']} has no {args.kind} CLI (it has: {', '.join(dev.get('runtimes') or []) or 'none'}). "
+                                 "Install it there and restart `fleetctl host`.")
+            roots = dev.get("roots") or []
+            folder = args.folder or (roots[0] if roots else "")
+            if not folder or not _under(folder, roots):
+                raise SystemExit(f"the folder must be under one of {dev['name']}'s roots: {', '.join(roots) or 'none'}")
+            conn = {"device_id": dev["id"], "cwd": folder, "autonomy": args.autonomy}
+            if args.model:
+                conn["model"] = args.model
+        else:
+            if not args.url:
+                raise SystemExit(f"a {args.kind} agent needs --url")
+            conn = {"url": args.url}
+            if args.agent_id:
+                conn["agent_id"] = args.agent_id
+        if args.timeout:
+            conn["timeout_sec"] = args.timeout
+        fields: dict[str, Any] = {}
+        for k in ("title", "capabilities", "trust"):
+            if getattr(args, k, None):
+                fields[k] = getattr(args, k)
+        if args.reports_to:
+            fields["reports_to"] = _resolve_agent(client, args.reports_to)
+        if args.budget:
+            fields["budget_month_usd"] = args.budget
+        inst = client.add_external_agent(args.name, args.kind, conn, token=_token_arg(args), **fields)
+        where = f" in {conn['cwd']}" if conn.get("cwd") else f" at {conn.get('url')}"
+        print(f"✅ {inst.get('name', args.name)} added ({args.kind}{where}). Give it work: fleetctl ticket new \"...\" --to {args.name!r}")
+    elif args.action == "set":
+        iid = _resolve_agent(client, args.name)
+        fields = {}
+        for k in ("title", "capabilities", "trust"):
+            if getattr(args, k, None) is not None:
+                fields[k] = getattr(args, k)
+        if args.reports_to is not None:
+            fields["reports_to"] = "" if args.reports_to.lower() in ("you", "me", "none", "") else _resolve_agent(client, args.reports_to)
+        if args.budget is not None:
+            fields["budget_month_usd"] = args.budget
+        if args.warn_pct is not None:
+            fields["budget_warn_pct"] = args.warn_pct
+        if args.model or args.autonomy or args.folder:
+            cur = client._get(f"/api/instances/{iid}").get("connection") or {}
+            if args.model:
+                cur["model"] = args.model
+            if args.autonomy:
+                cur["autonomy"] = args.autonomy
+            if args.folder:
+                cur["cwd"] = args.folder
+            fields["connection"] = cur
+        tok = _token_arg(args)
+        if tok:
+            fields["token"] = tok
+        if not fields:
+            raise SystemExit("nothing to change; see `fleetctl agent set --help`")
+        inst = client.set_profile(iid, **fields)
+        print(f"✅ {inst.get('name', args.name)} updated: {', '.join(sorted(fields))}")
+
+
+def cmd_fleet(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    if args.action == "export":
+        tpl = client.export_fleet()
+        text = json.dumps(tpl, indent=2)
+        if args.output and args.output != "-":
+            with open(args.output, "w", encoding="utf-8") as fh:
+                fh.write(text + "\n")
+            print(f"✅ {len(tpl.get('agents') or [])} agents written to {args.output} (no secrets)")
+        else:
+            print(text)
+    elif args.action == "import":
+        with open(args.file, encoding="utf-8") as fh:
+            tpl = json.load(fh)
+        res = client.import_fleet(tpl, dry_run=args.dry_run, rename=args.rename)
+        verb = "would create" if args.dry_run else "created"
+        print(f"{verb}: {', '.join(res.get('created') or []) or 'nobody'}")
+        if res.get("renamed"):
+            print("renamed: " + ", ".join(res["renamed"]))
+        if res.get("skipped"):
+            print("skipped (name taken; --rename to keep them): " + ", ".join(res["skipped"]))
+        for n in res.get("notes") or []:
+            print("note: " + n)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="fleetctl",
@@ -798,6 +941,55 @@ def main() -> None:
 
     p_org = subparsers.add_parser("org", help="Show the org chart: who reports to whom and what each is doing")
     p_org.set_defaults(func=cmd_org)
+
+    p_devs = subparsers.add_parser("devices", help="Your connected PCs and phones, and the agent CLIs each has")
+    p_devs.set_defaults(func=cmd_devices)
+
+    p_ag = subparsers.add_parser("agent", help="Add a Claude Code, Codex, Hermes, OpenClaw or webhook agent, or change an agent's place in the org")
+    ag_sub = p_ag.add_subparsers(dest="action", required=True)
+    ag_add = ag_sub.add_parser("add", help="Add an external agent beside the desktops")
+    ag_add.add_argument("name")
+    ag_add.add_argument("--kind", "-k", required=True, choices=EXTERNAL_KINDS)
+    ag_add.add_argument("--device", help="PC it runs on (claude_code, codex, hermes). Default: your only PC")
+    ag_add.add_argument("--folder", help="Folder it works in, under one of the PC's roots. Default: the first root")
+    ag_add.add_argument("--model", help="Model for the CLI (e.g. sonnet, haiku, gpt-5)")
+    ag_add.add_argument("--autonomy", choices=["edits", "full"], default="edits",
+                        help="edits: change files, no commands; full: anything inside its folder")
+    ag_add.add_argument("--url", help="Gateway (ws:// or wss://) for openclaw, endpoint for webhook")
+    ag_add.add_argument("--agent-id", help="OpenClaw agent id")
+    ag_add.add_argument("--token-env", help="Read the gateway or webhook token from this environment variable")
+    ag_add.add_argument("--ask-token", action="store_true", help="Prompt for the token (not echoed)")
+    ag_add.add_argument("--timeout", type=int, help="Seconds one run may take")
+    for p in (ag_add,):
+        p.add_argument("--title")
+        p.add_argument("--reports-to", help="Agent it reports to (default: you)")
+        p.add_argument("--capabilities", help="When it is useful, in a line colleagues read")
+        p.add_argument("--trust", choices=["standard", "low"])
+        p.add_argument("--budget", type=float, help="Monthly spend ceiling in dollars (admin)")
+    ag_set = ag_sub.add_parser("set", help="Change an agent's title, manager, capabilities, trust, budget or connection")
+    ag_set.add_argument("name")
+    ag_set.add_argument("--title")
+    ag_set.add_argument("--reports-to", help="Agent it reports to, or 'you'")
+    ag_set.add_argument("--capabilities")
+    ag_set.add_argument("--trust", choices=["standard", "low"])
+    ag_set.add_argument("--budget", type=float, help="Monthly spend ceiling in dollars; 0 for none (admin)")
+    ag_set.add_argument("--warn-pct", type=int, help="Warn at this percentage of the budget (admin)")
+    ag_set.add_argument("--model")
+    ag_set.add_argument("--autonomy", choices=["edits", "full"])
+    ag_set.add_argument("--folder")
+    ag_set.add_argument("--token-env")
+    ag_set.add_argument("--ask-token", action="store_true")
+    p_ag.set_defaults(func=cmd_agent)
+
+    p_fl = subparsers.add_parser("fleet", help="Export the fleet as a template, or import one")
+    fl_sub = p_fl.add_subparsers(dest="action", required=True)
+    fl_exp = fl_sub.add_parser("export", help="Agents, titles, reporting lines and budgets as JSON (no secrets)")
+    fl_exp.add_argument("--output", "-o", help="File to write (default: stdout)")
+    fl_imp = fl_sub.add_parser("import", help="Recreate a template here")
+    fl_imp.add_argument("file")
+    fl_imp.add_argument("--dry-run", action="store_true", help="Say what would happen, create nothing")
+    fl_imp.add_argument("--rename", action="store_true", help="Rename agents whose name is taken instead of skipping them")
+    p_fl.set_defaults(func=cmd_fleet)
 
     # host: let Oaf act on this machine
     p_host = subparsers.add_parser("host", help="Connect this PC so Oaf and your Claude Code, Codex or Hermes agents can work in folders you choose")
