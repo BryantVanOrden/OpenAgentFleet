@@ -220,7 +220,12 @@ class Host:
         written: list[str] = []
         root = Path(cwd).resolve()
         for f in files:
-            rel = str(f.get("path") or "").replace("\\", "/").strip("/")
+            raw = str(f.get("path") or "").replace("\\", "/")
+            # A path in the folder, as the fleet shares them: an absolute one
+            # (/etc/..., C:/...) is refused, not quietly made relative.
+            if raw.startswith("/") or (len(raw) > 1 and raw[1] == ":"):
+                continue
+            rel = raw.strip("/")
             if not rel or any(part == ".." for part in rel.split("/")):
                 continue
             target = (root / rel).resolve()

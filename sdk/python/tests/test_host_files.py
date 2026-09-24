@@ -19,13 +19,15 @@ class IncomingFilesTests(unittest.TestCase):
                 {"path": "src/lib.js", "content": "export const fixed = true"},
                 {"path": "notes/new.md", "content": "# New"},
                 {"path": "../escape.txt", "content": "no"},
-                {"path": "C:/Windows/evil.txt" if "\\" in str(root) else "/etc/evil.txt", "content": "no"},
+                {"path": "/etc/evil.txt", "content": "no"},
+                {"path": "C:/Windows/evil.txt", "content": "no"},
                 {"path": "", "content": "no"},
             ])
             self.assertEqual(sorted(written), ["notes/new.md", "src/lib.js"])
             self.assertEqual((root / "src" / "lib.js").read_text(encoding="utf-8"), "export const fixed = true")
             self.assertEqual((root / "notes" / "new.md").read_text(encoding="utf-8"), "# New")
             self.assertFalse((Path(d) / "escape.txt").exists())
+            self.assertFalse((root / "etc").exists(), "an absolute path is refused, not made relative")
 
 
 if __name__ == "__main__":
