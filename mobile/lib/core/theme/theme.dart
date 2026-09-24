@@ -233,6 +233,11 @@ ThemeData buildTheme([
     onSurface: c.ink100,
     error: c.bad,
     onError: c.onLive,
+    // Left out, both default to onSurface: every chip, segmented button and
+    // tab-bar divider was drawn in the text colour, a white rule in the dark
+    // theme. The palette's own lines instead.
+    outline: c.ink500,
+    outlineVariant: c.ink700,
   );
 
   return ThemeData(
@@ -281,6 +286,29 @@ ThemeData buildTheme([
       ),
       labelStyle: TextStyle(color: c.ink300),
       hintStyle: TextStyle(color: c.ink400),
+      // Helper lines explain a field; in the text colour they shouted as
+      // loud as what was typed.
+      helperStyle: TextStyle(color: c.ink300, fontSize: 12),
+    ),
+    // Unset, the selected segment took the secondary colour (cyan) in every
+    // accent; the selection wears the accent like the rest of the app.
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        minimumSize: WidgetStateProperty.all(const Size(0, 44)),
+        side: WidgetStateProperty.all(BorderSide(color: c.ink600)),
+        backgroundColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected)
+                ? c.live.withValues(alpha: 0.18)
+                : Colors.transparent),
+        foregroundColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.disabled)
+                ? c.ink400
+                : s.contains(WidgetState.selected)
+                    ? c.ink100
+                    : c.ink300),
+        iconColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? c.live : c.ink300),
+      ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(

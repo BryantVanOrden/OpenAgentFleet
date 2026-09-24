@@ -661,7 +661,7 @@ class _HomeChatScreenState extends ConsumerState<HomeChatScreen> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.send_rounded, size: 18),
+                  : const Icon(Icons.send_rounded, size: 18, semanticLabel: 'Send'),
             ),
           ],
         ),

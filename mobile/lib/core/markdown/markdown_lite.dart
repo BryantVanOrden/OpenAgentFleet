@@ -141,14 +141,7 @@ class MarkdownLite extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final c in child.children ?? const <md.Node>[])
-                  if (c is md.Element &&
-                      (c.tag == 'ul' || c.tag == 'ol' || c.tag == 'p' || c.tag == 'pre'))
-                    _block(context, c, base) ?? const SizedBox.shrink()
-                  else
-                    Text.rich(TextSpan(children: _inline(context, [c], base)), style: base),
-              ],
+              children: _listItemChildren(context, child, base),
             ),
           ),
         ],
@@ -164,6 +157,44 @@ class MarkdownLite extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  /// What one list item holds. A tight item's text arrives as a run of inline
+  /// nodes -- "**Pawsit** -- playful" is a strong, then a text -- and a run
+  /// is one paragraph: giving each node its own Text put every bold word,
+  /// code span and link of an item on a line of its own. Nested lists and
+  /// blocks break the run.
+  List<Widget> _listItemChildren(
+      BuildContext context, md.Element li, TextStyle base) {
+    const blockTags = {
+      'ul', 'ol', 'p', 'pre', 'blockquote', 'hr',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table',
+    };
+    final out = <Widget>[];
+    var run = <md.Node>[];
+    void flush() {
+      if (run.isEmpty) return;
+      final spans = _inline(context, run, base);
+      run = <md.Node>[];
+      // A run of only the whitespace between blocks draws nothing.
+      if (spans.every((s) => s is TextSpan && (s.text ?? '').trim().isEmpty &&
+          (s.children ?? const []).isEmpty)) {
+        return;
+      }
+      out.add(Text.rich(TextSpan(children: spans), style: base));
+    }
+
+    for (final c in li.children ?? const <md.Node>[]) {
+      if (c is md.Element && blockTags.contains(c.tag)) {
+        flush();
+        final w = _block(context, c, base);
+        if (w != null) out.add(w);
+      } else {
+        run.add(c);
+      }
+    }
+    flush();
+    return out;
   }
 
   List<InlineSpan> _inline(

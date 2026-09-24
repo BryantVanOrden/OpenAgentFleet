@@ -32,6 +32,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
   bool _sending = false;
   bool _mutating = false;
 
+  /// A long description -- the whole brief an agent was handed -- starts
+  /// folded, so the ticket's state and people are on the first screen.
+  bool _descriptionOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +97,28 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
   }
 
   Future<void> _reopen(Ticket t) async {
+    final children =
+        ref.read(ticketDetailProvider(widget.idOrRef)).valueOrNull?.children ??
+            const <Ticket>[];
+    final parts = reopenedParts(t, children);
+    final String explain;
+    if (!t.isUnassigned) {
+      final who = t.assigneeName.isEmpty ? 'its assignee' : t.assigneeName;
+      explain = 'It goes back to $who with what you write here, so say what '
+          'is missing or wrong.';
+    } else if (parts.isNotEmpty) {
+      final who = [
+        for (final p in parts)
+          p.assigneeName.isEmpty ? p.ref : '${p.ref} (${p.assigneeName})',
+      ].join(', ');
+      explain = 'Nobody is assigned ${t.ref}, so its finished work goes back '
+          'instead: $who. Each gets what you write here, and ${t.ref} waits '
+          'for them again.';
+    } else {
+      explain = 'Nobody is assigned ${t.ref} and it has no finished work under '
+          'it, so it goes back to To do with nobody to start it. Assign it '
+          'to an agent afterwards.';
+    }
     final controller = TextEditingController();
     final reason = await showDialog<String>(
       context: context,
@@ -104,9 +130,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'It goes back to its assignee with what you write here, so '
-                'say what is missing or wrong.',
-                style: TextStyle(color: Fleet.ink300, fontSize: 13),
+                explain,
+                style:
+                    TextStyle(color: Fleet.ink300, fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -130,7 +156,11 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
               onPressed: controller.text.trim().isEmpty
                   ? null
                   : () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('Reopen'),
+              child: Text(parts.length > 1
+                  ? 'Reopen ${parts.length} parts'
+                  : parts.length == 1
+                      ? 'Reopen ${parts.first.ref}'
+                      : 'Reopen'),
             ),
           ],
         ),
@@ -175,6 +205,90 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
     }
   }
 
+  /// Cancelling takes the ticket's open parts, and any open review or
+  /// verify of them, with it. Say so, and how many, before it happens; a
+  /// ticket with nothing open under it is cancelled without asking.
+  Future<bool> _confirmCancel(Ticket t) async {
+    List<Ticket>? cascade;
+    try {
+      cascade = cancelCascade(t.id, await ref.read(apiProvider).tickets());
+    } catch (_) {
+      // Unknown is not none: ask, without a number.
+      cascade = null;
+    }
+    if (!mounted) return false;
+    if (cascade != null && cascade.isEmpty) return true;
+    return await _askCancel(t, cascade) ?? false;
+  }
+
+  Future<bool?> _askCancel(Ticket t, List<Ticket>? cascade) {
+    final what = cascade == null ? '' : describeCascade(cascade);
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Cancel ${t.ref}?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              cascade == null
+                  ? 'Its open parts and any open review or verify of them are '
+                      'cancelled with it, and their runs stopped.'
+                  : 'Its $what ${cascade.length == 1 ? 'is' : 'are'} '
+                      'cancelled with it, and any run on them stopped. '
+                      'Finished parts stay finished.',
+              style: TextStyle(color: Fleet.ink300, fontSize: 13, height: 1.4),
+            ),
+            if (cascade != null) ...[
+              const SizedBox(height: 10),
+              for (final c in cascade.take(6))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: '${c.ref}  ',
+                        style: TextStyle(
+                            color: Fleet.ink300,
+                            fontFamily: 'monospace',
+                            fontSize: 12),
+                      ),
+                      TextSpan(text: plainTitle(c.title)),
+                    ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Fleet.ink200, fontSize: 12.5),
+                  ),
+                ),
+              if (cascade.length > 6)
+                Text('and ${cascade.length - 6} more',
+                    style: TextStyle(color: Fleet.ink300, fontSize: 12)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep it')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Fleet.bad),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(cascade == null || cascade.isEmpty
+                ? 'Cancel ticket'
+                : 'Cancel ${cascade.length + 1} tickets'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancel(Ticket t) async {
+    if (!await _confirmCancel(t) || !mounted) return;
+    await _mutate(
+        () => ref.read(apiProvider).patchTicket(t.id, status: 'cancelled'));
+  }
+
   Future<void> _changeStatus(Ticket t) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -192,20 +306,31 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
               child: Text('Move ${t.ref} to',
                   style: Theme.of(ctx).textTheme.titleMedium),
             ),
+            // In progress is what a run taking the ticket does; the server
+            // refuses it from here, so it is not offered.
             for (final s in Ticket.statuses)
-              ListTile(
-                leading: Icon(Icons.circle, size: 12, color: ticketStatusColor(s)),
-                title: Text(Ticket.statusLabel(s)),
-                trailing: s == t.status
-                    ? Icon(Icons.check, color: Fleet.live)
-                    : null,
-                onTap: () => Navigator.pop(ctx, s),
-              ),
+              if (s != 'in_progress' || s == t.status)
+                ListTile(
+                  leading:
+                      Icon(Icons.circle, size: 12, color: ticketStatusColor(s)),
+                  title: Text(Ticket.statusLabel(s)),
+                  subtitle: s == 'cancelled' && t.status != 'cancelled'
+                      ? Text('Also cancels its open parts and checks',
+                          style: TextStyle(color: Fleet.ink300, fontSize: 12))
+                      : null,
+                  trailing: s == t.status
+                      ? Icon(Icons.check, color: Fleet.live)
+                      : null,
+                  onTap: s == t.status
+                      ? () => Navigator.pop(ctx)
+                      : () => Navigator.pop(ctx, s),
+                ),
           ],
         ),
       ),
     );
     if (picked == null || picked == t.status || !mounted) return;
+    if (picked == 'cancelled') return _cancel(t);
     await _mutate(
         () => ref.read(apiProvider).patchTicket(t.id, status: picked));
   }
@@ -236,6 +361,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
           _ => api.patchTicket(t.id, assigneeId: picked),
         });
   }
+
+  void _openFile(String name) =>
+      openCatalogItem(context, ref.read(apiProvider), name);
 
   Future<void> _addChild(Ticket t) async {
     final created = await NewTicketSheet.show(context, parent: t);
@@ -269,9 +397,12 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
           if (t != null)
             PopupMenuButton<String>(
               color: Fleet.ink850,
+              tooltip: 'More',
               onSelected: (v) {
                 if (v == 'child') {
                   _addChild(t);
+                } else if (v == 'cancel') {
+                  _cancel(t);
                 } else if (v == 'delete') {
                   _delete(t);
                 } else {
@@ -295,6 +426,15 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
                     title: Text('Refresh'),
                   ),
                 ),
+                if (t.isOpen)
+                  const PopupMenuItem(
+                    value: 'cancel',
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(Icons.cancel_outlined),
+                      title: Text('Cancel ticket'),
+                    ),
+                  ),
                 const PopupMenuDivider(),
                 PopupMenuItem(
                   value: 'delete',
@@ -371,7 +511,11 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
   List<Widget> _details(TicketDetail d) {
     final t = d.ticket;
     return [
-      if (d.ancestry.isNotEmpty || t.origin.isNotEmpty) _whyItMatters(d),
+      // Only when there is something to say: a request's own words are its
+      // title, and a card with nothing under its heading is noise.
+      if (d.ancestry.isNotEmpty ||
+          (t.origin.isNotEmpty && t.origin != t.title))
+        _whyItMatters(d),
       const SizedBox(height: 10),
       Wrap(
         spacing: 8,
@@ -407,9 +551,13 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
       ),
       const SizedBox(height: 12),
       SelectableText(
-        t.title.isEmpty ? 'Untitled' : t.title,
+        plainTitle(t.title),
         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
       ),
+      if (t.isMeta && t.targetId.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _targetLink(d),
+      ],
       if (t.status == 'blocked' && t.blockedReason.isNotEmpty) ...[
         const SizedBox(height: 10),
         _Callout(
@@ -421,44 +569,50 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
       ],
       if (t.description.trim().isNotEmpty) ...[
         const SizedBox(height: 12),
-        SelectionArea(
-          child: MarkdownLite(t.description,
-              baseStyle: TextStyle(
-                  color: Fleet.ink200, fontSize: 14, height: 1.45)),
-        ),
+        _description(t.description),
       ],
       const SizedBox(height: 16),
       _people(t),
       if (t.result.trim().isNotEmpty) ...[
         const SizedBox(height: 16),
-        _Callout(
-          icon: Icons.task_alt_rounded,
-          color: t.verdict == 'fail' ? Fleet.bad : Fleet.good,
-          title: 'Closing report',
-          body: t.result,
-          markdown: true,
-        ),
+        Builder(builder: (context) {
+          final report = splitReportFiles(t.result);
+          return _Callout(
+            icon: Icons.task_alt_rounded,
+            color: t.verdict == 'fail' ? Fleet.bad : Fleet.good,
+            title: 'Closing report',
+            body: report.body,
+            markdown: true,
+            footer: report.hasFiles
+                ? SharedFilesList(files: report, onOpen: _openFile)
+                : null,
+          );
+        }),
       ],
       if (d.blockers.isNotEmpty) ...[
         _SectionTitle('Waits on', count: d.blockers.length),
         for (final b in d.blockers)
           TicketRow(ticket: b, showStatus: true, onTap: () => _open(b.id)),
       ],
-      _SectionTitle(
-        'Under this',
-        count: d.children.length,
-        trailing: TextButton.icon(
-          onPressed: () => _addChild(t),
-          icon: const Icon(Icons.add, size: 16),
-          label: const Text('Add'),
+      // A review or a verify is a check on other work; nothing goes under it
+      // in the ordinary run of things, so an empty section is noise there.
+      if (!t.isMeta || d.children.isNotEmpty) ...[
+        _SectionTitle(
+          'Under this',
+          count: d.children.length,
+          trailing: TextButton.icon(
+            onPressed: () => _addChild(t),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Add'),
+          ),
         ),
-      ),
-      if (d.children.isEmpty)
-        Text('No tickets under this one.',
-            style: TextStyle(color: Fleet.ink500, fontSize: 12.5))
-      else
-        for (final c in d.children)
-          TicketRow(ticket: c, showStatus: true, onTap: () => _open(c.id)),
+        if (d.children.isEmpty)
+          Text('No tickets under this one.',
+              style: TextStyle(color: Fleet.ink300, fontSize: 12.5))
+        else
+          for (final c in d.children)
+            TicketRow(ticket: c, showStatus: true, onTap: () => _open(c.id)),
+      ],
       if (d.dependents.isNotEmpty) ...[
         _SectionTitle('Waiting on this', count: d.dependents.length),
         for (final c in d.dependents)
@@ -469,6 +623,84 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
         for (final r in d.runs) _RunTile(task: r),
       ],
     ];
+  }
+
+  Widget _description(String text) {
+    final body = SelectionArea(
+      child: MarkdownLite(text,
+          baseStyle:
+              TextStyle(color: Fleet.ink200, fontSize: 14, height: 1.45)),
+    );
+    // Short enough to read at a glance: no fold.
+    if (text.length < 360 && '\n'.allMatches(text).length < 6) return body;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          alignment: Alignment.topCenter,
+          child: _descriptionOpen
+              ? body
+              : ShaderMask(
+                  shaderCallback: (r) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: const [Colors.white, Colors.transparent],
+                    stops: const [0.55, 1],
+                  ).createShader(r),
+                  blendMode: BlendMode.dstIn,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 118),
+                    child: ClipRect(
+                      child: SingleChildScrollView(
+                        physics: const NeverScrollableScrollPhysics(),
+                        child: body,
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+          ),
+          onPressed: () =>
+              setState(() => _descriptionOpen = !_descriptionOpen),
+          icon: Icon(_descriptionOpen ? Icons.expand_less : Icons.expand_more,
+              size: 18),
+          label: Text(_descriptionOpen ? 'Show less' : 'Show the whole brief'),
+        ),
+      ],
+    );
+  }
+
+  /// What a review, verify or unblock ticket is about.
+  Widget _targetLink(TicketDetail d) {
+    final t = d.ticket;
+    final target = [...d.ancestry, ...d.blockers, ...d.dependents]
+        .where((x) => x.id == t.targetId)
+        .firstOrNull;
+    final verb = switch (t.kind) {
+      'review' => 'Reviews',
+      'verify' => 'Verifies',
+      'unblock' => 'Unblocks',
+      _ => 'About',
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ActionChip(
+        avatar: Icon(ticketKindIcon(t.kind), size: 16, color: Fleet.cool),
+        label: Text(
+          target == null
+              ? '$verb another ticket'
+              : '$verb ${target.ref} · ${plainTitle(target.title)}',
+          overflow: TextOverflow.ellipsis,
+        ),
+        tooltip: 'Open the ticket this is about',
+        onPressed: () => _open(t.targetId),
+      ),
+    );
   }
 
   Widget _whyItMatters(TicketDetail d) {
@@ -489,7 +721,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
               const SizedBox(width: 6),
               Text('WHY THIS MATTERS',
                   style: TextStyle(
-                      color: Fleet.ink400,
+                      color: Fleet.ink300,
                       fontSize: 10.5,
                       letterSpacing: 0.6,
                       fontWeight: FontWeight.w700)),
@@ -556,7 +788,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
                 ),
                 Text('this',
                     style: TextStyle(
-                        color: Fleet.ink400,
+                        color: Fleet.ink300,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600)),
               ],
@@ -573,14 +805,15 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
       return InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: _mutating ? null : () => _changePerson(t, role),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           child: Row(
             children: [
               SizedBox(
                 width: 84,
                 child: Text(label,
-                    style: TextStyle(color: Fleet.ink400, fontSize: 12.5)),
+                    style: TextStyle(color: Fleet.ink300, fontSize: 12.5)),
               ),
               Expanded(
                 child: Text(
@@ -597,7 +830,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
                   ),
                 ),
               ),
-              Icon(Icons.edit_outlined, size: 15, color: Fleet.ink500),
+              Icon(Icons.edit_outlined,
+                  size: 16,
+                  color: Fleet.ink400,
+                  semanticLabel: 'Change ${label.toLowerCase()}'),
             ],
           ),
         ),
@@ -632,12 +868,19 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
           child: Text(
             'No comments yet. What the agents report, the engine notes and '
             'what you write here all land in this thread.',
-            style: TextStyle(color: Fleet.ink500, fontSize: 12.5),
+            style: TextStyle(color: Fleet.ink400, fontSize: 12.5),
           ),
         )
       else
         for (final c in d.comments)
-          TicketCommentTile(key: ValueKey(c.id), comment: c),
+          TicketCommentTile(
+            key: ValueKey(c.id),
+            comment: c,
+            sameAsReport: c.kind == 'result' &&
+                c.body.trim().isNotEmpty &&
+                c.body.trim() == d.ticket.result.trim(),
+            onOpenFile: _openFile,
+          ),
     ];
   }
 
@@ -687,8 +930,22 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen>
 
 /// One entry in a ticket's thread, styled by what kind of entry it is.
 class TicketCommentTile extends StatefulWidget {
-  const TicketCommentTile({super.key, required this.comment});
+  const TicketCommentTile({
+    super.key,
+    required this.comment,
+    this.sameAsReport = false,
+    this.onOpenFile,
+  });
+
   final TicketComment comment;
+
+  /// A result that says exactly what the closing report above says. It
+  /// starts folded: the same page of text twice is a long way to scroll.
+  final bool sameAsReport;
+
+  /// Opens a file of the work catalog by name, for what a run published or
+  /// shared. Null leaves the names as text.
+  final void Function(String name)? onOpenFile;
 
   @override
   State<TicketCommentTile> createState() => _TicketCommentTileState();
@@ -696,8 +953,12 @@ class TicketCommentTile extends StatefulWidget {
 
 class _TicketCommentTileState extends State<TicketCommentTile> {
   /// Review briefs are long -- the whole brief a reviewer was handed -- so
-  /// they start folded.
-  late bool _open = widget.comment.kind != 'review_brief';
+  /// they start folded, as does a result the closing report already shows.
+  late bool _open =
+      widget.comment.kind != 'review_brief' && !widget.sameAsReport;
+
+  bool get _foldable =>
+      widget.comment.kind == 'review_brief' || widget.sameAsReport;
 
   @override
   Widget build(BuildContext context) {
@@ -715,7 +976,10 @@ class _TicketCommentTileState extends State<TicketCommentTile> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.info_outline, size: 14, color: Fleet.ink500),
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(Icons.info_outline, size: 14, color: Fleet.ink400),
+            ),
             const SizedBox(width: 8),
             // Markdown so the engine's "T-11 asks Checker to check it" links
             // to T-11 like any other message.
@@ -723,21 +987,26 @@ class _TicketCommentTileState extends State<TicketCommentTile> {
               child: MarkdownLite(
                 c.body,
                 baseStyle: TextStyle(
-                    color: Fleet.ink400, fontSize: 12, height: 1.35),
+                    color: Fleet.ink300, fontSize: 12.5, height: 1.35),
               ),
             ),
             if (when.isNotEmpty) ...[
               const SizedBox(width: 8),
-              Text(when, style: TextStyle(color: Fleet.ink500, fontSize: 11)),
+              Text(when, style: TextStyle(color: Fleet.ink300, fontSize: 11)),
             ],
           ],
         ),
       );
     }
 
+    final published = c.kind == 'published' ? parsePublished(c.body) : null;
+    if (published != null) return _published(c, published, who, when);
+
     final passed = c.kind == 'verdict' ? verdictPassed(c.body) : null;
+    final reopened = c.kind == 'verdict' && c.body.startsWith('Reopened by ');
     final (Color color, IconData icon, String label) = switch (c.kind) {
       'result' => (Fleet.good, Icons.task_alt_rounded, 'Result'),
+      'verdict' when reopened => (Fleet.warn, Icons.replay_rounded, 'Reopened'),
       'verdict' => (
           passed == null
               ? Fleet.cool
@@ -753,14 +1022,20 @@ class _TicketCommentTileState extends State<TicketCommentTile> {
         ),
       'published' => (Fleet.cool, Icons.publish_rounded, 'Published'),
       'retry' => (Fleet.warn, Icons.replay_rounded, 'Retrying'),
-      'review_brief' => (Fleet.ink300, Icons.rate_review_outlined, 'Review brief'),
+      'review_brief' => (
+          Fleet.ink300,
+          Icons.rate_review_outlined,
+          'Review brief'
+        ),
       _ => (
-          c.byPerson ? Fleet.live : Fleet.ink400,
+          c.byPerson ? Fleet.live : Fleet.ink300,
           c.byPerson ? Icons.person_rounded : Icons.smart_toy_outlined,
           '',
         ),
     };
     final plain = c.kind == 'comment' || label.isEmpty;
+    final files = c.kind == 'result' ? splitReportFiles(c.body) : null;
+    final body = files?.body ?? c.body;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -776,55 +1051,125 @@ class _TicketCommentTileState extends State<TicketCommentTile> {
               ? Border.all(color: Fleet.ink800)
               : Border(left: BorderSide(color: color, width: 3)),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+        padding: const EdgeInsets.fromLTRB(12, 4, 8, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
-              onTap: c.kind == 'review_brief'
-                  ? () => setState(() => _open = !_open)
-                  : null,
-              child: Row(
-                children: [
-                  Icon(icon, size: 14, color: color),
-                  const SizedBox(width: 6),
-                  if (!plain) ...[
-                    Text(label,
-                        style: TextStyle(
-                            color: color,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700)),
-                    Text('  ·  ',
-                        style: TextStyle(color: Fleet.ink500, fontSize: 12)),
+              borderRadius: BorderRadius.circular(8),
+              onTap: _foldable ? () => setState(() => _open = !_open) : null,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: _foldable ? 44 : 30),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 14, color: color),
+                    const SizedBox(width: 6),
+                    if (!plain) ...[
+                      Text(label,
+                          style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      Text('  ·  ',
+                          style:
+                              TextStyle(color: Fleet.ink300, fontSize: 12)),
+                    ],
+                    Expanded(
+                      child: Text(who,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Fleet.ink200,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    if (when.isNotEmpty)
+                      Text(when,
+                          style:
+                              TextStyle(color: Fleet.ink300, fontSize: 11)),
+                    if (_foldable)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(
+                            _open ? Icons.expand_less : Icons.expand_more,
+                            size: 20,
+                            color: Fleet.ink300,
+                            semanticLabel: _open ? 'Fold' : 'Unfold'),
+                      ),
                   ],
-                  Flexible(
-                    child: Text(who,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: Fleet.ink200,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                  const Spacer(),
-                  if (when.isNotEmpty)
-                    Text(when,
-                        style: TextStyle(color: Fleet.ink500, fontSize: 11)),
-                  if (c.kind == 'review_brief')
-                    Icon(_open ? Icons.expand_less : Icons.expand_more,
-                        size: 18, color: Fleet.ink400),
-                ],
+                ),
               ),
             ),
+            if (!_open && widget.sameAsReport)
+              Text('The closing report above, as the agent sent it.',
+                  style: TextStyle(color: Fleet.ink300, fontSize: 12)),
             if (_open) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 2),
               SelectionArea(
                 child: MarkdownLite(
-                  c.body,
+                  body,
                   baseStyle: TextStyle(
                       color: Fleet.ink100, fontSize: 13.5, height: 1.45),
                 ),
               ),
+              if (files != null && files.hasFiles) ...[
+                const SizedBox(height: 8),
+                SharedFilesList(
+                    files: files, onOpen: widget.onOpenFile ?? (_) {}),
+              ],
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// A file a run put in the work catalog: the file itself, to open.
+  Widget _published(
+      TicketComment c, PublishedItem item, String who, String when) {
+    final detail = [
+      if (item.version > 0) 'version ${item.version}',
+      if (item.bytes > 0) formatBytes(item.bytes),
+      'by $who',
+      if (when.isNotEmpty) when,
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Fleet.cool.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Fleet.cool.withValues(alpha: 0.35)),
+        ),
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.publish_rounded, size: 14, color: Fleet.cool),
+                  const SizedBox(width: 6),
+                  Text(
+                    item.kind == 'app'
+                        ? 'Published an app'
+                        : 'Published to the work catalog',
+                    style: TextStyle(
+                        color: Fleet.cool,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+            CatalogFileTile(
+              name: item.name,
+              detail: detail,
+              onTap: widget.onOpenFile == null
+                  ? null
+                  : () => widget.onOpenFile!(item.name),
+            ),
           ],
         ),
       ),
@@ -882,14 +1227,14 @@ class _SectionTitle extends StatelessWidget {
         children: [
           Text(text.toUpperCase(),
               style: TextStyle(
-                  color: Fleet.ink400,
+                  color: Fleet.ink300,
                   fontSize: 11,
                   letterSpacing: 0.6,
                   fontWeight: FontWeight.w700)),
           if (count > 0) ...[
             const SizedBox(width: 6),
             Text('$count',
-                style: TextStyle(color: Fleet.ink500, fontSize: 11)),
+                style: TextStyle(color: Fleet.ink400, fontSize: 11)),
           ],
           const Spacer(),
           if (trailing != null) trailing!,
@@ -906,6 +1251,7 @@ class _Callout extends StatelessWidget {
     required this.title,
     required this.body,
     this.markdown = false,
+    this.footer,
   });
 
   final IconData icon;
@@ -913,6 +1259,7 @@ class _Callout extends StatelessWidget {
   final String title;
   final String body;
   final bool markdown;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -948,6 +1295,10 @@ class _Callout extends StatelessWidget {
                     style: TextStyle(
                         color: Fleet.ink100, fontSize: 13.5, height: 1.45)),
           ),
+          if (footer != null) ...[
+            const SizedBox(height: 10),
+            footer!,
+          ],
         ],
       ),
     );

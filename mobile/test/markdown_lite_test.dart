@@ -55,4 +55,29 @@ void main() {
     await tester.pumpWidget(_host('just words, no syntax'));
     expect(find.textContaining('just words'), findsOneWidget);
   });
+
+  testWidgets('a list item with bold and code is one line of text, not three',
+      (tester) async {
+    await tester.pumpWidget(_host(
+        '1. **Pawsit** — playful blend\n2. I will create `notes/a.md` today'));
+    final texts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.textSpan?.toPlainText() ?? t.data ?? '')
+        .where((s) => s.trim().isNotEmpty && s != '1.' && s != '2.')
+        .toList();
+    expect(texts, hasLength(2));
+    expect(texts[0], 'Pawsit — playful blend');
+    expect(texts[1], contains('notes/a.md'));
+    expect(texts[1], endsWith('today'));
+  });
+
+  testWidgets('a nested list still nests under its item', (tester) async {
+    await tester.pumpWidget(_host('- **Builder**\n  - Claude\n- Checker'));
+    final all = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.textSpan?.toPlainText() ?? t.data ?? '')
+        .toList();
+    expect(all, containsAll(['Builder', 'Claude', 'Checker']));
+    expect(find.text('•'), findsNWidgets(3));
+  });
 }

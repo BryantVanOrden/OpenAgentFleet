@@ -73,9 +73,14 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
       return;
     }
     setState(() {
+      // The name is the kind's until you type one; going back and picking
+      // another kind renames it with the kind, not "Claude Code" on a Codex.
+      final typed = _name.text.trim();
+      if (typed.isEmpty || AgentKind.all.map(AgentKind.label).contains(typed)) {
+        _name.text = AgentKind.label(kind);
+      }
       _kind = kind;
       _error = null;
-      if (_name.text.trim().isEmpty) _name.text = AgentKind.label(kind);
     });
   }
 
@@ -180,7 +185,7 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
         const SizedBox(height: 4),
         Text(
           'Every kind sits in the same org chart and takes the same tickets.',
-          style: TextStyle(color: Fleet.ink400, fontSize: 12.5),
+          style: TextStyle(color: Fleet.ink300, fontSize: 12.5),
         ),
         const SizedBox(height: 12),
         for (final k in kinds)
@@ -206,8 +211,8 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
                           color: agentKindColor(k).withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Icon(agentKindIcon(k),
-                            color: agentKindColor(k), size: 20),
+                        alignment: Alignment.center,
+                        child: AgentKindIcon(k, size: 22, semantic: false),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -221,7 +226,7 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
                             const SizedBox(height: 2),
                             Text(AgentKind.blurb(k),
                                 style: TextStyle(
-                                    color: Fleet.ink400, fontSize: 12)),
+                                    color: Fleet.ink300, fontSize: 12)),
                           ],
                         ),
                       ),
@@ -348,7 +353,7 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
         children: [
           Text('RUNS ON',
               style: TextStyle(
-                  color: Fleet.ink400,
+                  color: Fleet.ink300,
                   fontSize: 10.5,
                   letterSpacing: 0.6,
                   fontWeight: FontWeight.w700)),
@@ -396,13 +401,15 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
             autocorrect: false,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             decoration: InputDecoration(
-              labelText: device.roots.length > 1
-                  ? 'Subfolder (optional)'
-                  : 'Folder inside ${device.roots.first}',
+              // The root can be a long path; it is in the helper below,
+              // where it has room, rather than cut off in the label.
+              labelText: 'Subfolder (optional)',
               hintText: 'my-app',
               helperText: 'Where it works: '
                   '${folderUnder(_root ?? device.roots.first, _sub.text) ?? '(not inside the folder)'}',
-              helperMaxLines: 2,
+              helperMaxLines: 4,
+              helperStyle: TextStyle(
+                  color: Fleet.ink300, fontSize: 12, fontFamily: 'monospace'),
             ),
             onChanged: (_) => setState(() {}),
           ),
@@ -443,19 +450,32 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
         onSelectionChanged:
             _busy ? null : (s) => setState(() => _autonomy = s.first),
       ),
-      const SizedBox(height: 6),
-      Text(
-        _autonomy == 'full'
-            ? 'It can do anything inside its folder, commands included.'
-            : 'It can change files in its folder but not run commands.',
-        style: TextStyle(color: Fleet.ink400, fontSize: 11.5),
+      const SizedBox(height: 8),
+      // Both meanings, the chosen one in bold: picking between two words is
+      // easier with the other one's meaning in view.
+      Text.rich(
+        TextSpan(children: [
+          TextSpan(
+            text: 'Edits',
+            style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: _autonomy == 'edits' ? Fleet.ink100 : Fleet.ink300),
+          ),
+          const TextSpan(
+              text: ' changes files in its folder but runs no commands. '),
+          TextSpan(
+            text: 'Full',
+            style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: _autonomy == 'full' ? Fleet.ink100 : Fleet.ink300),
+          ),
+          const TextSpan(
+              text: ' does anything inside its folder, commands included.'),
+        ]),
+        style: TextStyle(color: Fleet.ink300, fontSize: 12, height: 1.4),
       ),
-      const SizedBox(height: 4),
-      Text(
-        'Each run asks in the host\'s terminal before it starts, unless the '
-        'host was started with --yes.',
-        style: TextStyle(color: Fleet.ink500, fontSize: 11.5),
-      ),
+      const SizedBox(height: 14),
+      _HowItRuns(kind: kind),
     ];
   }
 
@@ -520,7 +540,7 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
                           const SizedBox(width: 4),
                           Text(d.online ? 'online' : 'offline',
                               style: TextStyle(
-                                  color: Fleet.ink400, fontSize: 11)),
+                                  color: Fleet.ink300, fontSize: 11)),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -534,7 +554,7 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
                                   : '${d.roots.length} folders',
                         ].join(' · '),
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Fleet.ink400, fontSize: 11.5),
+                        style: TextStyle(color: Fleet.ink300, fontSize: 11.5),
                       ),
                       const SizedBox(height: 6),
                       Wrap(
@@ -544,7 +564,7 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
                             ? [
                                 Text('Did not say which CLIs it has',
                                     style: TextStyle(
-                                        color: Fleet.ink500, fontSize: 11)),
+                                        color: Fleet.ink400, fontSize: 11)),
                               ]
                             : [
                                 for (final r in d.runtimes)
@@ -625,10 +645,62 @@ class _AddAgentSheetState extends ConsumerState<AddAgentSheet> {
           'Each run is a POST with the brief and a callback. Answer 200 with '
           '{"status":"done","result":"…"} to finish at once, or 202 and call '
           'back later.',
-          style: TextStyle(color: Fleet.ink400, fontSize: 11.5, height: 1.4),
+          style: TextStyle(color: Fleet.ink300, fontSize: 11.5, height: 1.4),
         ),
       ],
     ];
+  }
+}
+
+/// What happens around a run on your PC, in a few lines: where its files
+/// go, whose settings it runs with, and the confirmation in the terminal.
+class _HowItRuns extends StatelessWidget {
+  const _HowItRuns({required this.kind});
+  final String kind;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget line(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(icon, size: 15, color: Fleet.ink300),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(text,
+                    style: TextStyle(
+                        color: Fleet.ink300, fontSize: 12, height: 1.4)),
+              ),
+            ],
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      decoration: BoxDecoration(
+        color: Fleet.ink850,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Fleet.ink700),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          line(Icons.folder_shared_outlined,
+              'When a run finishes, the text files it made or changed are '
+              'shared with the fleet, so colleagues can read them.'),
+          if (kind == AgentKind.claudeCode)
+            line(Icons.settings_suggest_outlined,
+                'Claude Code runs without your ~/.claude user settings; the '
+                'folder\'s own .claude settings apply.'),
+          line(Icons.terminal_rounded,
+              'Each run asks in the host\'s terminal before it starts, '
+              'unless the host was started with --yes.'),
+        ],
+      ),
+    );
   }
 }
 
@@ -716,7 +788,7 @@ class _NoDeviceState extends State<_NoDevice> {
           Text(
             'It reports which CLIs it finds. Once it says it is connected, '
             'check again here.',
-            style: TextStyle(color: Fleet.ink400, fontSize: 12),
+            style: TextStyle(color: Fleet.ink300, fontSize: 12),
           ),
           const SizedBox(height: 4),
           Align(

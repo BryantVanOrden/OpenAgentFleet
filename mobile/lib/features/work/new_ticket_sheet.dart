@@ -194,6 +194,7 @@ class _NewTicketSheetState extends ConsumerState<NewTicketSheet> {
               ),
             ),
             if (_more) ...[
+              const SizedBox(height: 8),
               _agentField('Reviewer', _reviewer,
                   (v) => setState(() => _reviewer = v), agents,
                   helper: 'Checks the work before it counts as done.'),
@@ -224,6 +225,7 @@ class _NewTicketSheetState extends ConsumerState<NewTicketSheet> {
                   hintText: 'T-12',
                   helperText: 'The ticket this one exists for. Blank for a new '
                       'top-level ticket.',
+                  helperMaxLines: 2,
                 ),
               ),
               const SizedBox(height: 12),
@@ -248,6 +250,7 @@ class _NewTicketSheetState extends ConsumerState<NewTicketSheet> {
                   prefixText: '\$ ',
                   helperText: 'A run that spends it is stopped and the ticket '
                       'blocked. Blank for none.',
+                  helperMaxLines: 2,
                 ),
               ),
             ],

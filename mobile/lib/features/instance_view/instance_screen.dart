@@ -83,6 +83,7 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final external = instance.isExternal;
+    final narrow = MediaQuery.sizeOf(context).width < 520;
     final tabs = _controllerFor(external);
     final activityTab = external ? 0 : 1;
 
@@ -109,19 +110,31 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
       appBar: _desktopFullscreen
           ? null
           : AppBar(
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              title: Row(
                 children: [
-                  Text(instance.name, overflow: TextOverflow.ellipsis),
-                  Text(
-                    external
-                        ? [
-                            if (instance.title.isNotEmpty) instance.title,
-                            instance.connection.summary(short: true),
-                          ].join(' · ')
-                        : '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11, color: Fleet.ink400),
+                  // What an external agent is, at a glance: the product's
+                  // own mark. The badge on the right says it in words.
+                  if (external) ...[
+                    AgentKindIcon(instance.kind, size: 26, semantic: narrow),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(instance.name, overflow: TextOverflow.ellipsis),
+                        Text(
+                          external
+                              ? [
+                                  if (instance.title.isNotEmpty) instance.title,
+                                  instance.connection.summary(short: true),
+                                ].join(' · ')
+                              : '${instance.tier} · ${instance.shellAccess ? "shell on" : "shell off"}',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: Fleet.ink400),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -131,8 +144,12 @@ class _InstanceScreenState extends ConsumerState<InstanceScreen>
                   child: Center(
                       // An external agent is always "running" as far as its
                       // row is concerned; what it is matters more.
+                      // On a phone the mark beside the name says the kind,
+                      // and the name needs the room more than a second one.
                       child: external
-                          ? AgentKindBadge(instance.kind)
+                          ? (narrow
+                              ? const SizedBox.shrink()
+                              : AgentKindBadge(instance.kind))
                           : StateChip(
                               state: instance.state,
                               live: instance.isRunning)),
@@ -1194,7 +1211,11 @@ class _TaskCard extends ConsumerWidget {
               Row(
                 children: [
                   Expanded(
+                    // An external run's goal is its whole brief; the card
+                    // shows the start and the run's page the rest.
                     child: Text.rich(
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
                       TextSpan(
                         children: [
                           if (isChild)
@@ -1236,6 +1257,8 @@ class _TaskCard extends ConsumerWidget {
               if (task.result.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(task.result,
+                    maxLines: 6,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Fleet.good, fontSize: 12)),
               ],
               if (task.isLive) ...[

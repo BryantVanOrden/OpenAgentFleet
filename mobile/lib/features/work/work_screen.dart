@@ -31,6 +31,14 @@ class _WorkScreenState extends ConsumerState<WorkScreen>
   late String _assignee = widget.initialAssignee;
   bool _rootsOnly = false;
 
+  /// Search over reference, title and assignee; null while the field is
+  /// closed.
+  TextEditingController? _search;
+
+  /// Whether the opening tab has been chosen from what loaded. Once it has,
+  /// or once you pick a tab yourself, a refresh never moves you.
+  bool _placed = false;
+
   TicketQuery get _query => (assignee: _assignee, rootsOnly: _rootsOnly);
 
   @override
@@ -43,6 +51,7 @@ class _WorkScreenState extends ConsumerState<WorkScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tabs.dispose();
+    _search?.dispose();
     super.dispose();
   }
 
@@ -69,17 +78,71 @@ class _WorkScreenState extends ConsumerState<WorkScreen>
     await _open(created);
   }
 
+  /// Opens on the first tab with anything in it, once, when the tickets
+  /// first arrive. After the frame: moving the controller mid-build would
+  /// rebuild the tab bar while it is being built.
+  void _placeTab(Map<String, List<Ticket>> grouped) {
+    if (_placed) return;
+    _placed = true;
+    final key = firstBusyTab(grouped);
+    final index = workTabs.indexWhere((t) => t.key == key);
+    if (index <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _tabs.index == 0) _tabs.index = index;
+    });
+  }
+
+  void _openSearch() => setState(() => _search = TextEditingController());
+
+  void _closeSearch() {
+    final c = _search;
+    setState(() => _search = null);
+    // After the frame, so the field that holds it is gone first.
+    WidgetsBinding.instance.addPostFrameCallback((_) => c?.dispose());
+  }
+
   @override
   Widget build(BuildContext context) {
     final tickets = ref.watch(ticketsProvider(_query));
     final instances =
         ref.watch(instancesProvider).valueOrNull ?? const <Instance>[];
-    final grouped = groupTickets(tickets.valueOrNull ?? const []);
+    final query = _search?.text ?? '';
+    final all = tickets.valueOrNull ?? const <Ticket>[];
+    final grouped =
+        groupTickets(all.where((t) => ticketMatches(t, query)));
+    if (tickets.hasValue && query.isEmpty) _placeTab(grouped);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Work'),
+        title: _search == null
+            ? const Text('Work')
+            : TextField(
+                controller: _search,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  hintText: 'Search T-12, a title, an agent',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  isDense: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
         actions: [
+          if (_search == null)
+            IconButton(
+              tooltip: 'Search',
+              icon: const Icon(Icons.search),
+              onPressed: _openSearch,
+            )
+          else
+            IconButton(
+              tooltip: 'Close search',
+              icon: const Icon(Icons.close),
+              onPressed: _closeSearch,
+            ),
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
@@ -88,6 +151,7 @@ class _WorkScreenState extends ConsumerState<WorkScreen>
         ],
         bottom: TabBar(
           controller: _tabs,
+          onTap: (_) => _placed = true,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           indicatorColor: Fleet.live,
@@ -136,7 +200,8 @@ class _WorkScreenState extends ConsumerState<WorkScreen>
                     _TicketList(
                       tab: tab,
                       tickets: grouped[tab.key]!,
-                      filtered: _assignee.isNotEmpty || _rootsOnly,
+                      filtered:
+                          _assignee.isNotEmpty || _rootsOnly || query.isNotEmpty,
                       onRefresh: () =>
                           ref.refresh(ticketsProvider(_query).future),
                       onOpen: _open,
@@ -268,7 +333,7 @@ class _TicketList extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 40),
                   child: Text(_emptyText,
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Fleet.ink400, fontSize: 13)),
+                      style: TextStyle(color: Fleet.ink300, fontSize: 13)),
                 ),
               ],
             )
@@ -282,7 +347,9 @@ class _TicketList extends StatelessWidget {
                   itemCount: tickets.length,
                   itemBuilder: (_, i) => TicketRow(
                     ticket: tickets[i],
-                    showStatus: tab.key == 'done',
+                    // Done holds the cancelled too; only they need saying.
+                    showStatus:
+                        tab.key == 'done' && tickets[i].status != 'done',
                     onTap: () => onOpen(tickets[i]),
                   ),
                 ),
@@ -319,7 +386,7 @@ class _Empty extends StatelessWidget {
             const SizedBox(height: 6),
             Text(body,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Fleet.ink400, fontSize: 13)),
+                style: TextStyle(color: Fleet.ink300, fontSize: 13)),
             const SizedBox(height: 16),
             OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
           ],

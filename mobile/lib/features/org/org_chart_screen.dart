@@ -12,8 +12,28 @@ import '../dashboard/add_agent_sheet.dart';
 import 'agent_profile_sheet.dart';
 import 'org_layout.dart';
 
-const _cardWidth = 196.0;
-const _cardHeight = 132.0;
+const _cardWidth = 176.0;
+
+/// Room for the name, the kind and the status; each card in a chart is the
+/// same size, so the extra rows are paid for only when a card needs them.
+const _cardBaseHeight = 106.0;
+const _ticketLineHeight = 16.0;
+const _budgetHeight = 26.0;
+
+/// Where the chart starts below the top of the view: under the hint line.
+const _chartTop = 34.0;
+
+/// How tall the chart's cards are, from what the tallest one has to show.
+double orgCardHeight(Iterable<OrgNode> nodes) {
+  var h = _cardBaseHeight;
+  for (final n in nodes) {
+    if (n.hasBudget) return _cardBaseHeight + _budgetHeight;
+    if (n.busy && n.ticketTitle.isNotEmpty) {
+      h = _cardBaseHeight + _ticketLineHeight;
+    }
+  }
+  return h;
+}
 
 /// Who reports to whom, drawn as a chart.
 ///
@@ -43,6 +63,9 @@ class _OrgChartScreenState extends ConsumerState<OrgChartScreen> {
   /// Where "You" sits horizontally in the current layout, to centre on.
   double? _rootCenterX;
 
+  /// The card height the current layout was made with, for drag feedback.
+  double _cardHeight = _cardBaseHeight;
+
   @override
   void dispose() {
     _transform.dispose();
@@ -61,17 +84,23 @@ class _OrgChartScreenState extends ConsumerState<OrgChartScreen> {
     final first = _fittedChart == null;
     _fittedChart = chart;
     _fittedViewport = viewport;
-    // Opening: never so small the cards cannot be read (a phone showing a
-    // wide chart starts on you, centred, and pans). The fit button shows the
-    // whole chart however small that makes it.
+    // Opening: the whole chart when it fits at a size the cards can still
+    // be read at -- a phone takes three agents side by side -- and otherwise
+    // on you, centred, to pan from. The fit button shows the whole chart
+    // however small that makes it.
     final whole = math.min(1.0, viewport.width / chart.width);
-    final scale = force ? whole.clamp(0.3, 1.0) : whole.clamp(0.75, 1.0);
+    final scale = force
+        ? math.min(whole, (viewport.height - _chartTop) / chart.height)
+            .clamp(0.3, 1.0)
+        : whole >= 0.6
+            ? whole
+            : 0.8;
     final rootCenter = _rootCenterX ?? chart.width / 2;
     final dx = chart.width * scale <= viewport.width
         ? (viewport.width - chart.width * scale) / 2
         : viewport.width / 2 - rootCenter * scale;
     final m = Matrix4.identity()
-      ..translateByDouble(dx, 0, 0, 1)
+      ..translateByDouble(dx, _chartTop, 0, 1)
       ..scaleByDouble(scale, scale, 1, 1);
     if (first || force) {
       _transform.value = m;
@@ -175,6 +204,7 @@ class _OrgChartScreenState extends ConsumerState<OrgChartScreen> {
       for (final n in chart.nodes)
         OrgLayoutInput(id: n.id, parentId: n.reportsTo, sortKey: n.name),
     ];
+    _cardHeight = orgCardHeight(chart.nodes);
     final layout = layoutOrgTree(
       inputs,
       cardWidth: _cardWidth,
@@ -189,7 +219,7 @@ class _OrgChartScreenState extends ConsumerState<OrgChartScreen> {
       _rootCenterX = layout.boxes[orgRootId]?.centerX;
       _fit(size, viewport);
 
-      return InteractiveViewer(
+      final viewer = InteractiveViewer(
         transformationController: _transform,
         constrained: false,
         minScale: 0.3,
@@ -233,6 +263,28 @@ class _OrgChartScreenState extends ConsumerState<OrgChartScreen> {
             ],
           ),
         ),
+      );
+      return Stack(
+        children: [
+          Positioned.fill(child: viewer),
+          // How to use it, where it cannot be missed and does not cover a
+          // card: the chart starts below it.
+          Positioned(
+            top: 8,
+            left: 16,
+            right: 16,
+            child: IgnorePointer(
+              child: Text(
+                'Tap an agent to edit it. Hold one and drop it on another '
+                'to change who it reports to.',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Fleet.ink300, fontSize: 11.5),
+              ),
+            ),
+          ),
+        ],
       );
     });
   }
@@ -412,7 +464,7 @@ class OrgAgentCard extends StatelessWidget {
       OrgActivity.working => Fleet.good,
       OrgActivity.idle => Fleet.ink300,
       OrgActivity.held => Fleet.warn,
-      OrgActivity.offline => Fleet.ink400,
+      OrgActivity.offline => Fleet.ink300,
     };
     final kindColor = agentKindColor(node.kind);
 
@@ -438,7 +490,13 @@ class OrgAgentCard extends StatelessWidget {
     return Semantics(
       button: onTap != null,
       label: '${node.name}, ${node.title.isEmpty ? '' : '${node.title}, '}'
-          '${AgentKind.label(node.kind)}, ${status.label}',
+          '${AgentKind.label(node.kind)}, ${status.label}, '
+          '${node.openTickets} open',
+      hint: onTap == null ? null : 'Edit, or hold to move',
+      // The card's own tap is below the excluded subtree, so it is given
+      // here or a screen reader could not open the agent at all.
+      onTap: onTap,
+      excludeSemantics: true,
       child: Material(
         color: Fleet.ink900,
         elevation: lifted ? 8 : 0,
@@ -479,7 +537,7 @@ class OrgAgentCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: node.title.isEmpty
-                                  ? Fleet.ink500
+                                  ? Fleet.ink400
                                   : Fleet.ink300,
                               fontSize: 11,
                               fontStyle: node.title.isEmpty
@@ -543,7 +601,7 @@ class OrgAgentCard extends StatelessWidget {
                     child: Text(node.ticketTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Fleet.ink400, fontSize: 10.5)),
+                        style: TextStyle(color: Fleet.ink300, fontSize: 10.5)),
                   ),
                 const Spacer(),
                 if (node.hasBudget)
@@ -590,7 +648,7 @@ class _BudgetBar extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Fleet.ink400,
+            color: Fleet.ink300,
             fontSize: 10,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
@@ -639,7 +697,7 @@ class _Message extends StatelessWidget {
             const SizedBox(height: 6),
             Text(body,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Fleet.ink400, fontSize: 13)),
+                style: TextStyle(color: Fleet.ink300, fontSize: 13)),
             if (action != null) ...[
               const SizedBox(height: 18),
               action!,

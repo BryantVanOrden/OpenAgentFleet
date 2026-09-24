@@ -243,7 +243,9 @@ class _AgentProfileSheetState extends ConsumerState<AgentProfileSheet> {
                   visualDensity: VisualDensity.compact,
                   avatar: const Icon(Icons.confirmation_number_outlined,
                       size: 14),
-                  label: Text('${node.openTickets} open tickets'),
+                  label: Text(node.openTickets == 1
+                      ? '1 open ticket'
+                      : '${node.openTickets} open tickets'),
                   onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => WorkScreen(initialAssignee: node.id),
                   )),
@@ -267,7 +269,7 @@ class _AgentProfileSheetState extends ConsumerState<AgentProfileSheet> {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  color: Fleet.ink400, fontSize: 11.5, fontFamily: 'monospace')),
+                  color: Fleet.ink300, fontSize: 11.5, fontFamily: 'monospace')),
         ],
         const SizedBox(height: 18),
         TextField(
@@ -358,7 +360,7 @@ class _AgentProfileSheetState extends ConsumerState<AgentProfileSheet> {
                   'work, or write to the shared vault.'
               : 'Its messages, results and hand-offs reach colleagues as '
                   'ordinary instructions.',
-          style: TextStyle(color: Fleet.ink400, fontSize: 11.5, height: 1.4),
+          style: TextStyle(color: Fleet.ink300, fontSize: 11.5, height: 1.4),
         ),
         const SizedBox(height: 18),
         Text('Monthly budget',
@@ -407,7 +409,7 @@ class _AgentProfileSheetState extends ConsumerState<AgentProfileSheet> {
             (node?.budgetMonthUsd ?? inst?.budgetMonthUsd ?? 0) > 0
                 ? '\$${(node?.budgetMonthUsd ?? inst!.budgetMonthUsd).toStringAsFixed(2)} a month. Budgets are set by an admin.'
                 : 'No ceiling. Budgets are set by an admin.',
-            style: TextStyle(color: Fleet.ink400, fontSize: 12),
+            style: TextStyle(color: Fleet.ink300, fontSize: 12),
           ),
         if (node != null && node.hasBudget) ...[
           const SizedBox(height: 8),

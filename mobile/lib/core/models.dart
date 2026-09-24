@@ -2563,6 +2563,7 @@ class Ticket {
     this.parentId = '',
     this.targetId = '',
     this.assigneeId = '',
+    this.assigneeUserId = '',
     this.assigneeName = '',
     this.reviewerId = '',
     this.reviewerName = '',
@@ -2629,6 +2630,9 @@ class Ticket {
   /// For a review, verify or unblock ticket: the ticket it is about.
   final String targetId;
   final String assigneeId;
+
+  /// A person holding the ticket rather than an agent.
+  final String assigneeUserId;
   final String assigneeName;
   final String reviewerId;
   final String reviewerName;
@@ -2666,6 +2670,10 @@ class Ticket {
   bool get isOpen => !isTerminal;
   bool get isRoot => parentId.isEmpty;
 
+  /// Nobody holds it: a request you made of the whole fleet, whose parts
+  /// are the tickets under it.
+  bool get isUnassigned => assigneeId.isEmpty && assigneeUserId.isEmpty;
+
   /// Review, verify and unblock tickets are work about other work, and are
   /// worth marking in a list; ordinary work is not.
   bool get isMeta => kind != 'work';
@@ -2687,6 +2695,7 @@ class Ticket {
       parentId: j['parent_id'] as String? ?? '',
       targetId: j['target_id'] as String? ?? '',
       assigneeId: j['assignee_id'] as String? ?? '',
+      assigneeUserId: j['assignee_user_id'] as String? ?? '',
       assigneeName: j['assignee_name'] as String? ?? '',
       reviewerId: j['reviewer_id'] as String? ?? '',
       reviewerName: j['reviewer_name'] as String? ?? '',

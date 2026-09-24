@@ -525,7 +525,7 @@ class _OafChatScreenState extends ConsumerState<OafChatScreen> {
               ),
               child: _busy
                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.send_rounded, size: 20),
+                  : const Icon(Icons.send_rounded, size: 20, semanticLabel: 'Send'),
             ),
           ],
         ),

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme/theme.dart';
 import '../../core/widgets/agent_kind_badge.dart';
+import '../vault/mini_app_screen.dart';
+import '../vault/work_editor_screen.dart';
 import 'work_logic.dart';
 
 /// The colour a ticket status wears everywhere.
@@ -11,8 +14,8 @@ Color ticketStatusColor(String status) => switch (status) {
       'in_review' => Fleet.cool,
       'blocked' => Fleet.warn,
       'done' => Fleet.good,
-      'cancelled' => Fleet.ink400,
-      'backlog' => Fleet.ink400,
+      'cancelled' => Fleet.ink300,
+      'backlog' => Fleet.ink300,
       _ => Fleet.ink300,
     };
 
@@ -145,7 +148,7 @@ class TicketRow extends StatelessWidget {
                 children: [
                   Text(t.ref,
                       style: TextStyle(
-                          color: Fleet.ink400,
+                          color: Fleet.ink300,
                           fontSize: 11.5,
                           fontFamily: 'monospace',
                           fontWeight: FontWeight.w600)),
@@ -173,11 +176,11 @@ class TicketRow extends StatelessWidget {
               ),
               const SizedBox(height: 5),
               Text(
-                t.title.isEmpty ? 'Untitled' : t.title,
+                plainTitle(t.title),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: t.status == 'cancelled' ? Fleet.ink400 : Fleet.ink100,
+                    color: t.status == 'cancelled' ? Fleet.ink300 : Fleet.ink100,
                     decoration: t.status == 'cancelled'
                         ? TextDecoration.lineThrough
                         : null,
@@ -192,10 +195,14 @@ class TicketRow extends StatelessWidget {
                 children: [
                   _Meta(
                     icon: Icons.person_outline,
+                    // A request made in the chat has nobody by design: the
+                    // fleet answers it through the tickets under it.
                     text: t.assigneeName.isNotEmpty
                         ? t.assigneeName
                         : t.assigneeId.isEmpty
-                            ? 'Nobody yet'
+                            ? (t.isUnassigned && t.isRoot && t.origin.isNotEmpty
+                                ? 'Request to the fleet'
+                                : 'Nobody yet')
                             : 'Someone you cannot see',
                     dim: t.assigneeId.isEmpty,
                   ),
@@ -235,7 +242,7 @@ class _Meta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? (dim ? Fleet.ink500 : Fleet.ink300);
+    final c = color ?? (dim ? Fleet.ink400 : Fleet.ink300);
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 260),
       child: Row(
@@ -299,19 +306,18 @@ Future<String?> pickAgent(
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Text('No agents in the fleet yet.',
-                    style: TextStyle(color: Fleet.ink400)),
+                    style: TextStyle(color: Fleet.ink300)),
               ),
             for (final a in sorted)
               ListTile(
-                leading: Icon(agentKindIcon(a.kind),
-                    color: agentKindColor(a.kind)),
+                leading: AgentKindIcon(a.kind, size: 22, semantic: false),
                 title: Text(a.name),
                 subtitle: Text(
                   [
                     if (a.title.isNotEmpty) a.title,
                     AgentKind.label(a.kind),
                   ].join(' · '),
-                  style: TextStyle(color: Fleet.ink400, fontSize: 12),
+                  style: TextStyle(color: Fleet.ink300, fontSize: 12),
                 ),
                 trailing: current == a.id
                     ? Icon(Icons.check, color: Fleet.live)
@@ -323,4 +329,180 @@ Future<String?> pickAgent(
       ),
     ),
   );
+}
+
+
+/// Opens an item of the work catalog by its name -- "notes/names.md" -- the
+/// way the Vault does: an app runs, anything else opens in the editor.
+///
+/// A name is what a ticket knows (an external run publishes under the
+/// file's path in its folder), so this looks the item up. Several items can
+/// share a name in different folders; the one written most recently is the
+/// one the ticket meant.
+Future<void> openCatalogItem(
+    BuildContext context, ApiClient api, String name) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+  List<WorkItem> items;
+  try {
+    items = await api.workItems();
+  } catch (err) {
+    messenger.showSnackBar(SnackBar(content: Text('$err')));
+    return;
+  }
+  final matches = items.where((w) => w.name == name && !w.isWorkspace).toList()
+    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  if (matches.isEmpty) {
+    messenger.showSnackBar(SnackBar(
+        content: Text('$name is not in the work catalog any more.')));
+    return;
+  }
+  final item = matches.first;
+  await navigator.push(MaterialPageRoute(
+    builder: (_) => item.runnable
+        ? MiniAppScreen(item: item)
+        : WorkEditorScreen(api: api, item: item),
+  ));
+}
+
+IconData _fileIcon(String name) {
+  final n = name.toLowerCase();
+  if (n.endsWith('.html') || n.endsWith('.htm')) {
+    return Icons.web_asset_outlined;
+  }
+  if (n.endsWith('.md') || n.endsWith('.txt')) return Icons.article_outlined;
+  if (RegExp(r'\.(png|jpe?g|gif|webp|svg|ico)$').hasMatch(n)) {
+    return Icons.image_outlined;
+  }
+  return Icons.description_outlined;
+}
+
+/// One file in the work catalog, as a tappable row: what a run published or
+/// shared, opened in the catalog's viewer.
+class CatalogFileTile extends StatelessWidget {
+  const CatalogFileTile({
+    super.key,
+    required this.name,
+    this.detail = '',
+    this.onTap,
+  });
+
+  final String name;
+  final String detail;
+
+  /// Null for a file that was not sent, which has nothing to open.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Semantics(
+      button: enabled,
+      label: enabled ? 'Open $name' : '$name, not shared',
+      // The InkWell below is excluded with the rest, so its tap is given
+      // here or a screen reader could not open the file.
+      onTap: onTap,
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Icon(_fileIcon(name),
+                    size: 18, color: enabled ? Fleet.cool : Fleet.ink400),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: enabled ? Fleet.ink100 : Fleet.ink300,
+                              fontFamily: 'monospace',
+                              fontSize: 13)),
+                      if (detail.isNotEmpty)
+                        Text(detail,
+                            style:
+                                TextStyle(color: Fleet.ink300, fontSize: 11.5)),
+                    ],
+                  ),
+                ),
+                if (enabled)
+                  Icon(Icons.chevron_right, size: 18, color: Fleet.ink400),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The files an external run shared with the fleet, and the ones it changed
+/// but could not send, under a report.
+class SharedFilesList extends StatelessWidget {
+  const SharedFilesList({super.key, required this.files, required this.onOpen});
+
+  final ReportFiles files;
+  final void Function(String name) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+      decoration: BoxDecoration(
+        color: Fleet.ink900,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Fleet.ink700),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (files.shared.isNotEmpty) ...[
+            _label(Icons.folder_shared_outlined,
+                'Shared with the fleet', files.shared.length),
+            for (final f in files.shared)
+              CatalogFileTile(name: f, onTap: () => onOpen(f)),
+          ],
+          if (files.unshared.isNotEmpty) ...[
+            if (files.shared.isNotEmpty) const SizedBox(height: 4),
+            _label(Icons.block_outlined, 'Changed, not shared',
+                files.unshared.length,
+                hint: 'binary or too large'),
+            for (final f in files.unshared) CatalogFileTile(name: f),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _label(IconData icon, String text, int n, {String hint = ''}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Fleet.ink300),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              hint.isEmpty ? '$text · $n' : '$text · $n · $hint',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: Fleet.ink300,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

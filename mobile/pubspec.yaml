@@ -60,6 +60,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.2.3
 
+  # The products' own marks for external agents (Claude Code, Codex, Hermes,
+  # OpenClaw). Vector so one file is crisp at every density and on the org
+  # chart's zoom; Hermes's mark is currentColor and takes the theme's ink.
+  flutter_svg: ^2.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -75,6 +80,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/
+    - assets/agents/
 
 # Launcher icons. Regenerate with:
 #   dart run flutter_launcher_icons
