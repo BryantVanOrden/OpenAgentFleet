@@ -93,6 +93,86 @@ class FleetClient:
     def _delete(self, path: str) -> Any:
         return self._request("DELETE", path)
 
+    def _put(self, path: str, data: Optional[dict[str, Any]] = None) -> Any:
+        return self._request("PUT", path, data=data)
+
+    def _patch(self, path: str, data: Optional[dict[str, Any]] = None) -> Any:
+        return self._request("PATCH", path, data=data)
+
+    # ------------------------------------------------------------- Tickets ---
+    # Work as durable tickets: one assignee, a parent, and what it waits on.
+    # A ticket is addressed by its id or its reference ("T-12").
+
+    def list_tickets(self, status: Optional[list[str]] = None, assignee: Optional[str] = None,
+                     roots: bool = False, limit: int = 200) -> list[dict[str, Any]]:
+        """Tickets, newest first. status filters by one or more statuses."""
+        q = [f"limit={int(limit)}"]
+        if status:
+            q.append("status=" + ",".join(status))
+        if assignee:
+            q.append("assignee=" + urllib.parse.quote(assignee))
+        if roots:
+            q.append("roots=1")
+        return self._get("/api/tickets?" + "&".join(q)) or []
+
+    def create_ticket(self, title: str, description: str = "", assignee_id: Optional[str] = None,
+                      parent: Optional[str] = None, blocked_by: Optional[list[str]] = None,
+                      reviewer_id: Optional[str] = None, verifier_id: Optional[str] = None,
+                      budget_usd: float = 0, kind: str = "work") -> dict[str, Any]:
+        """Files a ticket. It starts as soon as its blockers are done and its assignee is free."""
+        body: dict[str, Any] = {"title": title, "description": description, "kind": kind}
+        for k, v in (("assignee_id", assignee_id), ("parent_id", parent), ("reviewer_id", reviewer_id),
+                     ("verifier_id", verifier_id)):
+            if v:
+                body[k] = v
+        if blocked_by:
+            body["blocked_by"] = list(blocked_by)
+        if budget_usd:
+            body["budget_usd"] = budget_usd
+        return self._post("/api/tickets", body)
+
+    def ticket(self, ref: str) -> dict[str, Any]:
+        """A ticket with its ancestry, children, blockers, comments and runs."""
+        return self._get(f"/api/tickets/{urllib.parse.quote(ref)}")
+
+    def update_ticket(self, ref: str, **fields: Any) -> dict[str, Any]:
+        """Changes any of title, description, status, priority, assignee_id,
+        reviewer_id, verifier_id, parent_id, budget_usd, blocked_by."""
+        return self._patch(f"/api/tickets/{urllib.parse.quote(ref)}", fields)
+
+    def comment_ticket(self, ref: str, body: str) -> dict[str, Any]:
+        return self._post(f"/api/tickets/{urllib.parse.quote(ref)}/comments", {"body": body})
+
+    def reopen_ticket(self, ref: str, reason: str) -> dict[str, Any]:
+        """Sends finished work back to its assignee with what is missing."""
+        return self._post(f"/api/tickets/{urllib.parse.quote(ref)}/reopen", {"reason": reason})
+
+    def delete_ticket(self, ref: str) -> None:
+        self._delete(f"/api/tickets/{urllib.parse.quote(ref)}")
+
+    # ----------------------------------------------------------- Org chart ---
+
+    def org(self) -> dict[str, Any]:
+        """The org chart: every agent, who it reports to, and what it is doing."""
+        return self._get("/api/org")
+
+    def set_profile(self, instance_id: str, **fields: Any) -> dict[str, Any]:
+        """Changes an agent's title, capabilities, reports_to, trust, budget
+        (budget_month_usd, budget_warn_pct; admin only) or connection."""
+        return self._put(f"/api/instances/{instance_id}/profile", fields)
+
+    def add_external_agent(self, name: str, kind: str, connection: dict[str, Any],
+                           token: Optional[str] = None, **fields: Any) -> dict[str, Any]:
+        """Adds a Claude Code, Codex, Hermes, OpenClaw or webhook agent.
+
+        For the CLI kinds, connection is {"device_id", "cwd", "model", "autonomy"};
+        for OpenClaw {"url", "agent_id"}; for a webhook {"url"}.
+        """
+        body: dict[str, Any] = {"name": name, "kind": kind, "connection": connection, **fields}
+        if token:
+            body["token"] = token
+        return self._post("/api/instances", body)
+
     # ------------------------------------------------------------------ Auth ---
 
     def login(self, email: str, password: str) -> str:

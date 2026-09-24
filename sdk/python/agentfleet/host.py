@@ -1,10 +1,15 @@
-"""`fleetctl host`: let Oaf act on this machine.
+"""`fleetctl host`: let Oaf -- and your external agents -- act on this machine.
 
 Registers this PC as a device, then polls the orchestrator for jobs -- run a
 command, read or write a file, list a folder, search -- and executes them
 here, inside the folders you exposed. Anything that changes state (a shell
 command, a write) asks you first in this terminal, the way Claude Code asks
 before it runs something; ``--yes`` skips the asking for a session you trust.
+
+It also runs external agents. An agent the console created as Claude Code,
+Codex or Hermes on this PC arrives as an ``agent_run`` job: the host starts the
+CLI in the agent's folder, streams what it does back, and posts its answer.
+Each run asks here first unless ``--yes``.
 
 Nothing here is reachable from the network: the machine polls out, the
 orchestrator never connects in. Stop the process and Oaf loses the machine.
@@ -19,11 +24,13 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Optional
 
+from agentfleet import runtimes as _runtimes
 from agentfleet.client import FleetClient
 from agentfleet.exceptions import FleetApiError
 
@@ -66,6 +73,9 @@ class Host:
         self.auto_approve = auto_approve
         self.quiet = quiet
         self.device_id: Optional[str] = None
+        self.runtimes: list[str] = _runtimes.detect()
+        # One question at a time in the terminal, however many agents ask.
+        self._ask = threading.Lock()
 
     # ------------------------------------------------------------ register ---
 
@@ -83,6 +93,7 @@ class Host:
             "platform": f"{platform.system()} {platform.release()}",
             "roots": [str(r) for r in self.jail.roots],
             "auto_approve": self.auto_approve,
+            "runtimes": self.runtimes,
         }
         dev = None
         for attempt in range(5):
@@ -112,6 +123,11 @@ class Host:
         roots = ", ".join(str(r) for r in self.jail.roots) or "(no folders exposed)"
         print(f"[host] {dev['name']} registered as {dev['id'][:8]} — folders: {roots}", flush=True)
         print("[host] " + ("auto-approving shell and writes (--yes)" if self.auto_approve else "shell commands and writes will ask here first"), flush=True)
+        if self.runtimes:
+            names = ", ".join(_runtimes.LABELS.get(r, r) for r in self.runtimes)
+            print(f"[host] agent CLIs found: {names} -- agents can run here", flush=True)
+        else:
+            print("[host] no agent CLIs found (claude, codex, hermes); external agents cannot run here", flush=True)
         print("[host] waiting for Oaf. Ctrl+C to disconnect.", flush=True)
         backoff = 2
         while True:
@@ -126,7 +142,11 @@ class Host:
                 backoff = min(backoff * 2, 30)
                 continue
             for job in jobs or []:
-                self.handle(job)
+                if job.get("kind") == "agent_run":
+                    # Agent runs take minutes; the loop keeps serving Oaf.
+                    threading.Thread(target=self.handle_agent, args=(job,), daemon=True).start()
+                else:
+                    self.handle(job)
 
     def handle(self, job: dict[str, Any]) -> None:
         kind = job.get("kind", "")
@@ -153,18 +173,68 @@ class Host:
                 else:
                     time.sleep(2)
 
+    # ------------------------------------------------------------ agent runs ---
+
+    def handle_agent(self, job: dict[str, Any]) -> None:
+        args = job.get("args") or {}
+        runtime = str(args.get("runtime", ""))
+        label = _runtimes.LABELS.get(runtime, runtime)
+        agent = str(args.get("agent", "an agent"))
+        ticket = str(args.get("ticket", "a ticket"))
+        started = time.time()
+        try:
+            cwd = self.jail.cwd(str(args.get("cwd", "")))
+        except PermissionError as exc:
+            self._finish(job, "denied", "", str(exc))
+            return
+        autonomy = "full autonomy (it can run anything in that folder)" if args.get("autonomy") == "full" else "edit-only autonomy"
+        if not self.approve(f"let {label} ({agent}) work on {ticket} in {cwd} with {autonomy}", who=agent):
+            self._finish(job, "denied", "", "declined in the host terminal")
+            return
+        if not self.quiet:
+            print(f"[host] {agent}: {label} started on {ticket} in {cwd}", flush=True)
+
+        def report(events: list[dict[str, str]]) -> bool:
+            if not self.quiet:
+                for ev in events:
+                    if ev.get("kind") == "tool":
+                        print(f"[host] {agent}: {ev['text'][:160]}", flush=True)
+            res = self.client._post(f"/api/oaf/devices/{self.device_id}/jobs/{job['id']}/progress", {"events": events[:50]})
+            return bool((res or {}).get("cancel"))
+
+        timeout = float(args.get("timeout_sec") or 1800)
+        state, result = _runtimes.run_agent(args, str(cwd), self.client.base_url, report, timeout=timeout)
+        if not self.quiet:
+            took = time.time() - started
+            cost = f", ${result.cost_usd:.2f}" if result.cost_usd else ""
+            print(f"[host] {agent}: {label} {state} after {took:.0f}s{cost}" + (f": {result.error[:200]}" if result.error else ""), flush=True)
+        self._finish(job, state, result.to_json(), result.error)
+
+    def _finish(self, job: dict[str, Any], state: str, result: str, error: str) -> None:
+        for attempt in range(5):
+            try:
+                self.client._post(f"/api/oaf/devices/{self.device_id}/jobs/{job['id']}/result",
+                                  {"state": state, "result": result[:190_000], "error": (error or "")[:2000]})
+                return
+            except (FleetApiError, OSError) as exc:
+                if attempt == 4:
+                    print(f"[host] could not report job {job['id'][:8]}: {exc}", file=sys.stderr)
+                else:
+                    time.sleep(2 * (attempt + 1))
+
     # -------------------------------------------------------------- approval ---
 
-    def approve(self, what: str) -> bool:
+    def approve(self, what: str, who: str = "Oaf") -> bool:
         if self.auto_approve:
             return True
         if not sys.stdin.isatty():
             print(f"[host] no terminal to ask on; refusing: {what}", file=sys.stderr)
             return False
-        try:
-            answer = input(f"\n[host] Oaf wants to {what}\n       allow? [y/N] ").strip().lower()
-        except EOFError:
-            return False
+        with self._ask:
+            try:
+                answer = input(f"\n[host] {who} wants to {what}\n       allow? [y/N] ").strip().lower()
+            except EOFError:
+                return False
         return answer in ("y", "yes")
 
     # ---------------------------------------------------------------- tools ---

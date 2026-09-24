@@ -642,6 +642,114 @@ def cmd_host(args: argparse.Namespace) -> None:
         print("[host] disconnected")
 
 
+
+# ------------------------------------------------------------- tickets/org ---
+
+def _agent_ids(client: FleetClient) -> dict[str, str]:
+    """Agent name (lower case) -> id, so commands take names."""
+    return {b.name.lower(): b.id for b in client.list_bots()}
+
+
+def _resolve_agent(client: FleetClient, name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    ids = _agent_ids(client)
+    if name.lower() in ids:
+        return ids[name.lower()]
+    if name in ids.values():
+        return name
+    raise SystemExit(f"no agent called {name!r}; the fleet has: {', '.join(sorted(ids)) or 'nobody'}")
+
+
+def cmd_tickets(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    status = [s.strip() for s in (args.status or "").split(",") if s.strip()] or None
+    assignee = _resolve_agent(client, args.assignee) if args.assignee else None
+    rows = client.list_tickets(status=status, assignee=assignee, roots=args.roots, limit=args.limit)
+    if not rows:
+        print("No tickets. Ask the fleet for something in chat, or `fleetctl ticket new`.")
+        return
+    print(f"{'REF':<7} {'STATUS':<12} {'ASSIGNEE':<16} {'COST':>7}  TITLE")
+    print("-" * 88)
+    for t in rows:
+        cost = f"${t.get('cost_usd', 0):.2f}" if t.get("cost_usd") else ""
+        who = t.get("assignee_name") or ("-" if not t.get("assignee_id") else t["assignee_id"][:8])
+        mark = {"review": "[review] ", "verify": "[verify] ", "unblock": "[unblock] "}.get(t.get("kind", ""), "")
+        print(f"{t['ref']:<7} {t['status']:<12} {who:<16} {cost:>7}  {mark}{t['title'][:60]}")
+
+
+def cmd_ticket(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    if args.action == "new":
+        t = client.create_ticket(
+            args.title, description=args.description or "",
+            assignee_id=_resolve_agent(client, args.to),
+            parent=args.parent, blocked_by=args.after or None,
+            reviewer_id=_resolve_agent(client, args.review_by),
+            verifier_id=_resolve_agent(client, args.verify_by),
+            budget_usd=args.budget or 0)
+        print(f"✅ {t['ref']} filed: {t['title']}" + (f" -> {t.get('assignee_name')}" if t.get("assignee_name") else ""))
+    elif args.action == "show":
+        d = client.ticket(args.ref)
+        t = d["ticket"]
+        why = " → ".join(f"{a['ref']} {a['title']}" for a in d.get("ancestry") or [])
+        print(f"{t['ref']}  {t['title']}")
+        print(f"status:   {t['status']}" + (f" ({t['blocked_reason']})" if t.get("blocked_reason") else ""))
+        print(f"assignee: {t.get('assignee_name') or '-'}   reviewer: {t.get('reviewer_name') or '-'}   verifier: {t.get('verifier_name') or '-'}")
+        if why:
+            print(f"why:      {why}")
+        if d.get("blockers"):
+            print("waits on: " + ", ".join(f"{b['ref']} ({b['status']})" for b in d["blockers"]))
+        if t.get("result"):
+            print("\nresult:\n" + t["result"])
+        for c in (d.get("comments") or [])[-15:]:
+            print(f"\n[{c['kind']}] {c.get('author_name') or ''}: {c['body'][:600]}")
+    elif args.action == "comment":
+        client.comment_ticket(args.ref, args.text)
+        print("✅ commented")
+    elif args.action == "reopen":
+        t = client.reopen_ticket(args.ref, args.text)
+        print(f"✅ {t['ref']} reopened for {t.get('assignee_name') or 'its assignee'}")
+    elif args.action == "move":
+        t = client.update_ticket(args.ref, status=args.status)
+        print(f"✅ {t['ref']} is now {t['status']}")
+
+
+def cmd_org(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    chart = client.org()
+    nodes = chart.get("nodes") or []
+    kids: dict[str, list[dict[str, Any]]] = {}
+    for n in nodes:
+        kids.setdefault(n.get("reports_to") or "", []).append(n)
+    labels = {k["kind"]: k["label"] for k in chart.get("kinds") or []}
+
+    def line(n: dict[str, Any]) -> str:
+        bits = [n["name"]]
+        if n.get("title"):
+            bits.append(f"({n['title']})")
+        if n.get("kind") and n["kind"] != "desktop":
+            bits.append(f"[{labels.get(n['kind'], n['kind'])}]")
+        if n.get("hold") == "budget":
+            bits.append("— held at budget")
+        elif n.get("busy"):
+            bits.append(f"— on {n.get('ticket_ref')}")
+        elif not n.get("online"):
+            bits.append("— offline")
+        if n.get("budget_month_usd"):
+            bits.append(f"${n.get('spend_month_usd', 0):.2f}/${n['budget_month_usd']:.0f}")
+        return " ".join(bits)
+
+    def walk(parent: str, prefix: str) -> None:
+        children = sorted(kids.get(parent, []), key=lambda n: n["name"].lower())
+        for i, n in enumerate(children):
+            last = i == len(children) - 1
+            print(prefix + ("└─ " if last else "├─ ") + line(n))
+            walk(n["id"], prefix + ("   " if last else "│  "))
+
+    print("You")
+    walk("", "")
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="fleetctl",
@@ -656,8 +764,43 @@ def main() -> None:
     p_diag = subparsers.add_parser("diagnostics", aliases=["doctor"], help="Run comprehensive platform health diagnostics")
     p_diag.set_defaults(func=cmd_diagnostics)
 
+    # tickets and the org chart
+    p_tks = subparsers.add_parser("tickets", help="List tickets: work with an owner and what it waits on")
+    p_tks.add_argument("--status", help="Comma-separated: backlog,todo,in_progress,in_review,blocked,done,cancelled")
+    p_tks.add_argument("--assignee", "-a", help="Agent name")
+    p_tks.add_argument("--roots", action="store_true", help="Only top-level requests")
+    p_tks.add_argument("--limit", type=int, default=100)
+    p_tks.set_defaults(func=cmd_tickets)
+
+    p_tk = subparsers.add_parser("ticket", help="File, show, comment on, reopen or move a ticket")
+    tk_sub = p_tk.add_subparsers(dest="action", required=True)
+    tk_new = tk_sub.add_parser("new", help="File a ticket")
+    tk_new.add_argument("title")
+    tk_new.add_argument("--to", help="Agent that takes it")
+    tk_new.add_argument("--description", "-d")
+    tk_new.add_argument("--parent", help="Ticket it exists for (T-12)")
+    tk_new.add_argument("--after", action="append", help="Ticket it waits on (repeatable)")
+    tk_new.add_argument("--review-by", help="Agent that reviews it when it finishes")
+    tk_new.add_argument("--verify-by", help="Agent that verifies its subtree when it stops")
+    tk_new.add_argument("--budget", type=float, help="Spend ceiling for this ticket, in dollars")
+    tk_show = tk_sub.add_parser("show", help="Show a ticket")
+    tk_show.add_argument("ref")
+    tk_c = tk_sub.add_parser("comment", help="Comment on a ticket")
+    tk_c.add_argument("ref")
+    tk_c.add_argument("text")
+    tk_r = tk_sub.add_parser("reopen", help="Send finished work back with what is missing")
+    tk_r.add_argument("ref")
+    tk_r.add_argument("text")
+    tk_m = tk_sub.add_parser("move", help="Change a ticket's status")
+    tk_m.add_argument("ref")
+    tk_m.add_argument("status", choices=["backlog", "todo", "blocked", "done", "cancelled"])
+    p_tk.set_defaults(func=cmd_ticket)
+
+    p_org = subparsers.add_parser("org", help="Show the org chart: who reports to whom and what each is doing")
+    p_org.set_defaults(func=cmd_org)
+
     # host: let Oaf act on this machine
-    p_host = subparsers.add_parser("host", help="Connect this PC so Oaf can run commands and edit files in folders you choose")
+    p_host = subparsers.add_parser("host", help="Connect this PC so Oaf and your Claude Code, Codex or Hermes agents can work in folders you choose")
     p_host.add_argument("--root", "-r", action="append", help="Folder to expose (repeatable). Default: the current folder")
     p_host.add_argument("--name", "-n", help="Device name shown in the console (default: this computer's name)")
     p_host.add_argument("--yes", "-y", action="store_true", help="Run shell commands and writes without asking here first")
