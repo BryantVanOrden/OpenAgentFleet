@@ -425,6 +425,38 @@ func TestReopeningARequestReopensItsParts(t *testing.T) {
 	}
 }
 
+func TestCancellingWorkCancelsItsChecks(t *testing.T) {
+	h := newHarness(t)
+	h.agent("b", "Builder")
+	h.agent("v", "Verifier")
+	root := h.ticket(&protocol.Ticket{Title: "Ship it", VerifierID: "v"})
+	work := h.ticket(&protocol.Ticket{Title: "Build it", ParentID: root.ID, AssigneeID: "b"})
+	h.e.Reconcile(h.ctx)
+	h.finish(work.ID, protocol.TaskSucceeded, "built", "", "")
+	all, _ := h.db.ListTickets(h.ctx, protocol.TicketFilter{AssigneeID: "v"})
+	if len(all) != 1 || all[0].Status != protocol.TicketInProgress {
+		t.Fatalf("the verifier is at work: %+v", all)
+	}
+	later := h.ticket(&protocol.Ticket{Title: "Polish it", ParentID: root.ID, AssigneeID: "b", Status: protocol.TicketBacklog})
+	cancelled := protocol.TicketCancelled
+	if _, err := h.e.Update(h.ctx, root.ID, Patch{Status: &cancelled}, Actor{Name: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.get(all[0].ID); got.Status != protocol.TicketCancelled || got.TaskID != "" {
+		t.Fatalf("its verification is cancelled with it: %+v", got)
+	}
+	if got := h.get(later.ID); got.Status != protocol.TicketCancelled {
+		t.Fatalf("so are its open parts: %+v", got)
+	}
+	if got := h.get(work.ID); got.Status != protocol.TicketDone {
+		t.Fatalf("and finished parts stay finished: %+v", got)
+	}
+	h.e.Reconcile(h.ctx)
+	if n := countKind(h, protocol.TicketVerify); n != 1 {
+		t.Fatalf("and a cancelled request is not verified again, got %d", n)
+	}
+}
+
 func countKind(h *harness, k protocol.TicketKind) int {
 	all, _ := h.db.ListTickets(h.ctx, protocol.TicketFilter{})
 	n := 0

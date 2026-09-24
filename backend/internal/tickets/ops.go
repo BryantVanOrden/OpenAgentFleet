@@ -166,8 +166,53 @@ func (e *Engine) Update(ctx context.Context, id string, p Patch, by Actor) (*pro
 		return nil, err
 	}
 	e.emit(t)
+	if t.Status == protocol.TicketCancelled {
+		e.cancelUnderLocked(ctx, t)
+	}
 	e.Kick()
 	return t, nil
+}
+
+// cancelUnderLocked cancels what a cancelled ticket was for: its open parts,
+// and the reviews and verifications of any of it. Cancelling a stuck verify
+// and then its request woke the verifier again in between; it reopened a part
+// of the cancelled request, which ran again, while a new request went by.
+func (e *Engine) cancelUnderLocked(ctx context.Context, t *protocol.Ticket) {
+	tree, err := e.db.Subtree(ctx, t.ID)
+	if err != nil {
+		return
+	}
+	in := map[string]bool{t.ID: true}
+	var stop []*protocol.Ticket
+	for i := range tree {
+		in[tree[i].ID] = true
+		if tree[i].ID != t.ID && !tree[i].Status.Terminal() {
+			stop = append(stop, &tree[i])
+		}
+	}
+	if open, err := e.db.OpenTickets(ctx); err == nil {
+		for i := range open {
+			c := &open[i]
+			if in[c.TargetID] && !in[c.ID] && (c.Kind == protocol.TicketVerify || c.Kind == protocol.TicketReview) {
+				stop = append(stop, c)
+			}
+		}
+	}
+	for _, c := range stop {
+		if c.TaskID != "" {
+			held := c.TaskID
+			if _, err := e.db.ReleaseTicket(ctx, c.ID, held); err == nil {
+				c.TaskID = ""
+			}
+			e.run.Cancel(held)
+		}
+		c.Status = protocol.TicketCancelled
+		if err := e.db.UpdateTicket(ctx, c); err != nil {
+			continue
+		}
+		e.systemComment(ctx, c, t.Ref()+" was cancelled, so this was too.")
+		e.emit(c)
+	}
 }
 
 // Comment adds to a ticket's thread.
