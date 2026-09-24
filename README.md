@@ -159,15 +159,33 @@ you would. That one decision is where everything else comes from:
   whatever that department's role allows. A per-bot grant still overrides all
   of it, including when it is empty, which is how one machine is hidden from
   someone who can otherwise see the department.
-- **Agents that divide work and hand it on.** Name agents in a fleet message —
-  "Builder writes it, ToolCheck tests it, Auditor reviews it" — and they answer
-  in that order, each taking the part addressed to it. Names are matched
-  loosely, so a typo or a split word still finds the right bot, and naming
-  anybody keeps everybody else out of it. Finishing a
-  part wakes whoever the next one belongs to and hands them what was produced;
-  testing and reviewing wait for something to exist rather than starting on
-  nothing. A review hands back to whoever built. Bounded at six rounds, because
-  agents starting each other without a limit is the failure that costs money.
+- **Work is tickets.** Ask the fleet for something and it becomes a ticket
+  with a ticket for every part: design blocks the build, testers become the
+  build's reviewers, a reviewer verifies the whole request when it stops.
+  Tickets have one owner, blockers, and a chain up to your request that every
+  brief quotes, so an agent knows *why* it is doing the work. A review ends in
+  a pass or a fail and a fail goes back with the findings, three rounds at
+  most. Blocked work goes to the assignee's manager, then to you. Every
+  twenty seconds each open ticket is checked for a next move, and one nobody
+  owns is reported rather than left to rot. The console's Work board, the
+  phone's Work tab and `fleetctl tickets` all show the same queue.
+- **An org chart.** Each agent reports to another agent or to you, with a
+  title and a line saying when it is useful. The chart is drawn in the
+  console and the app; drag an agent onto another to change who it reports
+  to. Managers get their reports' blocked work. Export the chart — agents,
+  titles, reporting lines, budgets — as a template and import it elsewhere.
+- **Claude Code, Codex, Hermes and OpenClaw in the same chart.** An agent is
+  either a desktop this fleet provisions or an external agent: Claude Code,
+  Codex or Hermes running on your PC in a folder you choose (through
+  `fleetctl host`), an OpenClaw gateway, or any webhook. They sit beside the
+  desktops, take the same tickets, review each other's work, and report cost
+  the same way.
+- **Budgets that stop.** A monthly ceiling per agent warns at 80% and holds
+  the agent at 100%: runs stop, tickets wait, you get a push. A ticket can
+  carry its own budget too.
+- **Low trust.** Mark an agent that reads hostile input and what it writes
+  reaches colleagues fenced as data; it cannot hand out work, reopen work or
+  touch the shared vault.
 - **A shared work catalog.** Agents publish what they make for each other and
   for you: files to build on, workspaces to group a piece of work, and *apps* —
   one self-contained HTML document each — that the phone renders and runs from
@@ -639,6 +657,7 @@ make screenshots      # Recapture the documentation screenshots
 * 💻 [**Platform Guide**](docs/PLATFORMS.md) — Running on Linux, macOS and Windows, and what is genuinely not portable.
 * 🖼️ [**Interface Gallery**](docs/UI.md) — Every screen, all ten themes, and how the theming is built.
 * 🧠 [**Agent Philosophy**](docs/AGENT_PHILOSOPHY.md) — How the work of driving a desktop is split across models, what ships, and what is only intended.
+* 🧭 [**Org Chart, Tickets & External Agents**](docs/ORG-AND-TICKETS.md) — How work moves, budgets, trust, and adding Claude Code, Codex, Hermes, OpenClaw or a webhook.
 * 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) — Detailed component design, data flow, schema, and networking model.
 * 🔌 [**REST & WebSocket API Reference**](docs/API.md) — Complete endpoint specifications, request/response schemas, and real-time events.
 * 🎓 [**Skills & Continual Refinement**](docs/SKILLS_AND_REFINEMENT.md) — Learn-by-demonstration recorder, AT-SPI compilation, and AI self-healing workflows.

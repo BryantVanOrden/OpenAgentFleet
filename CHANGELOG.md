@@ -6,7 +6,50 @@ semantic versioning.
 
 ## [Unreleased]
 
-Nothing yet.
+### Work is tickets
+- A fleet request becomes a root ticket and every part a ticket under it,
+  replacing the relay that inferred hand-offs from chat. Design blocks the
+  builds; testers become the builds' reviewers; a reviewer becomes the
+  request's verifier. Tickets are checked out atomically, one run per agent,
+  and the lock moves with a run across marathon windows.
+- Every brief says why: the chain of tickets up to the request, what the
+  tickets it waited on produced, and the last reviewer's findings.
+- Review and verify tickets must end with `verdict: pass` or `fail`. A fail
+  sends the work back with the findings, three rounds at most.
+- A failure that says nothing about the work — a malformed reply, a provider
+  outage, a stall, a PC that went offline — is retried twice with a note.
+- Blocked work becomes an *unblock* ticket for the assignee's manager, or an
+  alert when there is none.
+- Every open ticket is checked for a next move each pass; one without is
+  reported once per stopped state.
+- A verifier gets a verify ticket when a subtree comes to rest in a state not
+  checked before, and reopens what is not finished.
+- Agents can `create_ticket` for a colleague (their ticket waits for it) and
+  `reopen_ticket`.
+- The Work board in the console, the Work tab in the app, `fleetctl tickets`
+  and `/api/tickets`.
+
+### The org chart
+- Agents report to another agent or to the operator, with a title and a
+  "when I'm useful" line that colleagues see. Drawn in the console and the
+  app; drag to re-parent. Cycles are refused.
+- Export the fleet as a template and import it elsewhere.
+
+### External agents
+- Claude Code, Codex and Hermes on your PC through `fleetctl host`, which
+  detects the installed CLIs, runs each ticket in the agent's folder,
+  resumes the CLI session per ticket, streams progress, and can be stopped
+  from the console.
+- OpenClaw gateways (protocol 4, with a vault-kept device identity) and
+  webhooks (sync or with a callback).
+- Per-run callback tokens let an external agent comment, hand out work and
+  finish its own run.
+
+### Budgets and trust
+- A monthly ceiling per agent, a warning at a percentage, and a hold at 100%
+  that stops the run; per-ticket budgets.
+- Low-trust agents: their text reaches colleagues fenced as data, and they
+  cannot hand out or reopen work or write to the shared vault.
 
 ## [1.2.0] — 2026-09-15
 

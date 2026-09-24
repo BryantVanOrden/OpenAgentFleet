@@ -12,6 +12,8 @@ One binary, one process, several concerns kept in separate packages:
 | `agent`       | The perceive → decide → act loop, stall detection, recursive sub-agents, and continual self-refinement |
 | `connectors`  | Normalises chat completion across OpenAI, Anthropic, Gemini, Antigravity, Ollama and OpenAI-compatible gateways; owns the fallback chain and role-based routing through model combinations |
 | `pipeline`    | Multi-bot DAG workflows. Independent stages run concurrently (bounded); each edge carries a condition that decides whether its downstream stage runs or is skipped |
+| `tickets`     | The ticket engine: checks out ready tickets, runs them, hands results on, routes reviews and verdicts, escalates blocked work up the org chart, reports ownerless tickets, and holds agents at their budgets. Re-derived from the rows every twenty seconds |
+| `external`    | Runs a ticket on an external agent: Claude Code, Codex or Hermes on a device through `fleetctl host`, an OpenClaw gateway over its WebSocket protocol, or a webhook. Mints per-run callback tokens |
 | `swarm`       | Shared-blackboard swarms. Starts a real task per member and routes artifacts through peer review |
 | `memory`      | Episodic memory behind `remember` and `recall`, private per bot plus a shared fleet pool. Semantic by default: provider embeddings when configured, the local embedding sidecar otherwise, the hashed keyword index only when both are absent |
 | `mcp`         | Model Context Protocol client: JSON-RPC 2.0 over stdio or Streamable HTTP, with tool discovery and invocation |
@@ -127,6 +129,12 @@ users ──< devices                      push targets for the companion app
                 ──< task_steps         one row per turn, with the screenshot key
 instances ──< tasks
           ──< chat_messages
+          ──> instances (reports_to)    the org chart
+tickets ──> tickets (parent)            the request tree
+        ──< ticket_blockers             what a ticket waits on
+        ──< ticket_comments             results, reviews, notes
+        ──> tasks (task_id)             the run that holds it
+budget_notices                          one warning per agent per month
 skills (with version & refinement notes)
 providers ──> secrets                  by ref; the value is sealed, never inline
 alerts                                 escalations, with the operator's reply
