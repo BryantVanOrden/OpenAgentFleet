@@ -320,12 +320,22 @@
   <div class="band-copy center reveal">
     <p class="eyebrow">The console</p>
     <h2>This is the real thing.</h2>
-    <p>A real XFCE session in a hardened container, streaming into the console. Fleet, recording studio, engine chain and resolution centre live beside it.</p>
+    <p>A real XFCE session in a hardened container, streaming into the console, and the org chart, the Work board and the agents you bring, as they are. Fleet, recording studio, engine chain and resolution centre live beside them.</p>
+  </div>
+  <div class="console-tabs reveal" role="tablist" aria-label="Screens of the console" id="consoleTabs">
+    <button type="button" role="tab" id="tab-desktop" aria-controls="shot-desktop" aria-selected="true" tabindex="0" data-shot="desktop" data-url="localhost:8081 · Fleet · Builder">Live desktop</button>
+    <button type="button" role="tab" id="tab-org" aria-controls="shot-org" aria-selected="false" tabindex="-1" data-shot="org" data-url="localhost:8081 · Org">Org chart</button>
+    <button type="button" role="tab" id="tab-work" aria-controls="shot-work" aria-selected="false" tabindex="-1" data-shot="work" data-url="localhost:8081 · Work">Work</button>
+    <button type="button" role="tab" id="tab-add-agent" aria-controls="shot-add-agent" aria-selected="false" tabindex="-1" data-shot="add-agent" data-url="localhost:8081 · Org · Add agent">Add agent</button>
   </div>
   <div class="frame reveal" id="consoleFrame">
-    <div class="frame-bar"><span></span><span></span><span></span><em>localhost:8081 · Fleet · Builder</em></div>
-    <img class="only-light" src="assets/console-light.webp" alt="The OpenAgentFleet console in light mode, with an agent's desktop streaming live" width="1800" height="1069">
-    <img class="only-dark" src="assets/console-dark.webp" alt="The OpenAgentFleet console in dark mode, with an agent's desktop streaming live" width="1800" height="1069">
+    <div class="frame-bar"><span></span><span></span><span></span><em id="frameUrl">localhost:8081 · Fleet · Builder</em></div>
+    <div class="shots">
+      <figure class="shot on" id="shot-desktop" role="tabpanel" aria-labelledby="tab-desktop" data-shot="desktop"><img class="only-light" src="assets/console-light.webp" alt="The OpenAgentFleet console with an agent's desktop streaming live, light mode" width="1800" height="1069"><img class="only-dark" src="assets/console-dark.webp" alt="The OpenAgentFleet console with an agent's desktop streaming live, dark mode" width="1800" height="1069"></figure>
+      <figure class="shot" id="shot-org" role="tabpanel" aria-labelledby="tab-org" data-shot="org"><img class="only-light" src="assets/console-org-light.webp" alt="The org chart: desktop bots and a Claude Code agent reporting to Builder, light mode" width="1800" height="1125" loading="lazy"><img class="only-dark" src="assets/console-org-dark.webp" alt="The org chart: desktop bots and a Claude Code agent reporting to Builder, dark mode" width="1800" height="1125" loading="lazy"></figure>
+      <figure class="shot" id="shot-work" role="tabpanel" aria-labelledby="tab-work" data-shot="work"><img class="only-light" src="assets/console-work-light.webp" alt="The Work board: tickets by status, with verify tickets and their verdicts, light mode" width="1800" height="1125" loading="lazy"><img class="only-dark" src="assets/console-work-dark.webp" alt="The Work board: tickets by status, with verify tickets and their verdicts, dark mode" width="1800" height="1125" loading="lazy"></figure>
+      <figure class="shot" id="shot-add-agent" role="tabpanel" aria-labelledby="tab-add-agent" data-shot="add-agent"><img class="only-light" src="assets/console-add-agent-light.webp" alt="Adding a Claude Code agent: the PC, its folder, and how much it may do alone, light mode" width="1800" height="1125" loading="lazy"><img class="only-dark" src="assets/console-add-agent-dark.webp" alt="Adding a Claude Code agent: the PC, its folder, and how much it may do alone, dark mode" width="1800" height="1125" loading="lazy"></figure>
+    </div>
   </div>
 </section>
 

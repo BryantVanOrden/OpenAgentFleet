@@ -433,6 +433,34 @@
     frame.addEventListener('pointerleave', () => { px = 0; py = 0; frame.style.setProperty('--glare', '0'); lean(); });
   }
 
+  /* ------------------------------------------------------------ the console: tabs, and a slow tour while it is on screen */
+  const tabsEl = document.getElementById('consoleTabs');
+  if (tabsEl) {
+    const tabs = Array.from(tabsEl.querySelectorAll('[role="tab"]'));
+    const shots = Array.from(document.querySelectorAll('#consoleFrame .shot'));
+    const urlEl = document.getElementById('frameUrl');
+    let idx = 0, touched = false, tour = 0;
+    const show = (i, focus) => {
+      idx = (i + tabs.length) % tabs.length;
+      tabs.forEach((t, j) => { t.setAttribute('aria-selected', String(j === idx)); t.tabIndex = j === idx ? 0 : -1; });
+      shots.forEach((s, j) => s.classList.toggle('on', j === idx));
+      if (urlEl) urlEl.textContent = tabs[idx].dataset.url;
+      if (focus) tabs[idx].focus();
+    };
+    tabs.forEach((t, i) => t.addEventListener('click', () => { touched = true; clearInterval(tour); show(i); }));
+    tabsEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault(); touched = true; clearInterval(tour);
+      show(idx + (e.key === 'ArrowRight' ? 1 : -1), true);
+    });
+    if (!reduced && 'IntersectionObserver' in window) {
+      new IntersectionObserver((es) => es.forEach(e => {
+        clearInterval(tour);
+        if (e.isIntersecting && !touched) tour = setInterval(() => show(idx + 1), 4200);
+      }), { threshold: 0.4 }).observe(document.getElementById('consoleFrame'));
+    }
+  }
+
   /* ------------------------------------------------------------ depth: the hero leans toward the pointer */
   const heroSection = document.querySelector('.hero');
   if (heroSection && heroStage && !reduced && finePointer) {

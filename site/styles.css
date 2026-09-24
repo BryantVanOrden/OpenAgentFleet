@@ -515,7 +515,7 @@ p { margin: 0; }
 .frame { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); transform-style: preserve-3d; }
 .frame-bar { height: 40px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
 .frame-bar span { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
-.frame-bar em { font-style: normal; margin-left: 10px; }
+.frame-bar em { font-style: normal; margin-left: 10px; transition: opacity .3s; }
 
 /* start */
 .start-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 36px; }
@@ -676,6 +676,20 @@ p { margin: 0; }
   .flat .carousel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .orgtree { transform: rotateX(10deg); }
 }
+
+/* the console: a few real screens behind tabs */
+.console-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0 auto 18px; }
+.console-tabs button {
+  font: inherit; font-size: .9rem; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text-soft); transition: background .2s, color .2s, border-color .2s;
+}
+.console-tabs button:hover { color: var(--text); border-color: var(--line-strong); }
+.console-tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.console-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shots { position: relative; aspect-ratio: 1800 / 1125; background: var(--surface-2); overflow: hidden; }
+.shot { position: absolute; inset: 0; margin: 0; opacity: 0; transform: scale(1.02); transition: opacity .5s ease, transform .8s cubic-bezier(.2, .7, .2, 1); pointer-events: none; }
+.shot.on { opacity: 1; transform: none; pointer-events: auto; }
+.shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
 
 /* the console frame: glare that follows the pointer */
 .frame { position: relative; }
