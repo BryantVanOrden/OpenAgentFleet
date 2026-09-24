@@ -377,6 +377,18 @@ func (e *Engine) UndelegatedReports(ctx context.Context, taskID string) []string
 	return out
 }
 
+// WaitsOnOthers reports whether the ticket held by taskID is waiting for a
+// ticket that is not finished: its run has handed work on and has nothing
+// left to do until that work comes back.
+func (e *Engine) WaitsOnOthers(ctx context.Context, taskID string) bool {
+	t, err := e.db.TicketByTask(ctx, taskID)
+	if err != nil {
+		return false
+	}
+	ok, _ := e.blockersDone(ctx, t)
+	return !ok
+}
+
 // mentions reports whether name appears in text as a word.
 func mentions(text, name string) bool {
 	if name == "" {

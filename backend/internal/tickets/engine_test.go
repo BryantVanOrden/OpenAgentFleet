@@ -569,6 +569,9 @@ func TestATicketThatNamesAReportSaysToHandItOn(t *testing.T) {
 	if got := h.e.UndelegatedReports(h.ctx, task); len(got) != 0 {
 		t.Fatalf("after, nobody is: %v", got)
 	}
+	if !h.e.WaitsOnOthers(h.ctx, task) {
+		t.Fatal("and the lead's ticket waits on Claude's, so its run can end")
+	}
 	if mentions("ask claudette", "claude") {
 		t.Error("a name inside another word is not a mention")
 	}

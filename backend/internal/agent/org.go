@@ -17,6 +17,7 @@ type TicketOps interface {
 	ReopenFromAgent(ctx context.Context, taskID string, inst *protocol.Instance, ref, reason string) (string, error)
 	AfterTurn(ctx context.Context, instanceID, taskID string)
 	UndelegatedReports(ctx context.Context, taskID string) []string
+	WaitsOnOthers(ctx context.Context, taskID string) bool
 }
 
 // External runs agents that are not desktops. Runner.Start hands it every

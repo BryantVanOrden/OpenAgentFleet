@@ -512,7 +512,11 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 
 		switch terminal {
 		case terminalDone:
-			r.succeed(ctx, task, inst, action.Summary)
+			summary := action.Summary
+			if action.Action == protocol.ActCreateTicket {
+				summary = "Handed on: " + outcome
+			}
+			r.succeed(ctx, task, inst, summary)
 			return
 		case terminalFail:
 			r.fail(ctx, task, firstNonEmpty(action.Summary, outcome, "agent gave up"))
@@ -587,6 +591,14 @@ func (r *Runner) execute(
 		msg, err := r.tickets.CreateFromAgent(ctx, task.ID, inst, a.Target, a.Title, a.Text, true)
 		if err != nil {
 			return "failed: " + err.Error(), terminalNone
+		}
+		// Handed on, and nothing else its ticket asks it to hand on: the run
+		// is over until that work comes back, and the ticket brings it back.
+		// Told it could finish, a lead instead spent thirty steps looking on
+		// its own disk for a file being written on another machine, and
+		// reopened the colleague's ticket because it was not there.
+		if r.tickets.WaitsOnOthers(ctx, task.ID) && len(r.tickets.UndelegatedReports(ctx, task.ID)) == 0 {
+			return msg, terminalDone
 		}
 		return msg, terminalNone
 

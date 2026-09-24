@@ -176,6 +176,15 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.FleetReplyTimeout)
 	defer cancel()
 
+	// A fleet-wide message that names other agents is not for this one, and
+	// it says nothing. It used to answer "I am standing by", and so did every
+	// other idle bot, so each request addressed to two agents came back with
+	// a line from the whole fleet.
+	if msg.ToInstanceID == "broadcast" && s.namedSomeoneElse(ctx, inst, msg) {
+		s.log.Info("not answering: the message names other agents", "instance", inst.Name)
+		return
+	}
+
 	scope := "you directly"
 	if msg.ToInstanceID == "broadcast" {
 		scope = "the whole fleet"
@@ -199,15 +208,12 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	claimed := s.claimsSoFar(ctx, inst, msg)
 	roster := s.fleetRoster(ctx, inst)
 	assigned := s.assignedPart(ctx, inst, msg)
-	// An agent the operator did not name will not be started, so it should not
-	// announce a part it is never going to do. Told only that colleagues had
-	// claimed things, one still replied "I will build the single-file HTML
-	// page" for a job addressed to somebody else.
+	// A direct message that names other agents is still this agent's to
+	// answer, but not its job to take.
 	bystander := ""
 	if s.namedSomeoneElse(ctx, inst, msg) {
-		bystander = "\nThe operator named other agents for this and did not name " +
-			"you. It is not your job. Say in one sentence that you are standing " +
-			"by, and do not claim a part or describe what you would build.\n\n"
+		bystander = "\nThe message names other agents for the work and not you. " +
+			"Answer what was asked of you, and do not claim a part of it.\n\n"
 	}
 
 	// Two different things get said in fleet comms, and answering both as a
