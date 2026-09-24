@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
@@ -249,14 +250,20 @@ func (s *Store) CreateInstance(ctx context.Context, in *protocol.Instance) error
 	tools, _ := json.Marshal(in.PreinstalledTools)
 	providers, _ := json.Marshal(orEmptySlice(in.ProviderIDs))
 	custom, _ := json.Marshal(in.CustomTools)
+	conn, _ := json.Marshal(in.Connection)
+	normaliseOrgFields(in)
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO instances(id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
-             vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,voice,labels,last_error,created_at,updated_at,provider_ids,custom_tools,voice_speed,vnc_view_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+             vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,voice,labels,last_error,created_at,updated_at,provider_ids,custom_tools,voice_speed,vnc_view_url,
+             kind,reports_to,title,capabilities,connection,budget_month_usd,budget_warn_pct,trust,hold)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
+                 $28,$29,$30,$31,$32,$33,$34,$35,$36)`,
 		in.ID, in.Name, in.OwnerID, in.ArchetypeID, in.SystemPrompt, string(tools), string(in.Tier), string(in.Driver), string(in.State), in.Runtime,
 		profile, override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, in.SudoAccess, in.Voice, labels,
 		in.LastError, in.CreatedAt, in.UpdatedAt, string(providers),
-		string(custom), in.VoiceSpeed, in.VNCViewURL)
+		string(custom), in.VoiceSpeed, in.VNCViewURL,
+		string(in.Kind), nullIfEmpty(in.ReportsTo), in.Title, in.Capabilities, string(conn),
+		in.BudgetMonthUSD, in.BudgetWarnPct, in.Trust, in.Hold)
 	if err != nil {
 		return norm(err)
 	}
@@ -274,16 +281,77 @@ func (s *Store) UpdateInstance(ctx context.Context, in *protocol.Instance) error
 	tools, _ := json.Marshal(in.PreinstalledTools)
 	providers, _ := json.Marshal(orEmptySlice(in.ProviderIDs))
 	custom, _ := json.Marshal(in.CustomTools)
+	conn, _ := json.Marshal(in.Connection)
+	normaliseOrgFields(in)
 	in.UpdatedAt = time.Now().UTC()
 	_, err := s.pool.Exec(ctx,
 		`UPDATE instances SET name=$2,tier=$3,driver=$4,state=$5,runtime_id=$6,profile=$7,override=$8,
              vnc_url=$9,stream_url=$10,agentd_url=$11,egress=$12,shell_access=$13,sudo_access=$14,voice=$15,labels=$16,
              last_error=$17,archetype_id=$18,system_prompt=$19,preinstalled_tools=$20,updated_at=$21,
-             provider_ids=$22,custom_tools=$23,voice_speed=$24,vnc_view_url=$25 WHERE id=$1`,
+             provider_ids=$22,custom_tools=$23,voice_speed=$24,vnc_view_url=$25,
+             kind=$26,reports_to=$27,title=$28,capabilities=$29,connection=$30,budget_month_usd=$31,
+             budget_warn_pct=$32,trust=$33,hold=$34 WHERE id=$1`,
 		in.ID, in.Name, string(in.Tier), string(in.Driver), string(in.State), in.Runtime, profile,
 		override, in.VNCURL, in.StreamURL, in.AgentdURL, egress, in.ShellAccess, in.SudoAccess, in.Voice, labels,
 		in.LastError, in.ArchetypeID, in.SystemPrompt, string(tools), in.UpdatedAt, string(providers),
-		string(custom), in.VoiceSpeed, in.VNCViewURL)
+		string(custom), in.VoiceSpeed, in.VNCViewURL,
+		string(in.Kind), nullIfEmpty(in.ReportsTo), in.Title, in.Capabilities, string(conn),
+		in.BudgetMonthUSD, in.BudgetWarnPct, in.Trust, in.Hold)
+	return norm(err)
+}
+
+// normaliseOrgFields fills the defaults a row written before the org chart
+// existed would have had, so every writer stores the same shape.
+func normaliseOrgFields(in *protocol.Instance) {
+	if in.Kind == "" {
+		in.Kind = protocol.KindDesktop
+	}
+	if in.Trust == "" {
+		in.Trust = protocol.TrustStandard
+	}
+	if in.BudgetWarnPct <= 0 || in.BudgetWarnPct > 100 {
+		in.BudgetWarnPct = 80
+	}
+	if in.BudgetMonthUSD < 0 {
+		in.BudgetMonthUSD = 0
+	}
+	if in.ReportsTo == in.ID {
+		in.ReportsTo = ""
+	}
+}
+
+// SetInstanceHold records why an agent is not being given work.
+func (s *Store) SetInstanceHold(ctx context.Context, id, hold string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE instances SET hold=$2, updated_at=now() WHERE id=$1`, id, hold)
+	return norm(err)
+}
+
+// SetReportsTo moves an agent in the org chart. Cycles are refused: an agent
+// cannot end up reporting, however indirectly, to itself.
+func (s *Store) SetReportsTo(ctx context.Context, id, manager string) error {
+	if manager == id {
+		return fmt.Errorf("%w: an agent cannot report to itself", ErrInvalid)
+	}
+	if manager != "" {
+		seen := map[string]bool{id: true}
+		cur := manager
+		for cur != "" {
+			if seen[cur] {
+				return fmt.Errorf("%w: that would make a reporting loop", ErrInvalid)
+			}
+			seen[cur] = true
+			var next *string
+			err := s.pool.QueryRow(ctx, `SELECT reports_to FROM instances WHERE id=$1`, cur).Scan(&next)
+			if err != nil {
+				return norm(err)
+			}
+			if next == nil {
+				break
+			}
+			cur = *next
+		}
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE instances SET reports_to=$2, updated_at=now() WHERE id=$1`, id, nullIfEmpty(manager))
 	return norm(err)
 }
 
@@ -364,7 +432,9 @@ func (s *Store) DeleteInstance(ctx context.Context, id string) error {
 
 const instanceSelect = `SELECT id,name,owner_id,archetype_id,system_prompt,preinstalled_tools,tier,driver,state,runtime_id,profile,override,
     vnc_url,stream_url,agentd_url,egress,shell_access,sudo_access,voice,labels,last_error,created_at,updated_at,
-    COALESCE(provider_ids,''),COALESCE(custom_tools,''),COALESCE(voice_speed,0),COALESCE(vnc_view_url,'') FROM instances`
+    COALESCE(provider_ids,''),COALESCE(custom_tools,''),COALESCE(voice_speed,0),COALESCE(vnc_view_url,''),
+    COALESCE(kind,'desktop'),COALESCE(reports_to,''),COALESCE(title,''),COALESCE(capabilities,''),COALESCE(connection,'{}'),
+    COALESCE(budget_month_usd,0),COALESCE(budget_warn_pct,80),COALESCE(trust,'standard'),COALESCE(hold,'') FROM instances`
 
 func scanInstances(rows interface {
 	Next() bool
@@ -377,12 +447,19 @@ func scanInstances(rows interface {
 		var archID, sysPrompt, toolsStr *string
 		var providerIDs, customTools string
 		var tier, driver, state string
+		var kind, conn string
 		var profile, override, egress, labels []byte
 		if err := rows.Scan(&in.ID, &in.Name, &in.OwnerID, &archID, &sysPrompt, &toolsStr, &tier, &driver, &state, &in.Runtime,
 			&profile, &override, &in.VNCURL, &in.StreamURL, &in.AgentdURL, &egress,
 			&in.ShellAccess, &in.SudoAccess, &in.Voice, &labels, &in.LastError, &in.CreatedAt, &in.UpdatedAt,
-			&providerIDs, &customTools, &in.VoiceSpeed, &in.VNCViewURL); err != nil {
+			&providerIDs, &customTools, &in.VoiceSpeed, &in.VNCViewURL,
+			&kind, &in.ReportsTo, &in.Title, &in.Capabilities, &conn,
+			&in.BudgetMonthUSD, &in.BudgetWarnPct, &in.Trust, &in.Hold); err != nil {
 			return nil, err
+		}
+		in.Kind = protocol.AgentKind(kind)
+		if conn != "" {
+			_ = json.Unmarshal([]byte(conn), &in.Connection)
 		}
 		if archID != nil {
 			in.ArchetypeID = *archID
@@ -416,10 +493,10 @@ func scanInstances(rows interface {
 func (s *Store) CreateTask(ctx context.Context, t *protocol.Task) error {
 	params, _ := json.Marshal(orEmptyStrMap(t.Params))
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO tasks(id,instance_id,owner_id,goal,skill_id,params,parent_task_id,auto_refine,state,step,max_steps,provider_id,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		`INSERT INTO tasks(id,instance_id,owner_id,goal,skill_id,params,parent_task_id,auto_refine,state,step,max_steps,provider_id,created_at,ticket_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 		t.ID, t.InstanceID, t.OwnerID, t.Goal, t.SkillID, params, t.ParentTaskID, t.AutoRefine, string(t.State),
-		t.Step, t.MaxSteps, t.ProviderID, t.CreatedAt)
+		t.Step, t.MaxSteps, t.ProviderID, t.CreatedAt, nullIfEmpty(t.TicketID))
 	return norm(err)
 }
 
@@ -489,7 +566,7 @@ func (s *Store) ResumeableTasks(ctx context.Context) ([]protocol.Task, error) {
 }
 
 const taskSelect = `SELECT id,instance_id,owner_id,goal,skill_id,params,parent_task_id,auto_refine,state,step,max_steps,
-    provider_id,error,result,created_at,started_at,ended_at FROM tasks`
+    provider_id,error,result,created_at,started_at,ended_at,COALESCE(ticket_id,'') FROM tasks`
 
 func scanTasks(rows interface {
 	Next() bool
@@ -504,7 +581,7 @@ func scanTasks(rows interface {
 		if err := rows.Scan(&t.ID, &t.InstanceID, &t.OwnerID, &t.Goal, &t.SkillID, &params,
 			&t.ParentTaskID, &t.AutoRefine, &state,
 			&t.Step, &t.MaxSteps, &t.ProviderID, &t.Error, &t.Result, &t.CreatedAt,
-			&t.StartedAt, &t.EndedAt); err != nil {
+			&t.StartedAt, &t.EndedAt, &t.TicketID); err != nil {
 			return nil, err
 		}
 		t.State = protocol.TaskState(state)

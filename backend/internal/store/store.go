@@ -19,6 +19,14 @@ var migrationFS embed.FS
 
 var ErrNotFound = errors.New("not found")
 
+// ErrInvalid is a request the data model refuses: a reporting loop, a ticket
+// blocked by itself. Wrapped with the reason; handlers map it to 400.
+var ErrInvalid = errors.New("invalid")
+
+// ErrConflict is a request that lost a race: a ticket another run checked out
+// first. Handlers map it to 409.
+var ErrConflict = errors.New("conflict")
+
 type Store struct {
 	pool *pgxpool.Pool
 }

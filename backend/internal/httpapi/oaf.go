@@ -823,6 +823,8 @@ type deviceRequest struct {
 	Platform    string   `json:"platform,omitempty"`
 	Roots       []string `json:"roots"`
 	AutoApprove bool     `json:"auto_approve"`
+	// Runtimes are the agent CLIs this PC has: claude_code, codex, hermes.
+	Runtimes []string `json:"runtimes,omitempty"`
 }
 
 // handleRegisterOafDevice creates or refreshes a device. A device that reconnects
@@ -844,7 +846,7 @@ func (s *Server) handleRegisterOafDevice(w http.ResponseWriter, r *http.Request)
 	}
 	owner := userIDOf(userFrom(r.Context()))
 	d := protocol.Device{ID: req.ID, OwnerID: owner, Name: req.Name, Kind: req.Kind, Platform: req.Platform,
-		Roots: req.Roots, AutoApprove: req.AutoApprove, LastSeen: time.Now().UTC()}
+		Roots: req.Roots, AutoApprove: req.AutoApprove, Runtimes: req.Runtimes, LastSeen: time.Now().UTC()}
 	if d.ID != "" {
 		if old, err := s.db.OafDevice(r.Context(), d.ID); err == nil {
 			if old.OwnerID != owner {

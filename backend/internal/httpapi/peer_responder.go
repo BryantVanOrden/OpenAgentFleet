@@ -2,14 +2,12 @@ package httpapi
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/agent"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
-	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
@@ -459,95 +457,18 @@ func (s *Server) waitForHandoff(ctx context.Context, inst protocol.Instance, msg
 		s.startFromPlan(ctx, inst, msg, part)
 		return
 	}
-	conv := msg.ConversationID
-	if conv == "" {
-		conv = vault.GlobalBus.DefaultChannel()
-	}
-	// A new request supersedes the last one here too.
-	//
-	// This was only done when an agent started work, so a broadcast that
-	// produced nothing but waiting agents -- everyone named for testing and
-	// reviewing, say -- left its job behind for good. Over a long-running
-	// deployment those accumulate, one per such request, and nothing ever
-	// removes them.
-	s.relay.forgetOthers(msg.Content)
-	s.relay.waitFor(msg.Content, conv, collaborator{
-		InstanceID: inst.ID,
-		Name:       inst.Name,
-		Plan:       part,
-		Stage:      stage,
-	})
+	s.fileFleetPart(ctx, inst, msg, part, stage, false)
 	s.log.Info("agent is waiting to be handed work",
 		"instance", inst.Name, "stage", stage.String())
 }
 
-// startFromPeerRequest starts the work an agent just promised a colleague,
-// when that colleague is mid-task on a job and this agent is idle.
+// startFromPeerRequest files the work an agent just promised a colleague as
+// a ticket under the colleague's own. See fileFromPeerRequest.
 func (s *Server) startFromPeerRequest(ctx context.Context, inst protocol.Instance, msg protocol.PeerMessage, plan string) {
 	if inst.State != protocol.InstanceRunning || msg.FromInstanceID == "" {
 		return
 	}
-	job, asker, ok := s.relay.jobOfInstance(msg.FromInstanceID)
-	if !ok {
-		return
-	}
-	// Only for bots on the job: a member, or named in the request. Checker
-	// asked gui-scout something in passing and gui-scout, a bystander with
-	// no part, started a task on the strength of its own polite "I will".
-	if !onJob(job, inst) {
-		s.log.Info("not starting peer-requested work; not on this job",
-			"instance", inst.Name, "asker", asker.Name)
-		return
-	}
-	if s.instanceIsBusy(ctx, inst.ID) {
-		return
-	}
-	task := &protocol.Task{
-		ID:         store.NewID(),
-		InstanceID: inst.ID,
-		Goal: fmt.Sprintf("%s, who is working on the fleet request below, asked you:\n%s\n\n"+
-			"You answered: %s\n\nDo that now, on your own machine. When it is done, publish "+
-			"what you produced with publish_work under a stable name and tell %s with "+
-			"message_peer exactly where it is: the catalog name, or the address of anything "+
-			"you are serving (your machine is http://%s:<port> to colleagues). "+
-			"Do not use ask_human; decide the small things yourself.\n\n"+
-			"The fleet request: %s",
-			asker.Name, clipLine(msg.Content, 800), clipLine(plan, 600), asker.Name,
-			sandboxHost(inst.ID), job.Request),
-		State:     protocol.TaskQueued,
-		MaxSteps:  s.cfg.MaxSteps,
-		CreatedAt: time.Now().UTC(),
-		Params:    map[string]string{protocol.ParamHandoff: "1"},
-	}
-	me := collaborator{InstanceID: inst.ID, Name: inst.Name, Plan: plan, Stage: stageOf(plan)}
-	if !s.relay.claimRound(job, task.ID, me, msg.FromInstanceID) {
-		s.log.Info("not starting peer-requested work; the job is out of rounds",
-			"instance", inst.Name, "asker", asker.Name)
-		return
-	}
-	bg := context.WithoutCancel(ctx)
-	if err := s.db.CreateTask(bg, task); err != nil {
-		s.log.Warn("could not queue peer-requested work", "instance", inst.Name, "err", err)
-		return
-	}
-	if err := s.runner.Start(bg, task); err != nil {
-		s.log.Warn("could not start peer-requested work", "instance", inst.Name, "err", err)
-		return
-	}
-	s.log.Info("agent started work a colleague asked for",
-		"instance", inst.Name, "asker", asker.Name, "task", task.ID, "round", job.Round)
-}
-
-// onJob reports whether a bot has a part on a job: registered as a member, or
-// named in the request that opened it.
-func onJob(job *collaboration, inst protocol.Instance) bool {
-	for _, m := range job.Members {
-		if m.InstanceID == inst.ID {
-			return true
-		}
-	}
-	_, _, named := mentionSpan(job.Request, inst.Name)
-	return named
+	s.fileFromPeerRequest(ctx, inst, msg, plan)
 }
 
 // startFromPlan turns an agent's stated part into a task it actually runs.
@@ -598,87 +519,13 @@ func (s *Server) startFromPlan(ctx context.Context, inst protocol.Instance, msg 
 		s.log.Info("starting downstream work; named first, so nothing is coming to it",
 			"instance", inst.Name)
 	}
-	// One driver at a time, the same rule the task endpoint enforces: a
-	// broadcast arriving mid-task must not derail what the agent was already
-	// asked to do.
-	existing, err := s.db.ListTasks(ctx, inst.ID, 20)
-	if err != nil {
-		return
-	}
-	for _, t := range existing {
-		if t.State == protocol.TaskRunning || t.State == protocol.TaskAwaitingHuman ||
-			t.State == protocol.TaskQueued {
-			return
-		}
-	}
-
-	task := &protocol.Task{
-		ID:         store.NewID(),
-		InstanceID: inst.ID,
-		OwnerID:    msg.FromUserID,
-		// Both halves: the request gives the goal its context, the plan is
-		// what this particular agent said it would contribute.
-		Goal: "The operator asked the fleet: " + msg.Content +
-			"\n\nYour part, which you chose: " + plan +
-			"\n\nDo that part. " + catalogGuidance +
-			" Publish what you produce to the shared work catalog with " +
-			"publish_work so the rest of the fleet can build on it. Message a " +
-			"peer if you need something from them.\n\n" +
-			// The operator broadcast this and walked away. An agent that stops
-			// to ask them something waits eight minutes for a reply that is
-			// not coming, and everyone waiting on its part waits with it.
-			// Bots are on separate machines. Builder built on its own disk and
-			// never published; Checker, handed the work, searched its own disk.
-			"Every bot has its own machine. Your files are on yours only; a colleague " +
-			"cannot see them unless you publish_work them or serve them -- your machine " +
-			"is reachable to colleagues as http://" + sandboxHost(inst.ID) + ":<port>, so " +
-			"if you run a web server, say that address and port in your report.\n\n" +
-			"This was asked of the fleet, not of you in a conversation: nobody " +
-			"is sitting there waiting to answer questions about it. Do not use " +
-			"ask_human -- decide the small things yourself and say what you " +
-			"decided when you publish. Ask a colleague with message_peer if you " +
-			"need something only they have.",
-		State:     protocol.TaskQueued,
-		MaxSteps:  s.cfg.MaxSteps,
-		CreatedAt: time.Now().UTC(),
-	}
-	// Detached from the request that triggered it: the operator's message has
-	// long been answered, and a task must not die with its HTTP context.
-	bg := context.WithoutCancel(ctx)
-	if err := s.db.CreateTask(bg, task); err != nil {
-		s.log.Warn("could not queue work from a fleet plan", "instance", inst.Name, "err", err)
-		return
-	}
-	if err := s.runner.Start(bg, task); err != nil {
-		s.log.Warn("could not start work from a fleet plan", "instance", inst.Name, "err", err)
-		return
-	}
-	// A new request supersedes the last one. Without this an agent publishing
-	// for today's job hands work on for yesterday's, because the relay still
-	// remembers who was doing what then.
-	s.relay.forgetOthers(msg.Content)
-
-	// Record who is doing what, so finishing this part can wake whoever the
-	// next one belongs to. Without it an agent finishes, publishes, and stops,
-	// and the colleague who would review it never hears.
-	conv := msg.ConversationID
-	if conv == "" {
-		conv = vault.GlobalBus.DefaultChannel()
-	}
-	// The stage comes from what the operator assigned where there is an
-	// assignment, and from the agent's own words otherwise. An agent told to
-	// test that describes its part as "define the game logic" is still the
-	// tester, and classifying it as a designer left the relay with four
-	// designers and nowhere to send the work.
+	// Filed as a ticket. Busy agents are no longer skipped: the ticket waits
+	// until the agent is free, which is what the operator meant, where the
+	// old rule silently dropped the part.
 	stage := s.stageForAgent(ctx, inst, msg, plan)
-	s.relay.join(task.ID, msg.Content, conv, collaborator{
-		InstanceID: inst.ID,
-		Name:       inst.Name,
-		Plan:       plan,
-		Stage:      stage,
-	})
+	s.fileFleetPart(ctx, inst, msg, plan, stage, s.namedFirst(ctx, inst, msg))
 	s.log.Info("agent started work from a fleet request",
-		"instance", inst.Name, "task", task.ID, "plan", clipLine(plan, 80))
+		"instance", inst.Name, "plan", clipLine(plan, 80))
 }
 
 func clipLine(s string, n int) string {

@@ -111,13 +111,15 @@ func (s *Server) StartBackground(ctx context.Context) {
 	// with nothing running is met with silence.
 	go s.RunPeerResponder(ctx)
 	go s.RunOafJobs(ctx)
-	// Finishing a part of a shared job wakes whoever the next part belongs
-	// to. Without this an agent publishes and stops, and the colleague who
-	// would review it never hears.
-	go s.watchForHandoffs(ctx)
-	// And says so when a job cannot start at all, rather than leaving agents
-	// waiting on work nobody was asked to make.
-	go s.watchForStalledJobs(ctx)
+	// The ticket engine: every task event, every published item, and a pass
+	// every twenty seconds that re-derives everything from the rows. It is
+	// what hands work on, runs reviews, escalates, and says when a job cannot
+	// move -- the in-memory relay it replaces lost every job on restart.
+	go func() {
+		sub := s.bus.Subscribe("")
+		defer sub.Close()
+		s.tickets.Run(ctx, sub.C)
+	}()
 }
 
 // attachMemoryEmbedder gives episodic memory real semantic search if it can.

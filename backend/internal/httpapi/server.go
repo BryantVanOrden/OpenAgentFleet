@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -16,10 +17,13 @@ import (
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/bus"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/config"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/connectors"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/external"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/fleet"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/telemetry"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/tickets"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
 
 type Server struct {
@@ -27,10 +31,12 @@ type Server struct {
 	db     *store.Store
 	fleet  *fleet.Manager
 	models *connectors.Registry
-	// relay tracks which agents are collaborating on which request, so
-	// finishing a part can wake whoever the next part belongs to.
-	relay  *relay
-	runner *agent.Runner
+	// tickets runs work as durable tickets: dispatch, hand-offs, reviews,
+	// escalation, liveness, verifiers and budgets.
+	tickets *tickets.Engine
+	// external runs Claude Code, Codex, Hermes, OpenClaw and webhook agents.
+	external *external.Dispatcher
+	runner   *agent.Runner
 	bus    *bus.Bus
 	vault  *vault.Vault
 	host   *telemetry.HostCollector
@@ -49,9 +55,34 @@ func NewServer(
 	art artifacts.Store,
 	log *slog.Logger,
 ) *Server {
-	return &Server{cfg: cfg, db: db, fleet: fm, models: models, runner: runner, relay: newRelay(),
+	s := &Server{cfg: cfg, db: db, fleet: fm, models: models, runner: runner,
 		bus: b, vault: v, art: art, log: log,
 		host: telemetry.NewHostCollector()}
+	s.tickets = tickets.New(tickets.Config{MaxSteps: cfg.MaxSteps}, db, runner, tickets.Hooks{
+		Alert: runner.DeliverAlert,
+		Say: func(ctx context.Context, thread, fromID, fromName, toID, text string) {
+			// A line from Oaf is a system line: nobody answers it. A line from
+			// a bot is a reply: replies do not beget replies. Either way the
+			// peer responder leaves it alone.
+			kind := peerReplyKind
+			if fromID == "" {
+				kind, fromName = peerSystemKind, "Oaf"
+			}
+			if toID == "" {
+				toID = "broadcast"
+			}
+			vault.GlobalBus.SendMessageIn(ctx, thread, fromID, fromName, toID, kind, text, nil)
+		},
+		Emit: b.Emit,
+	}, log)
+	runner.SetTicketOps(s.tickets)
+	s.external = external.New(external.Config{PublicURL: cfg.PublicURL, Secret: cfg.JWTSecret}, db, v, s.tickets, b.Emit,
+		func(ctx context.Context, rec protocol.TokenTelemetryRecord) {
+			telemetry.GlobalTracker.RecordTurn(ctx, rec)
+			s.tickets.AfterTurn(ctx, rec.InstanceID, rec.TaskID)
+		}, log)
+	runner.SetExternal(s.external)
+	return s
 }
 
 func (s *Server) Routes() http.Handler {
@@ -61,6 +92,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/bootstrap", s.handleBootstrap)
+	// The run callback API. Authenticated by the run token an external agent
+	// was given with its run, not by a user; see runs_api.go.
+	mux.HandleFunc("GET /api/runs/{taskId}", s.handleRunContext)
+	mux.HandleFunc("POST /api/runs/{taskId}/progress", s.handleRunProgress)
+	mux.HandleFunc("POST /api/runs/{taskId}/complete", s.handleRunComplete)
+	mux.HandleFunc("POST /api/runs/{taskId}/tickets", s.handleRunTicket)
+	mux.HandleFunc("POST /api/runs/{taskId}/comments", s.handleRunComment)
 
 	// --- authenticated ---
 	auth := func(role string, h http.HandlerFunc) http.Handler {
@@ -87,6 +125,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/oaf/devices/{id}", auth(roleOperator, s.handleDeleteOafDevice))
 	mux.Handle("GET /api/oaf/devices/{id}/jobs", auth(roleOperator, s.handlePollOafDeviceJobs))
 	mux.Handle("POST /api/oaf/devices/{id}/jobs/{jobId}/result", auth(roleOperator, s.handleOafDeviceJobResult))
+	mux.Handle("POST /api/oaf/devices/{id}/jobs/{jobId}/progress", auth(roleOperator, s.handleDeviceJobProgress))
 	mux.Handle("POST /api/setup/autodetect", auth(roleAdmin, s.handleSetupAutodetect))
 
 	mux.Handle("GET /api/tiers", auth(roleAny, s.handleTiers))
@@ -115,6 +154,19 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /api/skills/{id}", auth(roleOperator, s.handleUpsertSkill))
 	mux.Handle("DELETE /api/skills/{id}", auth(roleOperator, s.handleDeleteSkill))
 	mux.Handle("POST /api/skills/{id}/refine", auth(roleOperator, s.handleRefineSkill))
+
+	// Tickets: work as durable rows, and the org chart it flows through.
+	mux.Handle("GET /api/tickets", auth(roleAny, s.handleListTickets))
+	mux.Handle("POST /api/tickets", auth(roleOperator, s.handleCreateTicket))
+	mux.Handle("GET /api/tickets/{id}", auth(roleAny, s.handleGetTicket))
+	mux.Handle("PATCH /api/tickets/{id}", auth(roleOperator, s.handlePatchTicket))
+	mux.Handle("DELETE /api/tickets/{id}", auth(roleOperator, s.handleDeleteTicket))
+	mux.Handle("POST /api/tickets/{id}/comments", auth(roleOperator, s.handleCommentTicket))
+	mux.Handle("POST /api/tickets/{id}/reopen", auth(roleOperator, s.handleReopenTicket))
+	mux.Handle("GET /api/org", auth(roleAny, s.handleOrgChart))
+	mux.Handle("PUT /api/instances/{id}/profile", auth(roleOperator, s.handleSetProfile))
+	mux.Handle("GET /api/fleet/export", auth(roleAdmin, s.handleExportFleet))
+	mux.Handle("POST /api/fleet/import", auth(roleAdmin, s.handleImportFleet))
 
 	mux.Handle("GET /api/tasks", auth(roleAny, s.handleListTasks))
 	mux.Handle("POST /api/tasks", auth(roleOperator, s.handleCreateTask))
@@ -344,10 +396,14 @@ func failErr(w http.ResponseWriter, err error) {
 		fail(w, http.StatusNotFound, "not found")
 	case errors.Is(err, connectors.ErrNoProvider):
 		fail(w, http.StatusPreconditionFailed, err.Error())
-	case errors.Is(err, fleet.ErrInvalidRequest):
+	case errors.Is(err, fleet.ErrInvalidRequest), errors.Is(err, store.ErrInvalid):
 		// The caller asked for something malformed. Answering 500 would make
 		// their mistake look like ours, and hide it from them.
 		fail(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, store.ErrConflict):
+		fail(w, http.StatusConflict, err.Error())
+	case errors.Is(err, tickets.ErrRefused):
+		fail(w, http.StatusForbidden, err.Error())
 	default:
 		fail(w, http.StatusInternalServerError, err.Error())
 	}

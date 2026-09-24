@@ -119,6 +119,35 @@ type Instance struct {
 	LastError   string            `json:"last_error,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+
+	// Kind is how the agent runs: a desktop this fleet provisions, or an
+	// external runtime (Claude Code, Codex, Hermes, OpenClaw, a webhook)
+	// that sits in the same org chart and takes the same tickets.
+	Kind AgentKind `json:"kind"`
+	// ReportsTo is the agent this one reports to; empty reports to the
+	// operator. Work escalates up this line and is delegated down it.
+	ReportsTo string `json:"reports_to,omitempty"`
+	Title     string `json:"title,omitempty"`
+	// Capabilities is "when I'm useful": what colleagues read to decide who
+	// to ask.
+	Capabilities string          `json:"capabilities,omitempty"`
+	Connection   AgentConnection `json:"connection"`
+	// BudgetMonthUSD is a monthly spend ceiling; 0 is none. At BudgetWarnPct
+	// the operator is warned, at the ceiling the agent is held.
+	BudgetMonthUSD float64 `json:"budget_month_usd"`
+	BudgetWarnPct  int     `json:"budget_warn_pct"`
+	Trust          string  `json:"trust"`
+	// Hold says why the agent is not being given work; empty when it is.
+	Hold string `json:"hold,omitempty"`
+}
+
+// AgentKindOf is the instance's kind, with rows from before kinds existed
+// read as desktops.
+func (in *Instance) AgentKindOf() AgentKind {
+	if in.Kind == "" {
+		return KindDesktop
+	}
+	return in.Kind
 }
 
 // EgressPolicy constrains what the sandbox may talk to. An empty Allow list
@@ -166,6 +195,9 @@ type Task struct {
 	SkillID      string            `json:"skill_id,omitempty"`
 	Params       map[string]string `json:"params,omitempty"`
 	ParentTaskID string            `json:"parent_task_id,omitempty"` // for recursive sub-agents
+	// TicketID is the ticket this run was started for, so its cost and its
+	// outcome belong to that ticket.
+	TicketID string `json:"ticket_id,omitempty"`
 	AutoRefine   bool              `json:"auto_refine,omitempty"`    // trigger skill self-refinement on success
 	State        TaskState         `json:"state"`
 	Step         int               `json:"step"`
@@ -315,6 +347,8 @@ const (
 	ActCallMCP      ActionKind = "call_mcp"      // invoke tool on a Model Context Protocol (MCP) server
 	ActPublishWork  ActionKind = "publish_work"  // publish a file, app or workspace to the shared catalog
 	ActReadWork     ActionKind = "read_work"     // read another agent's published work by name
+	ActCreateTicket ActionKind = "create_ticket" // hand part of the current ticket to a colleague
+	ActReopenTicket ActionKind = "reopen_ticket" // send finished work back with what is missing
 	ActAssert       ActionKind = "assert"        // file exists / size / exit code
 	ActAskHuman     ActionKind = "ask_human"     // hand control back to the operator
 	ActDone         ActionKind = "done"
@@ -754,6 +788,13 @@ type Action struct {
 	Timeout        int            `json:"timeout,omitempty"`         // seconds, for wait_for
 	Question       string         `json:"question,omitempty"`
 	Summary        string         `json:"summary,omitempty"` // filled on done/fail
+	// Title names a ticket created with create_ticket.
+	Title string `json:"title,omitempty"`
+	// Ticket is the ticket reopen_ticket acts on: "T-12".
+	Ticket string `json:"ticket,omitempty"`
+	// Verdict ends a review or verify ticket: "pass" or "fail". The verdict
+	// is the deliverable -- a review that found problems is done, with fail.
+	Verdict string `json:"verdict,omitempty"`
 }
 
 // StepRecord is one persisted turn of the agent loop, used for audit replay.
@@ -1081,7 +1122,11 @@ type Device struct {
 	// to be under one of them; a device with no roots exposes no files.
 	Roots []string `json:"roots"`
 	// AutoApprove lets shell and write jobs run without the device asking.
-	AutoApprove bool      `json:"auto_approve"`
+	AutoApprove bool `json:"auto_approve"`
+	// Runtimes are the agent CLIs installed on the device (claude_code,
+	// codex, hermes), so an external agent is only pointed at a device that
+	// can run it.
+	Runtimes []string  `json:"runtimes"`
 	LastSeen    time.Time `json:"last_seen,omitzero"`
 	CreatedAt   time.Time `json:"created_at"`
 

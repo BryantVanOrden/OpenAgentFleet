@@ -113,6 +113,7 @@ func nextWindowTask(task *protocol.Task, progress string, window int) *protocol.
 		SkillID:      task.SkillID,
 		Params:       params,
 		ParentTaskID: task.ParentTaskID,
+		TicketID:     task.TicketID,
 		AutoRefine:   task.AutoRefine,
 		State:        protocol.TaskQueued,
 		MaxSteps:     task.MaxSteps,

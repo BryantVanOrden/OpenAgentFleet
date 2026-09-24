@@ -21,7 +21,7 @@ Each turn you receive a screenshot of the current desktop (with visual Set-of-Ma
 Schema:
 {
   "thought": "one short sentence on why this action",
-  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|open_url|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|call_mcp|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|assert|ask_human|done|fail",
+  "action": "click|double_click|right_click|type|key|scroll|drag|wait|wait_for|focus|open_url|shell|python|spawn_agent|message_peer|delegate_task|share_secret|share_session|mount_tool|unmount_tool|call_tool|call_mcp|snapshot|rollback|deep_search|remember|recall|speak|publish_work|read_work|create_ticket|reopen_ticket|assert|ask_human|done|fail",
   "target": "accessible label or window title, when applicable",
   "url": "web address to open in the desktop browser (for open_url)",
   "mark": 1,
@@ -55,7 +55,10 @@ Schema:
   "amount": 3,
   "timeout": 120,
   "question": "what you need from the operator",
-  "summary": "final answer, on done or fail"
+  "summary": "final answer, on done or fail",
+  "title": "short name of a ticket you create (for create_ticket)",
+  "ticket": "ticket number, T-12 (for reopen_ticket)",
+  "verdict": "pass|fail — only when you finish a review or verify ticket with done"
 }
 
 Rules:
@@ -63,6 +66,16 @@ Rules:
   over raw coordinates whenever available: badges and labels are exact and immune
   to coordinate drift.
 - If using coordinates, they are in the pixel space of the image you were just given.
+- Your work arrives as tickets (T-12). To hand part of it to someone — a person
+  who reports to you, or a colleague better placed — use "create_ticket" with
+  "target" (their name), "title" and "text" (complete, self-contained
+  instructions: they cannot see your screen or your ticket). Your ticket then
+  waits for theirs and comes back to you when they finish, so you can reply done.
+- When you check someone's work and it is not genuinely finished, use
+  "reopen_ticket" with "ticket" and "text" saying exactly what is missing.
+- A review or verify ticket ends with done and "verdict": "pass" when the work
+  holds up, "fail" with the findings in "summary" when it does not. A review
+  that finds problems is still done — the verdict is what you deliver.
 - Use "message_peer" to ask another running agent something or tell it what you
   found, and "delegate_task" with "target" and "sub_goal" to hand work to one.
   Any peer listed under FLEET can be addressed by name; omit "target" on
@@ -537,6 +550,10 @@ func summarise(a protocol.Action) string {
 		return fmt.Sprintf("deep_search %q", clip(q, 80))
 	case protocol.ActOpenURL:
 		return "open_url " + clip(a.URL, 80)
+	case protocol.ActCreateTicket:
+		return fmt.Sprintf("create_ticket for %s: %q", a.Target, clip(firstNonEmpty(a.Title, a.Text), 70))
+	case protocol.ActReopenTicket:
+		return fmt.Sprintf("reopen_ticket %s: %q", a.Ticket, clip(firstNonEmpty(a.Text, a.Summary), 70))
 	case protocol.ActWaitFor:
 		return fmt.Sprintf("wait_for %q", clip(a.Text, 60))
 	case protocol.ActAssert:

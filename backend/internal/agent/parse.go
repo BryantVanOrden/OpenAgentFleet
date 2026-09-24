@@ -35,6 +35,9 @@ var validActions = map[protocol.ActionKind]bool{
 	// credentials but had nowhere to put the work itself, so anything one
 	// produced died with its container.
 	protocol.ActPublishWork: true, protocol.ActReadWork: true,
+	// Tickets: delegation down the org chart, and verification that can
+	// send work back.
+	protocol.ActCreateTicket: true, protocol.ActReopenTicket: true,
 	protocol.ActSnapshot: true, protocol.ActRollback: true,
 	protocol.ActAssert:   true,
 	protocol.ActAskHuman: true, protocol.ActDone: true, protocol.ActFail: true,
@@ -99,6 +102,31 @@ func ParseAction(raw string) (protocol.Action, error) {
 		a.URL = strings.TrimSpace(a.URL)
 		if a.URL == "" {
 			return a, fmt.Errorf("open_url needs the address in url")
+		}
+	case protocol.ActCreateTicket:
+		if strings.TrimSpace(a.Target) == "" {
+			return a, fmt.Errorf("create_ticket needs target: the name of who takes it")
+		}
+		if strings.TrimSpace(firstNonEmpty(a.Text, a.SubGoal)) == "" {
+			return a, fmt.Errorf("create_ticket needs text: complete instructions for them")
+		}
+		if a.Text == "" {
+			a.Text = a.SubGoal
+		}
+	case protocol.ActReopenTicket:
+		if a.Ticket == "" {
+			a.Ticket = a.Target
+		}
+		if strings.TrimSpace(a.Ticket) == "" {
+			return a, fmt.Errorf("reopen_ticket needs ticket: the ticket number, T-12")
+		}
+		if strings.TrimSpace(firstNonEmpty(a.Text, a.Summary)) == "" {
+			return a, fmt.Errorf("reopen_ticket needs text: what is missing")
+		}
+	case protocol.ActDone:
+		a.Verdict = strings.ToLower(strings.TrimSpace(a.Verdict))
+		if a.Verdict != "" && a.Verdict != protocol.VerdictPass && a.Verdict != protocol.VerdictFail {
+			return a, fmt.Errorf("verdict must be pass or fail, not %q", a.Verdict)
 		}
 	case protocol.ActKey:
 		if a.Key == "" {

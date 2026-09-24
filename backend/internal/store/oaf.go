@@ -106,26 +106,32 @@ func (s *Store) UpsertOafDevice(ctx context.Context, d *protocol.Device) error {
 		d.CreatedAt = time.Now().UTC()
 	}
 	roots, _ := json.Marshal(orEmptySlice(d.Roots))
+	runtimes, _ := json.Marshal(orEmptySlice(d.Runtimes))
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO oaf_devices(id,owner_id,name,kind,platform,roots,auto_approve,last_seen,created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (id) DO UPDATE SET name=$3,kind=$4,platform=$5,roots=$6,auto_approve=$7,last_seen=$8`,
-		d.ID, d.OwnerID, d.Name, d.Kind, d.Platform, roots, d.AutoApprove, d.LastSeen, d.CreatedAt)
+		`INSERT INTO oaf_devices(id,owner_id,name,kind,platform,roots,auto_approve,last_seen,created_at,runtimes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO UPDATE SET name=$3,kind=$4,platform=$5,roots=$6,auto_approve=$7,last_seen=$8,runtimes=$10`,
+		d.ID, d.OwnerID, d.Name, d.Kind, d.Platform, roots, d.AutoApprove, d.LastSeen, d.CreatedAt, string(runtimes))
 	return norm(err)
 }
 
-const deviceSelect = `SELECT id,owner_id,name,kind,platform,roots,auto_approve,last_seen,created_at FROM oaf_devices`
+const deviceSelect = `SELECT id,owner_id,name,kind,platform,roots,auto_approve,last_seen,created_at,COALESCE(runtimes,'[]') FROM oaf_devices`
 
 func scanDevice(row interface{ Scan(...any) error }) (protocol.Device, error) {
 	var d protocol.Device
 	var roots []byte
+	var runtimes string
 	var seen *time.Time
-	if err := row.Scan(&d.ID, &d.OwnerID, &d.Name, &d.Kind, &d.Platform, &roots, &d.AutoApprove, &seen, &d.CreatedAt); err != nil {
+	if err := row.Scan(&d.ID, &d.OwnerID, &d.Name, &d.Kind, &d.Platform, &roots, &d.AutoApprove, &seen, &d.CreatedAt, &runtimes); err != nil {
 		return d, err
 	}
 	_ = json.Unmarshal(roots, &d.Roots)
 	if d.Roots == nil {
 		d.Roots = []string{}
+	}
+	_ = json.Unmarshal([]byte(runtimes), &d.Runtimes)
+	if d.Runtimes == nil {
+		d.Runtimes = []string{}
 	}
 	if seen != nil {
 		d.LastSeen = *seen

@@ -68,6 +68,8 @@ func TestEveryAdvertisedActionParses(t *testing.T) {
 		protocol.ActType:         `{"action":"type","text":"hello"}`,
 		protocol.ActKey:          `{"action":"key","key":"ctrl+s"}`,
 		protocol.ActOpenURL:      `{"action":"open_url","url":"http://af-2f74f6ae-0bd:8000"}`,
+		protocol.ActCreateTicket: `{"action":"create_ticket","target":"Dev","title":"Write the handler","text":"Add GET /api/x"}`,
+		protocol.ActReopenTicket: `{"action":"reopen_ticket","ticket":"T-12","text":"no screenshot of it working"}`,
 		protocol.ActScroll:       `{"action":"scroll","amount":5}`,
 		protocol.ActDrag:         `{"action":"drag","coordinates":[1,2],"to":[3,4]}`,
 		protocol.ActWait:         `{"action":"wait"}`,

@@ -99,10 +99,15 @@ func buildActionSchema() map[string]any {
 		if name == "" || name == "-" || name == "thought" || name == "action" || name == "text" {
 			continue
 		}
+		sch := schemaFor(f.Type)
+		if name == "verdict" {
+			sch = map[string]any{"type": "string", "enum": []string{"pass", "fail"},
+				"description": "Only when finishing a review or verify ticket with done."}
+		}
 		props = append(props, struct {
 			Name   string
 			Schema map[string]any
-		}{name, schemaFor(f.Type)})
+		}{name, sch})
 	}
 	return map[string]any{
 		"type":                 "object",

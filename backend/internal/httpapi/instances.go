@@ -48,6 +48,23 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	req.OwnerID = userFrom(r.Context()).Subject
 
+	// An external agent -- Claude Code, Codex, Hermes, OpenClaw, a webhook --
+	// has no sandbox to provision: it is a row and a connection.
+	if req.Kind.External() {
+		inst, err := s.createExternal(r.Context(), req)
+		if err != nil {
+			failErr(w, err)
+			return
+		}
+		s.bus.Emit("instance.state", inst.ID, "", redact(*inst))
+		writeJSON(w, http.StatusCreated, redact(*inst))
+		return
+	}
+	if req.Token != "" || req.Connection.DeviceID != "" || req.Connection.URL != "" {
+		fail(w, http.StatusBadRequest, "a desktop agent takes no connection or token")
+		return
+	}
+
 	// Acknowledged as soon as the row exists; the boot runs on and reports
 	// through the event stream. Holding this request open for the boot made
 	// every dropped connection a duplicate bot (see Manager.CreateAsync).
@@ -211,6 +228,9 @@ func (s *Server) handleManualAct(w http.ResponseWriter, r *http.Request) {
 func redact(in protocol.Instance) protocol.Instance {
 	in.AgentdURL = ""
 	in.VNCURL = "/vnc/" + in.ID + "/"
+	if in.AgentKindOf().External() {
+		in.VNCURL, in.VNCViewURL, in.StreamURL = "", "", ""
+	}
 	return in
 }
 

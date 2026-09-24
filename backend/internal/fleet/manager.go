@@ -108,6 +108,20 @@ type CreateRequest struct {
 	// Voice this bot speaks in. Empty takes the archetype's default.
 	Voice   string `json:"voice,omitempty"`
 	OwnerID string `json:"-"`
+
+	// The org chart and budget. Kind other than desktop is created by the
+	// API without a sandbox; the manager only ever provisions desktops.
+	Kind           protocol.AgentKind       `json:"kind,omitempty"`
+	Title          string                   `json:"title,omitempty"`
+	ReportsTo      string                   `json:"reports_to,omitempty"`
+	Capabilities   string                   `json:"capabilities,omitempty"`
+	BudgetMonthUSD float64                  `json:"budget_month_usd,omitempty"`
+	BudgetWarnPct  int                      `json:"budget_warn_pct,omitempty"`
+	Trust          string                   `json:"trust,omitempty"`
+	Connection     protocol.AgentConnection `json:"connection,omitempty"`
+	// Token is an external agent's gateway or webhook secret. It goes to the
+	// vault and never onto the instance row.
+	Token string `json:"token,omitempty"`
 }
 
 // Create provisions a sandbox and blocks until its agent daemon answers, so the
@@ -276,6 +290,18 @@ func (m *Manager) prepare(ctx context.Context, req CreateRequest) (*protocol.Ins
 		Labels:            req.Labels,
 		CreatedAt:         time.Now().UTC(),
 		UpdatedAt:         time.Now().UTC(),
+		Kind:              protocol.KindDesktop,
+		Title:             req.Title,
+		ReportsTo:         req.ReportsTo,
+		Capabilities:      req.Capabilities,
+		BudgetMonthUSD:    req.BudgetMonthUSD,
+		BudgetWarnPct:     req.BudgetWarnPct,
+		Trust:             req.Trust,
+	}
+	if inst.Capabilities == "" {
+		if t := protocol.BotTemplateByID(req.ArchetypeID); t != nil {
+			inst.Capabilities = t.Tagline
+		}
 	}
 	if err := m.db.CreateInstance(ctx, inst); err != nil {
 		return nil, protocol.TierProfile{}, err
@@ -734,6 +760,9 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	if err := desktopOnly(inst); err != nil {
+		return err
+	}
 	if inst.Runtime != "" {
 		if err := m.docker.StopContainer(ctx, inst.Runtime, 15); err != nil {
 			var de *DockerError
@@ -748,6 +777,9 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 func (m *Manager) Start(ctx context.Context, id string) error {
 	inst, err := m.db.Instance(ctx, id)
 	if err != nil {
+		return err
+	}
+	if err := desktopOnly(inst); err != nil {
 		return err
 	}
 	if inst.Runtime == "" {
@@ -802,6 +834,9 @@ func (m *Manager) Pause(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	if err := desktopOnly(inst); err != nil {
+		return err
+	}
 	if err := m.docker.PauseContainer(ctx, inst.Runtime); err != nil {
 		return err
 	}
@@ -811,6 +846,9 @@ func (m *Manager) Pause(ctx context.Context, id string) error {
 func (m *Manager) Resume(ctx context.Context, id string) error {
 	inst, err := m.db.Instance(ctx, id)
 	if err != nil {
+		return err
+	}
+	if err := desktopOnly(inst); err != nil {
 		return err
 	}
 	if err := m.docker.UnpauseContainer(ctx, inst.Runtime); err != nil {
@@ -909,6 +947,10 @@ func (m *Manager) Reconcile(ctx context.Context) {
 		return
 	}
 	for _, inst := range instances {
+		// External agents have no container to reconcile.
+		if inst.AgentKindOf().External() {
+			continue
+		}
 		if inst.Runtime == "" && !m.adoptOrphan(ctx, &inst) {
 			continue
 		}
@@ -1014,7 +1056,7 @@ func (m *Manager) WatchStats(ctx context.Context, every time.Duration, emit func
 				continue
 			}
 			for _, inst := range list {
-				if inst.State != protocol.InstanceRunning {
+				if inst.State != protocol.InstanceRunning || inst.AgentKindOf().External() {
 					continue
 				}
 				if s, err := m.Stats(ctx, inst.ID); err == nil {
@@ -1287,4 +1329,13 @@ func orgIDsFor(orgID string) []string {
 		return nil
 	}
 	return []string{orgID}
+}
+
+// desktopOnly refuses a sandbox operation on an external agent, which has no
+// desktop to start, stop or pause.
+func desktopOnly(inst *protocol.Instance) error {
+	if inst.AgentKindOf().External() {
+		return fmt.Errorf("%w: %s is a %s agent; it has no desktop to start, stop or pause", ErrInvalidRequest, inst.Name, inst.AgentKindOf().Label())
+	}
+	return nil
 }

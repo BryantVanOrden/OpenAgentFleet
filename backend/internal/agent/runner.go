@@ -16,6 +16,7 @@ import (
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/memory"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/telemetry"
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/tickets"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/vault"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
 )
@@ -54,6 +55,12 @@ type Runner struct {
 	// by provider id. Detection costs one model round trip, so it happens once
 	// per provider per process rather than once per step.
 	coordSpace sync.Map
+
+	// tickets is the ticket engine: delegation, reopening, verdicts, budgets.
+	tickets TicketOps
+	// external runs agents that are not desktops: Claude Code, Codex, Hermes,
+	// OpenClaw, webhooks. See org.go.
+	external External
 }
 
 // FilePlacer writes a file inside an instance's sandbox and shows it.
@@ -87,6 +94,12 @@ func (r *Runner) Refiner() *Refiner {
 
 // Start launches a task. It returns as soon as the goroutine is scheduled.
 func (r *Runner) Start(parent context.Context, task *protocol.Task) error {
+	// An external agent's run belongs to its adapter, not to this loop.
+	if r.external != nil {
+		if inst, err := r.db.Instance(parent, task.InstanceID); err == nil && inst.AgentKindOf().External() {
+			return r.external.Start(parent, task, inst)
+		}
+	}
 	r.mu.Lock()
 	if _, busy := r.running[task.ID]; busy {
 		r.mu.Unlock()
@@ -125,14 +138,21 @@ func (r *Runner) Cancel(taskID string) bool {
 	r.mu.Unlock()
 	if ok {
 		cancel()
+		return true
 	}
-	return ok
+	if r.external != nil {
+		return r.external.Cancel(taskID)
+	}
+	return false
 }
 
 func (r *Runner) IsRunning(taskID string) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	_, ok := r.running[taskID]
+	r.mu.Unlock()
+	if !ok && r.external != nil {
+		return r.external.IsRunning(taskID)
+	}
 	return ok
 }
 
@@ -477,6 +497,11 @@ func (r *Runner) loop(ctx context.Context, task *protocol.Task) {
 			CachedTokens: resp.CachedTokens,
 			LatencyMS:    int(resp.Latency.Milliseconds()),
 		})
+		// Budgets are checked after every turn, so an agent can overrun its
+		// ceiling by one turn and no more.
+		if r.tickets != nil {
+			r.tickets.AfterTurn(ctx, inst.ID, task.ID)
+		}
 
 		history = append(history, turnSummary{Step: task.Step, Action: summarise(action), Outcome: outcome, Read: isRead(action)})
 		if len(history) > 24 {
@@ -531,7 +556,38 @@ func (r *Runner) execute(
 ) (string, terminalKind) {
 	switch a.Action {
 	case protocol.ActDone:
+		if r.tickets != nil && r.tickets.RequiresVerdict(ctx, task.ID) {
+			verdict := a.Verdict
+			if verdict == "" {
+				verdict = leadingVerdict(a.Summary)
+			}
+			if verdict == "" {
+				return "not finished: this is a review — reply done again with \"verdict\": \"pass\" if the work holds up, " +
+					"or \"fail\" with the numbered findings in the summary", terminalNone
+			}
+			r.tickets.SetVerdict(task.ID, verdict)
+		}
 		return "done: " + clip(a.Summary, 200), terminalDone
+
+	case protocol.ActCreateTicket:
+		if r.tickets == nil {
+			return "failed: tickets are not available here; use message_peer", terminalNone
+		}
+		msg, err := r.tickets.CreateFromAgent(ctx, task.ID, inst, a.Target, a.Title, a.Text, true)
+		if err != nil {
+			return "failed: " + err.Error(), terminalNone
+		}
+		return msg, terminalNone
+
+	case protocol.ActReopenTicket:
+		if r.tickets == nil {
+			return "failed: tickets are not available here", terminalNone
+		}
+		msg, err := r.tickets.ReopenFromAgent(ctx, task.ID, inst, a.Ticket, firstNonEmpty(a.Text, a.Summary))
+		if err != nil {
+			return "failed: " + err.Error(), terminalNone
+		}
+		return msg, terminalNone
 
 	case protocol.ActFail:
 		return "failed: " + clip(a.Summary, 200), terminalFail
@@ -797,6 +853,9 @@ func (r *Runner) execute(
 		return r.callMCP(ctx, inst, a), terminalNone
 
 	case protocol.ActShareSecret:
+		if inst.Trust == protocol.TrustLow {
+			return "refused: a low-trust agent cannot write to the shared vault", terminalNone
+		}
 		key := firstNonEmpty(a.SecretKey, a.Target)
 		val := firstNonEmpty(a.SecretVal, a.Text)
 		if key == "" || val == "" {
@@ -811,6 +870,9 @@ func (r *Runner) execute(
 		return "shared secret to the fleet vault: " + clip(key, 120), terminalNone
 
 	case protocol.ActShareSession:
+		if inst.Trust == protocol.TrustLow {
+			return "refused: a low-trust agent cannot share sessions", terminalNone
+		}
 		domain := firstNonEmpty(a.SessionDomain, a.Target)
 		cookies := firstNonEmpty(a.SessionCookies, a.Text)
 		if domain == "" || cookies == "" {
@@ -840,6 +902,15 @@ func (r *Runner) execute(
 		}
 		if content == "" {
 			return "failed: nothing to send", terminalNone
+		}
+		// What a low-trust agent says reaches its colleagues fenced as data:
+		// it reads hostile input, and its words must not become their
+		// instructions.
+		if inst.Trust == protocol.TrustLow {
+			if a.Action == protocol.ActDelegateTask {
+				return "refused: a low-trust agent cannot hand work to others; put what you found in your summary", terminalNone
+			}
+			content = tickets.FenceUntrusted(inst.Name, content)
 		}
 
 		// Resolve a friendly name to an id so the model can address peers the
@@ -1330,19 +1401,25 @@ func (r *Runner) peerContext(ctx context.Context, selfID string) string {
 
 	if insts, err := r.db.ListInstances(ctx); err == nil {
 		var peers []protocol.Instance
-		for _, in := range insts {
-			if in.ID != selfID && in.State == protocol.InstanceRunning {
+		var self *protocol.Instance
+		for i := range insts {
+			in := insts[i]
+			if in.ID == selfID {
+				self = &insts[i]
+				continue
+			}
+			if in.State == protocol.InstanceRunning {
 				peers = append(peers, in)
 			}
 		}
 		if len(peers) > 0 {
-			sb.WriteString("\nFLEET (peers you can message or delegate to)\n")
+			sb.WriteString("\nFLEET (peers you can message, or hand tickets to)\n")
 			for i, in := range peers {
 				if i >= 12 {
 					fmt.Fprintf(&sb, "...and %d more\n", len(peers)-i)
 					break
 				}
-				fmt.Fprintf(&sb, "- %s (%s)\n", in.Name, in.ID)
+				sb.WriteString(rosterLine(in, self))
 			}
 		}
 	}
