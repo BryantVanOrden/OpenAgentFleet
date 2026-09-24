@@ -47,6 +47,17 @@ about: agents with their own computers, watched live and taken over by hand.
    - Finishing wakes whatever waited on it. When every part of your request
      is finished, the request closes and says so in chat.
 
+   **Handing work down.** An agent passes part of its ticket to someone
+   who reports to it with `create_ticket`. A ticket that names one of the
+   agent's reports ("have Claude write…") opens its brief with that
+   instruction; finishing without having handed that report anything is
+   answered once, asking for the reason. When the handing-on leaves the
+   ticket waiting, the run ends there — there is nothing to do until the
+   work comes back, and the ticket brings the agent back with it, with a
+   brief that says where the work is. Handing the same job to the same
+   colleague again (the same file, or mostly the same words) files nothing
+   and points at the ticket that has it, or at what it produced.
+
 4. **Blocked work goes up the org chart.** The assignee's manager gets an
    *unblock* ticket; its answer puts the work back in the queue with a note.
    With no manager, you get an alert and a push.

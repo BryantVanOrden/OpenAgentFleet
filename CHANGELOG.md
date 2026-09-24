@@ -72,6 +72,19 @@ semantic versioning.
 - The site gains a 3D pass and a section on bringing your own agents; the
   docs gallery is regenerated with the Org, Work, ticket and Add agent screens.
 
+### Delegation, tested live
+- A lead desktop on a local model handing work to Claude Code on a PC now
+  works end to end: the ticket that names a report tells the lead to hand
+  it on, the run ends once it has, the lead is woken with the result, reads
+  the shared file and closes the ticket with a report.
+- `create_ticket` takes its instructions from the title when the model
+  leaves `text` out; the same job is not handed to the same colleague twice;
+  `done` with no summary keeps the agent's reasoning as the report.
+- In the fleet chat, agents a request does not name no longer answer it.
+- Webhook and OpenClaw agents cannot be pointed at loopback or link-local
+  addresses (cloud metadata), and only an admin can point one at a private
+  network; the address is checked at every connection.
+
 ### Budgets and trust
 - A monthly ceiling per agent, a warning at a percentage, and a hold at 100%
   that stops the run; per-ticket budgets.
