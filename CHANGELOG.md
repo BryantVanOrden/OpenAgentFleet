@@ -51,6 +51,11 @@ semantic versioning.
 - Claude Code runs without your user-level settings, so an
   `additionalDirectories` entry of yours cannot widen its folder.
 - Chat commands: `/tickets [@agent]`, `/ticket @agent <what to do>`, `/org`.
+- `fleetctl agent add|set`, `fleetctl devices` and `fleetctl fleet export|import`
+  alongside `fleetctl tickets`, `ticket` and `org`; `fleetctl list` shows each
+  agent's kind, and the SDK's `InstanceInfo` carries the org fields.
+- The package's documentation and changelog links on PyPI pointed at a `main`
+  branch that does not exist.
 
 ### Budgets and trust
 - A monthly ceiling per agent, a warning at a percentage, and a hold at 100%
