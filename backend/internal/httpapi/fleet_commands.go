@@ -47,6 +47,9 @@ var fleetCommands = []fleetCommand{
 	{"pause", "/pause @bot", "Freeze a bot's desktop (every process stops instantly).", true},
 	{"resume", "/resume @bot", "Resume a frozen bot.", true},
 	{"mission", "/mission <goal>", "Give the whole running fleet one goal. Each bot gets a role from its archetype, plans first, then executes; artifacts are peer-reviewed.", true},
+	{"tickets", "/tickets [@agent]", "Open tickets, what each is waiting on, and who has it.", false},
+	{"ticket", "/ticket @agent <what to do>", "Give an agent a ticket. It starts when the agent is free.", true},
+	{"org", "/org", "The org chart: who reports to whom.", false},
 	{"missions", "/missions", "Every mission and where it stands.", false},
 	{"approve", "/approve <artifact-id> [note]", "Approve a mission artifact awaiting review.", true},
 	{"reject", "/reject <artifact-id> [note]", "Reject a mission artifact.", true},
@@ -139,6 +142,12 @@ func (s *Server) runFleetCommand(r *http.Request, name, args string) commandResu
 		return s.cmdLifecycle(r, name, args)
 	case "mission":
 		return s.cmdMission(r, args)
+	case "tickets":
+		return s.cmdTickets(r, args)
+	case "ticket":
+		return s.cmdTicket(r, args)
+	case "org":
+		return s.cmdOrg(r)
 	case "missions":
 		return s.cmdMissions(ctx)
 	case "approve", "reject":
