@@ -223,6 +223,13 @@ class Parser:
 
 def claude_invocation(job: dict[str, Any], base: list[str]) -> Invocation:
     args = base + ["--print", "--output-format", "stream-json", "--verbose"]
+    # Not the operator's own user settings. Theirs are for them at their
+    # desk: an additionalDirectories entry there let an "edits" agent write
+    # well outside the folder it was given, and their hooks, allow rules and
+    # MCP servers would come along too. The folder's own .claude settings
+    # still apply. AGENTFLEET_CLAUDE_USER_SETTINGS=1 keeps the user's.
+    if os.environ.get("AGENTFLEET_CLAUDE_USER_SETTINGS") != "1":
+        args += ["--setting-sources", "project,local"]
     if job.get("session_id"):
         args += ["--resume", str(job["session_id"])]
     if job.get("autonomy") == "full":

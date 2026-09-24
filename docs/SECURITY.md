@@ -510,7 +510,14 @@ them.
   sandbox; **full** passes `--dangerously-skip-permissions`,
   `--dangerously-bypass-approvals-and-sandbox` or `--yolo`, and the CLI can
   then do anything your account can. The folder jail does not apply to what
-  the CLI does once started. Each run asks in the host's terminal first
+  the CLI does once started. Claude Code is started without your user-level
+  settings (`--setting-sources project,local`): an `additionalDirectories`
+  entry in `~/.claude/settings.json` let an **edits** agent write outside its
+  folder in testing, and your hooks, allow rules and MCP servers would have
+  come along too. The folder's own `.claude` settings still apply; set
+  `AGENTFLEET_CLAUDE_USER_SETTINGS=1` on the host to keep yours. Codex and
+  Hermes still read their own user configuration; the sandbox mode passed
+  to Codex overrides the one in it. Each run asks in the host's terminal first
   unless the host was started with `--yes`.
 - **Ownership is checked at creation.** An external agent can only be put on
   a device its creator owns, a folder under that device's roots, and a

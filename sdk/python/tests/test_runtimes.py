@@ -104,7 +104,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual((r.session_id, r.cost_usd, r.input_tokens, r.output_tokens, r.cached_tokens), ("sess-new", 0.31, 1200, 90, 5000))
         seen = json.loads((self.work / "claude-args.json").read_text())
         self.assertEqual(seen["prompt"], "You are working on ticket T-7")
-        for flag in ("--print", "--output-format", "stream-json", "--verbose", "--resume", "sess-old", "--dangerously-skip-permissions", "--model", "sonnet"):
+        for flag in ("--print", "--output-format", "stream-json", "--verbose", "--resume", "sess-old", "--dangerously-skip-permissions", "--model", "sonnet",
+                     "--setting-sources", "project,local"):
             self.assertIn(flag, seen["args"])
         self.assertEqual(seen["env_token"], "afr_x")
         self.assertIsNone(seen["nested"], "a parent Claude Code session's variables are stripped")
