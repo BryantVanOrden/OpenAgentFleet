@@ -707,12 +707,28 @@ func (s *Store) CreateAlert(ctx context.Context, a *protocol.Alert) error {
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
 	}
+	// A notification that asks nothing is resolved the moment it is said; it
+	// is still pushed and still in the history. Left open, they crowded the
+	// alerts that do need an answer out of the list.
+	if !a.NeedsReply && informational(a.Kind) && a.ResolvedAt == nil {
+		at := a.CreatedAt
+		a.ResolvedAt = &at
+	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO alerts(id,kind,severity,instance_id,task_id,title,body,screenshot_id,needs_reply,created_at,ticket_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		`INSERT INTO alerts(id,kind,severity,instance_id,task_id,title,body,screenshot_id,needs_reply,created_at,ticket_id,resolved_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		a.ID, string(a.Kind), a.Severity, a.InstanceID, a.TaskID, a.Title, a.Body,
-		a.ScreenshotID, a.NeedsReply, a.CreatedAt, a.TicketID)
+		a.ScreenshotID, a.NeedsReply, a.CreatedAt, a.TicketID, a.ResolvedAt)
 	return norm(err)
+}
+
+// informational kinds report something that happened; nobody answers them.
+func informational(k protocol.AlertKind) bool {
+	switch k {
+	case protocol.AlertCompleted, protocol.AlertProgress, protocol.AlertFailed:
+		return true
+	}
+	return false
 }
 
 func (s *Store) ResolveAlert(ctx context.Context, id, reply string) error {
