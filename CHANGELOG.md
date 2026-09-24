@@ -44,6 +44,13 @@ semantic versioning.
   webhooks (sync or with a callback).
 - Per-run callback tokens let an external agent comment, hand out work and
   finish its own run.
+- What an agent on your PC makes is shared: the host sends back the text
+  files it created or changed, and the ones its report names, and they are
+  published to the catalog under their path in its folder, so a desktop
+  colleague can `read_work` them.
+- Claude Code runs without your user-level settings, so an
+  `additionalDirectories` entry of yours cannot widen its folder.
+- Chat commands: `/tickets [@agent]`, `/ticket @agent <what to do>`, `/org`.
 
 ### Budgets and trust
 - A monthly ceiling per agent, a warning at a percentage, and a hold at 100%
