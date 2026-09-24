@@ -495,3 +495,32 @@ func TestARunWithNoNodeRunnerIsRefused(t *testing.T) {
 		t.Fatal("a run with nothing wired up to execute a node should be refused")
 	}
 }
+
+// A node runner is told which run and pipeline it is running for: that is
+// what groups a run's stage tickets under one ticket for the run.
+func TestANodeKnowsItsRun(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]RunInfo{}
+	runner := func(ctx context.Context, n protocol.PipelineNode) (string, error) {
+		info, ok := RunFrom(ctx)
+		if !ok {
+			return "", context.Canceled
+		}
+		mu.Lock()
+		seen[n.ID] = info
+		mu.Unlock()
+		return "ok", nil
+	}
+	_, run := saveAndRun(t, protocol.WorkflowPipeline{
+		Name:  "nightly",
+		Nodes: []protocol.PipelineNode{schedNode("a"), schedNode("b")},
+	}, runner)
+	if run.Status != "completed" {
+		t.Fatalf("status %q", run.Status)
+	}
+	for _, id := range []string{"a", "b"} {
+		if seen[id].RunID != run.ID || seen[id].Pipeline != "nightly" {
+			t.Errorf("node %s saw %+v, want run %s of nightly", id, seen[id], run.ID)
+		}
+	}
+}

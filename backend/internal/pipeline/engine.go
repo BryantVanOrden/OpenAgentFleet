@@ -17,6 +17,24 @@ import (
 // The engine's job is the graph.
 type NodeRunner func(ctx context.Context, node protocol.PipelineNode) (string, error)
 
+// RunInfo says which run a node belongs to; a NodeRunner reads it with RunFrom.
+type RunInfo struct {
+	RunID    string
+	Pipeline string
+}
+
+type runKey struct{}
+
+func withRun(ctx context.Context, runID, pipeline string) context.Context {
+	return context.WithValue(ctx, runKey{}, RunInfo{RunID: runID, Pipeline: pipeline})
+}
+
+// RunFrom is the run a node is being run for.
+func RunFrom(ctx context.Context) (RunInfo, bool) {
+	r, ok := ctx.Value(runKey{}).(RunInfo)
+	return r, ok
+}
+
 // Engine executes multi-bot workflow DAG pipelines.
 type Engine struct {
 	mu        sync.RWMutex

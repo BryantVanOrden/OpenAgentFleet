@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -251,51 +250,3 @@ func (s *Server) handleListTelemetryRecords(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, telemetry.GlobalTracker.ListRecords(r.Context(), limit))
 }
 
-// runPipelineNode turns one node into a real task and waits for it.
-//
-// This is what the pipeline engine was missing: it used to sleep half a second
-// per node and record "verified deliverable created" without anything having
-// run, then report the pipeline complete. Reusing the trigger dispatcher means
-// a node that has nothing to run on is an error the operator sees, exactly as
-// it is for a webhook or a cron tick.
-func (s *Server) runPipelineNode(ctx context.Context, node protocol.PipelineNode) (string, error) {
-	task, err := s.dispatchTrigger(ctx, node.InstanceID, node.ArchetypeID,
-		node.GoalTemplate, "pipeline")
-	if err != nil {
-		return "", err
-	}
-
-	// Poll rather than subscribe: a pipeline node is minutes of work, the run
-	// is already asynchronous, and a dropped event would hang the whole graph.
-	const (
-		poll   = 5 * time.Second
-		giveUp = 2 * time.Hour
-	)
-	deadline := time.Now().Add(giveUp)
-	for {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(poll):
-		}
-
-		t, err := s.db.Task(ctx, task.ID)
-		if err != nil {
-			return "", err
-		}
-		switch t.State {
-		case protocol.TaskSucceeded:
-			if t.Result != "" {
-				return t.Result, nil
-			}
-			return "completed", nil
-		case protocol.TaskFailed:
-			return "", fmt.Errorf("%s", firstNonEmptyStr(t.Error, "the task failed"))
-		case protocol.TaskCancelled:
-			return "", errors.New("the task was cancelled")
-		}
-		if time.Now().After(deadline) {
-			return "", errors.New("the node did not finish within two hours")
-		}
-	}
-}

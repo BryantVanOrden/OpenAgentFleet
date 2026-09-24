@@ -286,7 +286,7 @@ func (x *executor) runNode(ctx context.Context, runner NodeRunner, node protocol
 	x.engine.mu.Unlock()
 	x.publishState(node.ID, NodeRunning)
 
-	result, err := runner(ctx, node)
+	result, err := runner(withRun(ctx, x.runID, x.pipeline.Name), node)
 
 	x.mu.Lock()
 	if err != nil {

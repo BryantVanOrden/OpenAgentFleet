@@ -379,7 +379,7 @@ func (c *Coordinator) PublishArtifact(ctx context.Context, swarmID, title, autho
 		reviewers = append(reviewers, m)
 	}
 	start, st := c.start, c.store
-	mission := team.Mission
+	mission, name := team.Mission, team.Name
 	c.mu.Unlock()
 
 	c.persist(ctx, st, swarmID)
@@ -395,7 +395,7 @@ func (c *Coordinator) PublishArtifact(ctx context.Context, swarmID, title, autho
 
 	for _, r := range reviewers {
 		goal := reviewGoal(mission, art, r)
-		taskID, err := start(ctx, r.InstanceID, goal, "swarm-review:"+swarmID)
+		taskID, err := start(ctx, r.InstanceID, goal, "swarm-review:"+name)
 		if err != nil {
 			c.note(ctx, swarmID, "Mission Coordinator", r.InstanceName, "qa",
 				fmt.Sprintf("Could not start review by %s: %s", r.InstanceName, err.Error()))

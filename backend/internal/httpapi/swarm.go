@@ -147,16 +147,11 @@ func (s *Server) handleReviewArtifact(w http.ResponseWriter, r *http.Request) {
 // ever act on -- the same choice the pipeline engine makes.
 func (s *Server) wireSwarms() {
 	globalSwarmCoordinator.Wire(
-		func(ctx context.Context, instanceID, goal, source string) (string, error) {
-			// Instance-pinned, never archetype-resolved: a swarm names the exact
-			// bots that are on the mission, and silently running a member's work
-			// on some other free instance would make the member list a lie.
-			task, err := s.dispatchTrigger(ctx, instanceID, "", goal, source)
-			if err != nil {
-				return "", err
-			}
-			return task.ID, nil
-		},
+		// Instance-pinned, never archetype-resolved: a swarm names the exact
+		// bots that are on the mission, and silently running a member's work
+		// on some other free instance would make the member list a lie. Each
+		// part is a ticket under the mission's (work_tickets.go).
+		s.startMissionWork,
 		func(ctx context.Context, instanceID string) (string, string, error) {
 			inst, err := s.db.Instance(ctx, instanceID)
 			if err != nil {
