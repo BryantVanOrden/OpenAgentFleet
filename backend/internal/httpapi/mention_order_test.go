@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
@@ -196,5 +197,24 @@ func TestBuilderFirstKeepsItsOrder(t *testing.T) {
 	b, tc, a := mentionIndex(msg, "Builder"), mentionIndex(msg, "ToolCheck"), mentionIndex(msg, "Auditor")
 	if !(b < tc && tc < a) {
 		t.Errorf("order wrong: Builder=%d ToolCheck=%d Auditor=%d", b, tc, a)
+	}
+}
+
+// With no chat model, an external agent named in a request claims the part
+// addressed to it in the operator's own words.
+func TestAnExternalAgentClaimsItsPartWithoutAModel(t *testing.T) {
+	in := agents("Claude", "Codex")
+	msg := "Claude writes notes/plan.md with three steps, and Codex reviews it."
+	if got := planWithoutModel(msg, "Claude", in); !strings.HasPrefix(got, "PLAN: writes notes/plan.md") {
+		t.Errorf("Claude claims %q", got)
+	}
+	if got := planWithoutModel(msg, "Codex", in); !strings.HasPrefix(got, "PLAN: reviews it") {
+		t.Errorf("Codex claims %q", got)
+	}
+	if got := planWithoutModel("build me a website", "Claude", in); got != "" {
+		t.Errorf("an agent nobody named claims nothing, got %q", got)
+	}
+	if _, ok := planFrom(planWithoutModel(msg, "Claude", in)); !ok {
+		t.Error("the claim reads as a plan, so it is filed as a ticket")
 	}
 }

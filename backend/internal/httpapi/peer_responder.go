@@ -267,11 +267,25 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 			MaxTokens:       260,
 			Temperature:     0.3,
 		})
+	body := ""
 	if err != nil {
 		s.log.Warn("peer reply failed", "instance", inst.ID, "err", err)
-		return
+	} else {
+		body = strings.TrimSpace(resp.Text)
 	}
-	body := strings.TrimSpace(resp.Text)
+	// An agent that is not a desktop does not need the fleet's model to do
+	// its work, only to say what part it takes. A fleet of Claude Code and
+	// Codex agents with no model connected could take tickets but not a
+	// request in chat. Named in the request, the agent's part is the
+	// operator's own words for it.
+	if body == "" && inst.AgentKindOf().External() && isOperator(msg) {
+		if instances, lerr := s.db.ListInstances(ctx); lerr == nil {
+			body = planWithoutModel(msg.Content, inst.Name, instances)
+		}
+		if body == "" {
+			s.hintNoChatModel(ctx, msg)
+		}
+	}
 	if body == "" {
 		return
 	}
@@ -334,6 +348,32 @@ func (s *Server) replyToPeer(ctx context.Context, inst protocol.Instance, msg pr
 	if isOperator(msg) {
 		s.waitForHandoff(ctx, inst, msg)
 	}
+}
+
+// planWithoutModel is an external agent's claim when there is no model to
+// write one: the part of the request addressed to it by name, or nothing.
+func planWithoutModel(content, name string, instances []protocol.Instance) string {
+	part := strings.TrimSpace(assignmentFor(content, name, instances))
+	if part == "" {
+		return ""
+	}
+	return planMarker + " " + part
+}
+
+var noModelHinted sync.Map // message id -> struct{}
+
+// hintNoChatModel says once per request why nobody picked it up.
+func (s *Server) hintNoChatModel(ctx context.Context, msg protocol.PeerMessage) {
+	if _, dup := noModelHinted.LoadOrStore(msg.ID, struct{}{}); dup {
+		return
+	}
+	conv := msg.ConversationID
+	if conv == "" {
+		conv = protocol.BroadcastConversationID
+	}
+	vault.GlobalBus.SendMessageIn(ctx, conv, "", "Oaf", "broadcast", peerSystemKind,
+		"No chat model is connected, so the fleet cannot divide this up by itself. Name who does what -- "+
+			"\"Claude writes it, Codex reviews it\" -- or hand it out with `/ticket @agent <what to do>`.", nil)
 }
 
 // planMarker is how an agent says it was asked to do something rather than
