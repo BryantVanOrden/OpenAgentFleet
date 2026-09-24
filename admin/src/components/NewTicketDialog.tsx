@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type OrgNode, type TicketView } from "../lib/api";
+import { renderCodeSpans } from "../lib/markdown";
 import { isOpenTicket } from "../lib/tickets";
-import { Button, ErrorNote, Field, Modal, cx, inputClass } from "./ui";
+import { Button, ErrorNote, Field, Modal, ModalFooter, cx, inputClass } from "./ui";
 
 /**
  * File a ticket by hand. Most tickets come from chat — the fleet splits a
@@ -31,6 +32,7 @@ export default function NewTicketDialog({
   const [reviewer, setReviewer] = useState("");
   const [verifier, setVerifier] = useState("");
   const [budget, setBudget] = useState("");
+  const [later, setLater] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +47,7 @@ export default function NewTicketDialog({
     setReviewer("");
     setVerifier("");
     setBudget("");
+    setLater(false);
     setError(null);
   }, [open, defaultParent]);
 
@@ -94,6 +97,7 @@ export default function NewTicketDialog({
         reviewer_id: reviewer || undefined,
         verifier_id: verifier || undefined,
         budget_usd: b || undefined,
+        status: later ? "backlog" : "todo",
       });
       onCreated(t);
       onClose();
@@ -186,7 +190,7 @@ export default function NewTicketDialog({
                         }}
                       />
                       <span className="font-mono text-xs text-ink-400">{t.ref}</span>
-                      <span className="truncate text-ink-200">{t.title}</span>
+                      <span className="truncate text-ink-200">{renderCodeSpans(t.title)}</span>
                     </label>
                   </li>
                 ))}
@@ -208,16 +212,48 @@ export default function NewTicketDialog({
           />
         </Field>
 
+        <fieldset>
+          <legend className="mb-1.5 text-xs font-medium tracking-wide text-ink-300 uppercase">When</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              [
+                [false, "To do", assignee ? "Starts as soon as it can." : "Waits for an assignee."],
+                [true, "Backlog", "Parked: nothing starts it. You are reminded if it sits with nothing arranged."],
+              ] as const
+            ).map(([v, label, hint]) => (
+              <label
+                key={label}
+                className={cx(
+                  "flex cursor-pointer items-start gap-2.5 rounded-lg p-2.5 ring-1 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-live-500",
+                  later === v ? "bg-live-500/10 ring-live-500" : "ring-ink-700 hover:ring-ink-600",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="new-ticket-when"
+                  className="mt-0.5 accent-live-500"
+                  checked={later === v}
+                  onChange={() => setLater(v)}
+                />
+                <span>
+                  <span className="block text-sm text-ink-100">{label}</span>
+                  <span className="block text-xs text-ink-400">{hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <ErrorNote error={error} onDismiss={() => setError(null)} />
 
-        <div className="flex justify-end gap-2">
+        <ModalFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !title.trim()}>
-            {busy ? "Creating…" : "Create ticket"}
+            {busy ? "Creating…" : later ? "Add to backlog" : "Create ticket"}
           </Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );

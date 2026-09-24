@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { api, type FleetTemplate, type ImportResult } from "../lib/api";
+import { createdKinds } from "../lib/fleetTemplate";
 import { toast } from "./Toasts";
 import { Button, Card, ErrorNote, cx } from "./ui";
 
@@ -152,14 +153,26 @@ export default function FleetTemplateCard() {
                   {template.name ? ` · ${template.name}` : ""}
                 </span>
               </p>
-              <span className="rounded bg-cool-500/12 px-1.5 py-px text-[10px] font-semibold tracking-wide text-cool-500 uppercase">
+              <span className="shrink-0 rounded bg-cool-500/12 px-1.5 py-px text-[10px] font-semibold tracking-wide whitespace-nowrap text-cool-500 uppercase">
                 Dry run
               </span>
             </div>
             {busy && !preview ? (
               <p className="text-xs text-ink-400">Checking what would happen…</p>
             ) : preview ? (
-              <ResultList result={preview} dry />
+              <>
+                <ResultList result={preview} dry />
+                {(() => {
+                  // Desktops are real machines: say so before the button.
+                  const desktops = createdKinds(template, preview).filter((a) => a.kind === "desktop").length;
+                  return desktops > 0 ? (
+                    <p className="mt-2 rounded-lg bg-warn-500/10 px-3 py-2 text-xs text-warn-500 ring-1 ring-inset ring-warn-500/25">
+                      {desktops === 1 ? "One of them is a desktop" : `${desktops} of them are desktops`}: importing
+                      provisions {desktops === 1 ? "a machine" : `${desktops} machines`} on this fleet.
+                    </p>
+                  ) : null;
+                })()}
+              </>
             ) : null}
             <div className="mt-3 flex justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={reset} disabled={busy}>

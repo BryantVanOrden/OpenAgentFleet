@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { agentKindOf, api, type OrgChart, type OrgNode, type TierProfile } from "../lib/api";
 import { useEvents } from "../lib/events";
 import { elbowPath, fitView, isInSubtree, layoutTree } from "../lib/orgLayout";
+import { usePointerDrag } from "../lib/pointerDrag";
+import { useMediaQuery } from "../lib/useMedia";
 import { agentStatus, budgetFraction, money, workLink, type AgentTone } from "../lib/tickets";
 import { AgentAvatar, KindBadge } from "../components/AgentKind";
 import AddAgentDialog from "../components/AddAgentDialog";
@@ -54,8 +56,7 @@ export default function Org({ role }: { role: string }) {
   const [adding, setAdding] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [tiers, setTiers] = useState<TierProfile[]>([]);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const coarse = useMediaQuery("(pointer: coarse)");
   const canEdit = role === "admin" || role === "operator";
 
   const load = useCallback(async () => {
@@ -113,8 +114,18 @@ export default function Org({ role }: { role: string }) {
   const fit = useCallback(() => {
     const el = viewport.current;
     if (!el) return;
-    setView(fitView(layout.width, layout.height, el.clientWidth, el.clientHeight, 48, 1, MIN_SCALE));
-  }, [layout.width, layout.height]);
+    const v = fitView(layout.width, layout.height, el.clientWidth, el.clientHeight, 48, 1, MIN_SCALE);
+    // On a narrow screen a whole chart fits only at a size nobody can read;
+    // start readable, with you at the top in the middle, and let it pan.
+    const readable = 0.62;
+    if (v.scale < readable && el.clientWidth < 640) {
+      const you = layout.nodes[YOU];
+      const cxYou = you ? you.x + CARD_W / 2 : layout.width / 2;
+      setView({ scale: readable, x: el.clientWidth / 2 - cxYou * readable, y: 24 });
+      return;
+    }
+    setView(v);
+  }, [layout.width, layout.height, layout.nodes]);
 
   // Fit once, when the chart first has something in it.
   useLayoutEffect(() => {
@@ -151,18 +162,33 @@ export default function Org({ role }: { role: string }) {
   }, [zoomAt]);
 
   // Pointer pan on the background, and two-finger pinch on touch screens.
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  // A finger on a card pans too, until it has been held still long enough to
+  // pick the card up (see the drag below); a mouse on a card drags it.
+  // Capture is taken only once the pointer moves, so a tap on a card is
+  // still a click on the card.
+  const pointers = useRef(new Map<number, { x: number; y: number; moved: boolean }>());
   const [panning, setPanning] = useState(false);
+  const draggingRef = useRef(false);
   const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("[data-org-card],button,a,input,select,textarea")) return;
-    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setPanning(true);
+    const target = e.target as HTMLElement;
+    if (target.closest("button,a,input,select,textarea")) return;
+    if (target.closest("[data-org-card]") && e.pointerType !== "touch") return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: false });
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const map = pointers.current;
     const prev = map.get(e.pointerId);
-    if (!prev) return;
+    if (!prev || draggingRef.current) return;
+    if (!prev.moved) {
+      if (Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 4 && map.size < 2) return;
+      prev.moved = true;
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* the pointer is already gone; the pan still follows the moves */
+      }
+      setPanning(true);
+    }
     if (map.size === 2) {
       const [a, b] = [...map.entries()];
       const other = a[0] === e.pointerId ? b[1] : a[1];
@@ -175,7 +201,7 @@ export default function Org({ role }: { role: string }) {
     } else {
       setView((v) => ({ ...v, x: v.x + e.clientX - prev.x, y: v.y + e.clientY - prev.y }));
     }
-    map.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    map.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: true });
   };
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
@@ -197,10 +223,6 @@ export default function Org({ role }: { role: string }) {
   };
 
   // --------------------------------------------------------- reparenting ---
-
-  /** Whether dropping the dragged card on `target` would make a loop. */
-  const wouldLoop = (target: string) =>
-    !!dragId && target !== YOU && isInSubtree(parents, target, dragId);
 
   const reparent = async (id: string, target: string) => {
     const agent = byId.get(id);
@@ -227,29 +249,50 @@ export default function Org({ role }: { role: string }) {
     }
   };
 
-  const dropProps = (target: string) =>
-    canEdit
-      ? {
-          onDragOver: (e: React.DragEvent) => {
-            if (!dragId || dragId === target) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            if (overId !== target) setOverId(target);
-          },
-          onDragLeave: (e: React.DragEvent) => {
-            if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
-              setOverId((o) => (o === target ? null : o));
-            }
-          },
-          onDrop: (e: React.DragEvent) => {
-            e.preventDefault();
-            const id = e.dataTransfer.getData("text/x-agent-id") || dragId;
-            setOverId(null);
-            setDragId(null);
-            if (id && id !== target) void reparent(id, target);
-          },
-        }
-      : {};
+  /** Whether `id` reporting to `target` would make a loop: the target is the
+   *  agent itself or somewhere under it. */
+  const wouldLoop = (id: string, target: string) => target !== YOU && isInSubtree(parents, target, id);
+
+  // Re-parenting by drag, with a mouse, a pen or a long-pressed finger. The
+  // chart pans itself when the card is carried to an edge.
+  const drag = usePointerDrag({
+    enabled: canEdit,
+    onStart: () => {
+      draggingRef.current = true;
+      pointers.current.clear();
+      setPanning(false);
+    },
+    onDrop: (id, target) => {
+      draggingRef.current = false;
+      const agent = byId.get(id);
+      if (!agent || target === id) return;
+      if (wouldLoop(id, target)) {
+        const other = byId.get(target)?.name ?? "that agent";
+        toast({
+          tone: "bad",
+          title: `${agent.name} cannot report to ${other}`,
+          body: `${other} already reports to ${agent.name}, directly or through someone else: that would be a loop.`,
+        });
+        return;
+      }
+      void reparent(id, target);
+    },
+    edge: {
+      el: () => viewport.current,
+      scroll: (dx, dy) => setView((v) => ({ ...v, x: v.x - dx, y: v.y - dy })),
+    },
+  });
+  useEffect(() => {
+    if (!drag.drag) draggingRef.current = false;
+  }, [drag.drag]);
+  const dragId = drag.drag?.id ?? null;
+  const overId = drag.drag?.over ?? null;
+  const dragged = dragId ? byId.get(dragId) : undefined;
+  const overLoop = !!dragId && !!overId && overId !== dragId && wouldLoop(dragId, overId);
+  const overSame =
+    !!dragged &&
+    !!overId &&
+    (overId === YOU ? !dragged.reports_to || !byId.has(dragged.reports_to) : dragged.reports_to === overId);
 
   // --------------------------------------------------------------- render ---
 
@@ -280,12 +323,18 @@ export default function Org({ role }: { role: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-800 px-6 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-800 px-4 py-3 sm:px-6 sm:py-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Org</h1>
-          <p className="text-sm text-ink-400">
+          <p className="hidden text-sm text-ink-400 sm:block">
             Who reports to whom, and what each agent is doing.{" "}
-            {canEdit && <span className="hidden md:inline">Drag a card onto another to change its manager.</span>}
+            {canEdit && (
+              <span className="hidden md:inline">
+                {coarse
+                  ? "Hold a card, then drag it onto another to change its manager."
+                  : "Drag a card onto another to change its manager."}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -306,7 +355,7 @@ export default function Org({ role }: { role: string }) {
       </header>
 
       {error && (
-        <div className="px-6 pt-3">
+        <div className="px-4 pt-3 sm:px-6">
           <ErrorNote error={error} onDismiss={() => setError(null)} />
         </div>
       )}
@@ -316,7 +365,7 @@ export default function Org({ role }: { role: string }) {
           ref={viewport}
           tabIndex={0}
           role="application"
-          aria-label="Org chart. Drag to pan, plus and minus to zoom, 0 to fit."
+          aria-label="Org chart. Drag to pan, plus and minus to zoom, 0 to fit. Open an agent to change who it reports to."
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -383,14 +432,15 @@ export default function Org({ role }: { role: string }) {
               {Object.values(layout.nodes).map((p) => {
                 const style = { left: p.x, top: p.y, width: CARD_W, height: CARD_H };
                 const isOver = overId === p.id && dragId !== p.id;
-                const loop = isOver && wouldLoop(p.id);
+                const loop = isOver && overLoop;
                 if (p.id === YOU) {
                   return (
-                    <div key={YOU} className="absolute" style={style} {...dropProps(YOU)}>
+                    <div key={YOU} className="absolute" style={style} data-drop={YOU}>
                       <YouCard
                         agents={nodes.length}
                         open={openTotal}
                         over={isOver}
+                        same={isOver && overSame}
                         onAdd={canEdit ? () => setAdding(true) : undefined}
                       />
                     </div>
@@ -398,7 +448,7 @@ export default function Org({ role }: { role: string }) {
                 }
                 const n = byId.get(p.id)!;
                 return (
-                  <div key={p.id} className="absolute" style={style} {...dropProps(p.id)}>
+                  <div key={p.id} className="absolute" style={style} data-drop={p.id}>
                     <AgentCard
                       node={n}
                       selected={selectedId === n.id}
@@ -406,17 +456,10 @@ export default function Org({ role }: { role: string }) {
                       dragging={dragId === n.id}
                       over={isOver}
                       loop={loop}
+                      same={isOver && overSame}
                       managerName={n.reports_to ? byId.get(n.reports_to)?.name : undefined}
                       onOpen={() => select(n.id)}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/x-agent-id", n.id);
-                        e.dataTransfer.effectAllowed = "move";
-                        setDragId(n.id);
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setOverId(null);
-                      }}
+                      dragProps={canEdit ? drag.bind(n.id) : undefined}
                     />
                   </div>
                 );
@@ -435,25 +478,53 @@ export default function Org({ role }: { role: string }) {
         </div>
 
         {/* Zoom controls */}
-        <div className="absolute bottom-4 left-4 flex items-center gap-1 rounded-xl bg-ink-900/95 p-1 shadow-lg shadow-black/20 ring-1 ring-ink-700">
-          <Button size="sm" variant="ghost" onClick={() => zoomAt(1 / 1.2)} aria-label="Zoom out">
+        <div
+          className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-xl bg-ink-900/95 p-1 shadow-lg shadow-black/20 ring-1 ring-ink-700 sm:bottom-4 sm:left-4"
+          role="group"
+          aria-label="Zoom"
+        >
+          <Button size="sm" variant="ghost" className="min-w-8" onClick={() => zoomAt(1 / 1.2)} aria-label="Zoom out" title="Zoom out (−)">
             −
           </Button>
           <button
             className="w-12 rounded-md py-1 text-center font-mono text-[11px] text-ink-300 tabular-nums hover:bg-ink-800 hover:text-ink-100"
-            onClick={() => setView((v) => ({ ...v, scale: 1 }))}
+            onClick={() => zoomAt(1 / view.scale)}
             title="Actual size"
+            aria-label={`Zoom ${Math.round(view.scale * 100)}%, reset to 100%`}
           >
             {Math.round(view.scale * 100)}%
           </button>
-          <Button size="sm" variant="ghost" onClick={() => zoomAt(1.2)} aria-label="Zoom in">
+          <Button size="sm" variant="ghost" className="min-w-8" onClick={() => zoomAt(1.2)} aria-label="Zoom in" title="Zoom in (+)">
             +
           </Button>
-          <span className="mx-0.5 h-4 w-px bg-ink-700" />
-          <Button size="sm" variant="ghost" onClick={fit}>
+          <span className="mx-0.5 h-4 w-px bg-ink-700" aria-hidden />
+          <Button size="sm" variant="ghost" onClick={fit} title="Fit the chart (0)">
             Fit
           </Button>
         </div>
+
+        {/* While a card is carried: where it would go, in words. */}
+        {dragged && (
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3">
+            <p
+              className={cx(
+                "rounded-full px-3 py-1 text-xs font-medium shadow-lg ring-1",
+                overLoop
+                  ? "bg-bad-500/15 text-bad-500 ring-bad-500/40"
+                  : overId && !overSame
+                    ? "bg-live-500/15 text-ink-100 ring-live-500/50"
+                    : "bg-ink-900 text-ink-300 ring-ink-700",
+              )}
+              role="status"
+            >
+              {overLoop
+                ? `${byId.get(overId!)?.name ?? "That agent"} reports to ${dragged.name}: that would be a loop`
+                : overId && !overSame
+                  ? `${dragged.name} will report to ${overId === YOU ? "you" : byId.get(overId)?.name}`
+                  : `Drop ${dragged.name} on its new manager · Esc to cancel`}
+            </p>
+          </div>
+        )}
 
         {selected && (
           <div className="absolute inset-y-0 right-0 z-20 flex max-w-full shadow-2xl shadow-black/30">
@@ -481,6 +552,20 @@ export default function Org({ role }: { role: string }) {
         }}
         onDesktop={() => void openLaunch()}
       />
+      {dragged && (
+        <div
+          ref={drag.ghostRef}
+          className={cx(
+            "pointer-events-none fixed top-0 left-0 z-[60] flex items-center gap-2 rounded-xl bg-ink-900 py-1.5 pr-3 pl-1.5 shadow-2xl shadow-black/40 ring-2",
+            overLoop ? "ring-bad-500" : "ring-live-500",
+          )}
+          style={{ transform: "translate(-9999px, -9999px)" }}
+          aria-hidden
+        >
+          <AgentAvatar name={dragged.name} kind={agentKindOf(dragged)} size="sm" />
+          <span className="text-sm font-medium text-ink-100">{dragged.name}</span>
+        </div>
+      )}
       <QuickLaunch
         open={launching}
         tiers={tiers}
@@ -499,18 +584,21 @@ function YouCard({
   agents,
   open,
   over,
+  same,
   onAdd,
 }: {
   agents: number;
   open: number;
   over: boolean;
+  /** Carrying an agent that already reports here. */
+  same?: boolean;
   onAdd?: () => void;
 }) {
   return (
     <div
       className={cx(
         "flex h-full flex-col justify-between rounded-2xl p-3.5 ring-1 transition-[box-shadow,background-color]",
-        over
+        over && !same
           ? "bg-live-500/10 ring-2 ring-live-500 shadow-[0_0_0_6px_var(--accent-soft)]"
           : "bg-ink-900 ring-ink-600 shadow-lg shadow-black/10",
       )}
@@ -529,7 +617,7 @@ function YouCard({
           {agents} agent{agents === 1 ? "" : "s"} · {open} open ticket{open === 1 ? "" : "s"}
         </span>
         {over ? (
-          <span className="font-medium text-live-500">Reports to you</span>
+          <span className="font-medium text-live-500">{same ? "Already reports to you" : "Report to you"}</span>
         ) : (
           onAdd && (
             <button className="text-live-500 hover:underline" onClick={onAdd}>
@@ -549,10 +637,10 @@ function AgentCard({
   dragging,
   over,
   loop,
+  same,
   managerName,
   onOpen,
-  onDragStart,
-  onDragEnd,
+  dragProps,
 }: {
   node: OrgNode;
   selected: boolean;
@@ -560,10 +648,11 @@ function AgentCard({
   dragging: boolean;
   over: boolean;
   loop: boolean;
+  /** Carrying an agent that already reports to this one. */
+  same?: boolean;
   managerName?: string;
   onOpen: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
+  dragProps?: { onPointerDown: (e: React.PointerEvent) => void };
 }) {
   const kind = agentKindOf(node);
   const status = agentStatus(node);
@@ -575,9 +664,7 @@ function AgentCard({
       data-org-card
       role="button"
       tabIndex={0}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      {...dragProps}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -589,10 +676,12 @@ function AgentCard({
         managerName ? `, reports to ${managerName}` : ""
       }`}
       className={cx(
-        "group relative flex h-full cursor-pointer flex-col rounded-2xl bg-ink-900 p-3 text-left transition-[box-shadow,opacity,transform] duration-150",
-        "shadow-lg shadow-black/10 hover:-translate-y-px",
+        "group relative flex h-full flex-col rounded-2xl bg-ink-900 p-3 text-left transition-[box-shadow,opacity,transform] duration-150 select-none [-webkit-touch-callout:none]",
+        "shadow-lg shadow-black/10 hover:-translate-y-px motion-reduce:hover:translate-y-0",
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         dragging && "opacity-40",
-        over && !loop && "ring-2 ring-live-500 shadow-[0_0_0_6px_var(--accent-soft)]",
+        over && !loop && !same && "ring-2 ring-live-500 shadow-[0_0_0_6px_var(--accent-soft)]",
+        over && same && "ring-2 ring-ink-500",
         over && loop && "ring-2 ring-bad-500 ring-offset-0",
         !over && (selected ? "ring-2 ring-live-500/70" : held ? "ring-1 ring-warn-500/60" : "ring-1 ring-ink-700 hover:ring-ink-600"),
       )}
@@ -680,10 +769,10 @@ function AgentCard({
         <span
           className={cx(
             "absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap shadow",
-            loop ? "bg-bad-500 text-ink-950" : "bg-live-500 text-ink-950",
+            loop ? "bg-bad-500 text-white" : same ? "bg-ink-700 text-ink-100" : "bg-live-500 text-ink-950",
           )}
         >
-          {loop ? "Would make a loop" : "Report here"}
+          {loop ? "Would make a loop" : same ? "Already its manager" : "Report here"}
         </span>
       )}
     </div>

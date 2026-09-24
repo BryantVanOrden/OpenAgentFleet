@@ -25,6 +25,7 @@ export default function Home({ role }: { role: string }) {
   const navigate = useNavigate();
 
   const [sessions, setSessions] = useState<OafSession[]>([]);
+  const [railOpen, setRailOpen] = useState(false);
   const [devices, setDevices] = useState<OafDevice[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [threads, setThreads] = useState<Conversation[]>([]);
@@ -129,24 +130,52 @@ export default function Home({ role }: { role: string }) {
   };
 
   const current = pick.type === "session" ? sessions.find((s) => s.id === pick.id) : undefined;
+  const rail = (
+    <SessionRail
+      pick={pick}
+      sessions={sessions}
+      threads={threads}
+      instances={instances}
+      readOnly={readOnly}
+      onPick={(p) => {
+        setRailOpen(false);
+        choose(p);
+      }}
+      onNew={() => {
+        setRailOpen(false);
+        void newSession();
+      }}
+      onRename={(id, name) => void rename(id, name)}
+      onDelete={(id) => setConfirmDelete(sessions.find((s) => s.id === id) ?? null)}
+      onPin={(id, p) => void pin(id, p)}
+    />
+  );
   const thread = pick.type === "thread" ? threads.find((c) => c.id === pick.id) : undefined;
   const nameOf = (id: string) => (id === "operator" ? "You" : instances.find((i) => i.id === id)?.name ?? id.slice(0, 8));
 
   return (
     <div className="flex h-full">
-      <SessionRail
-        pick={pick}
-        sessions={sessions}
-        threads={threads}
-        instances={instances}
-        readOnly={readOnly}
-        onPick={choose}
-        onNew={() => void newSession()}
-        onRename={(id, name) => void rename(id, name)}
-        onDelete={(id) => setConfirmDelete(sessions.find((s) => s.id === id) ?? null)}
-        onPin={(id, p) => void pin(id, p)}
-      />
+      {/* The chats list is a column from md up; on a phone it slides over. */}
+      <div className="hidden md:flex">{rail}</div>
+      {railOpen && (
+        <div className="fixed inset-0 z-40 flex md:hidden" role="dialog" aria-modal="true" aria-label="Chats">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setRailOpen(false)} />
+          <div className="nav-sheet relative flex h-full max-w-[85vw] bg-ink-900 shadow-2xl">{rail}</div>
+        </div>
+      )}
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-ink-800 px-3 py-1.5 md:hidden">
+          <button
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-ink-200 ring-1 ring-ink-700 hover:bg-ink-800"
+            onClick={() => setRailOpen(true)}
+            aria-label="Show chats"
+          >
+            <span aria-hidden>☰</span> Chats
+          </button>
+          <span className="min-w-0 truncate text-sm text-ink-400">
+            {pick.type === "fleet" ? "Fleet" : pick.type === "session" ? current?.name ?? "Session" : thread?.title || "Thread"}
+          </span>
+        </div>
         {pick.type === "fleet" && <FleetChannel role={role} />}
         {pick.type === "session" &&
           (current ? (

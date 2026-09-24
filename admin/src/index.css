@@ -389,3 +389,35 @@ body * {
     animation: none;
   }
 }
+
+/* Slide-overs: the navigation from the left, a ticket from the right. */
+@keyframes sheet-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes sheet-from-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.nav-sheet {
+  animation: sheet-from-left 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.drawer-sheet {
+  animation: sheet-from-right 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-sheet,
+  .drawer-sheet {
+    animation: none;
+  }
+}

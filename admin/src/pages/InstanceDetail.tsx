@@ -28,7 +28,8 @@ import { useEvents } from "../lib/events";
 import { Markdown } from "../lib/markdown";
 import { speakable } from "../lib/speakable";
 import { toast } from "../components/Toasts";
-import { KIND_META, KindBadge, KindIcon } from "../components/AgentKind";
+import { AgentAvatar, KIND_META, KindBadge } from "../components/AgentKind";
+import { ReportBody } from "../components/TicketBits";
 import {
   Ago,
   Button,
@@ -111,12 +112,13 @@ export default function InstanceDetail({ role }: { role: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center gap-4 border-b border-ink-800 px-6 py-4">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-ink-800 px-4 py-3 sm:px-6 sm:py-4">
         <Link to="/fleet" className="text-sm text-ink-400 hover:text-ink-100">
           ← Fleet
         </Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
+        {external && <AgentAvatar name={instance.name} kind={agentKindOf(instance)} size="lg" />}
+        <div className="min-w-0 flex-1 basis-52">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-lg font-semibold tracking-tight">{instance.name}</h1>
             {external ? (
               <KindBadge kind={agentKindOf(instance)} />
@@ -165,7 +167,7 @@ export default function InstanceDetail({ role }: { role: string }) {
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="min-w-0 flex-1 p-6">
+        <div className="min-w-0 flex-1 p-4 sm:p-6">
           {tab === "desktop" && !external && (
             <DesktopPane
               instance={instance}
@@ -175,7 +177,7 @@ export default function InstanceDetail({ role }: { role: string }) {
               onError={setError}
             />
           )}
-          {tab === "activity" && <ActivityPane task={activeTask} steps={steps} />}
+          {tab === "activity" && <ActivityPane task={activeTask} steps={steps} external={external} />}
           {tab === "chat" && <ChatPane instance={instance} readOnly={readOnly} />}
         </div>
 
@@ -1123,6 +1125,10 @@ function ConnectionCard({ instance }: { instance: Instance }) {
             ? "Full — anything inside its folder"
             : "Edits — files, but no commands",
         ],
+        ...(kind === "claude_code"
+          ? ([["Settings", "The folder's .claude only, not your ~/.claude"]] as [string, React.ReactNode][])
+          : []),
+        ["Shares", "Text files it makes, when a run ends"],
       ]
     : [
         [kind === "openclaw" ? "Gateway" : "URL", <span className="font-mono break-all">{conn.url || "—"}</span>],
@@ -1136,9 +1142,7 @@ function ConnectionCard({ instance }: { instance: Instance }) {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <span className={cx("grid size-6 place-items-center rounded-md ring-1 ring-inset", meta.soft, meta.text, meta.ring)}>
-            <KindIcon kind={kind} className="size-3.5" />
-          </span>
+          <AgentAvatar name={instance.name} kind={kind} size="sm" mark />
           Connection
         </span>
       }
@@ -1292,19 +1296,53 @@ function DesktopPane({
 
 // ----------------------------------------------------------------- activity ---
 
-function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] }) {
+function ActivityPane({ task, steps, external }: { task: Task | null; steps: StepRecord[]; external?: boolean }) {
+  const [fullGoal, setFullGoal] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  // Follow new steps inside the list only: scrollIntoView would also scroll
+  // the page, pulling the run's header out of sight.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    const list = endRef.current?.parentElement;
+    if (list) list.scrollTop = list.scrollHeight;
   }, [steps.length]);
 
   if (!task) {
-    return <Empty title="No runs yet" hint="Assign a task and its reasoning will appear here." />;
+    return (
+      <Empty
+        title="No runs yet"
+        hint={
+          external
+            ? "It works from tickets. Assign it one on the Work board, or name it in chat, and each run's progress appears here."
+            : "Assign a task and its reasoning will appear here."
+        }
+      />
+    );
   }
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <Card title={`Run — ${task.goal}`} action={<StateBadge state={task.state} live={task.state === "running"} />}>
+      <Card
+        title={
+          // An external run's goal is its whole brief; the first lines say
+          // what it is, the rest is there on asking.
+          <span className="block">
+            <span className={cx("font-semibold whitespace-pre-line", fullGoal ? "block" : "line-clamp-2")}>
+              Run — {task.goal}
+            </span>
+            {task.goal.length > 160 && (
+              <button
+                type="button"
+                className="mt-0.5 text-xs font-normal text-live-500 hover:underline"
+                onClick={() => setFullGoal((v) => !v)}
+                aria-expanded={fullGoal}
+              >
+                {fullGoal ? "Show less" : "Show the whole brief"}
+              </button>
+            )}
+          </span>
+        }
+        action={<StateBadge state={task.state} live={task.state === "running"} />}
+      >
         <div className="grid grid-cols-3 gap-4 font-mono text-xs text-ink-400">
           <div>
             step {task.step} / {task.max_steps}
@@ -1318,7 +1356,11 @@ function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] 
           </div>
         </div>
         {task.error && <p className="mt-3 text-xs text-bad-500">{task.error}</p>}
-        {task.result && <p className="mt-3 text-xs text-good-500">{task.result}</p>}
+        {task.result && (
+          <div className="mt-3 max-h-72 overflow-y-auto rounded-lg bg-good-500/5 px-3 py-2 ring-1 ring-inset ring-good-500/20">
+            <ReportBody text={task.result} className="text-sm text-ink-200 select-text" />
+          </div>
+        )}
       </Card>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -1340,7 +1382,7 @@ function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] 
             key={step.id}
             className="flex gap-3 rounded-2xl bg-ink-900 p-3 ring-1 ring-inset ring-ink-800 transition-colors hover:ring-ink-700"
           >
-            {step.observation_key ? (
+            {!step.observation_key && external ? null : step.observation_key ? (
               <a
                 href={artifactUrl(step.observation_key)}
                 target="_blank"
@@ -1385,7 +1427,7 @@ function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] 
                   {(step.duration_ms / 1000).toFixed(1)}s
                 </span>
               </div>
-              {step.action.thought && (
+              {step.action.thought && !sameText(step.action.thought, step.outcome) && (
                 <p className="mt-1 text-sm text-ink-200 italic">“{step.action.thought}”</p>
               )}
               <p
@@ -1405,6 +1447,13 @@ function ActivityPane({ task, steps }: { task: Task | null; steps: StepRecord[] 
       </div>
     </div>
   );
+}
+
+/** An external agent's progress line is both the step's thought and its
+ *  outcome (the thought clipped shorter); showing both says it twice. */
+function sameText(thought: string, outcome: string): boolean {
+  const a = thought.replace(/…$/, "").trim();
+  return !!a && outcome.trim().startsWith(a.slice(0, 200));
 }
 
 // --------------------------------------------------------------------- chat ---

@@ -11,19 +11,29 @@ import {
   type TicketView,
 } from "../lib/api";
 import { useEvents } from "../lib/events";
-import { Markdown } from "../lib/markdown";
-import { BOARD_COLUMNS, isOpenTicket, money, workLink } from "../lib/tickets";
+import { Markdown, renderCodeSpans } from "../lib/markdown";
+import { BOARD_COLUMNS, isOpenTicket, money, parsePublished, reopenTargets, workLink } from "../lib/tickets";
 import { AgentAvatar } from "./AgentKind";
-import { StatusPill, TicketKindBadge, VerdictChip } from "./TicketBits";
+import {
+  CancelTicketConfirm,
+  ReportBody,
+  StatusPill,
+  TicketKindBadge,
+  VerdictChip,
+  WorkFileLink,
+  cancelNeedsConfirm,
+} from "./TicketBits";
 import { toast } from "./Toasts";
 import {
   Ago,
   Button,
   Confirm,
   ErrorNote,
+  Menu,
   PromptModal,
   SkeletonRows,
   StateBadge,
+  bytes,
   cx,
   inputClass,
 } from "./ui";
@@ -55,6 +65,13 @@ export default function TicketDrawer({
   const [saving, setSaving] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  // Focus moves into the drawer when it opens, so the keyboard is where the
+  // eyes are; Escape (below) closes it.
+  const sheetRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    sheetRef.current?.focus({ preventScroll: true });
+  }, []);
   const canEdit = role === "admin" || role === "operator";
 
   const load = useCallback(async () => {
@@ -79,13 +96,13 @@ export default function TicketDrawer({
   // Escape closes the drawer — unless a dialog over it is open, or the key
   // was meant for a field being edited.
   useEffect(() => {
-    if (reopening || deleting) return;
+    if (reopening || deleting || confirmCancel) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !(e.target as HTMLElement).closest?.("input,textarea,select")) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, reopening, deleting]);
+  }, [onClose, reopening, deleting, confirmCancel]);
 
   const debounce = useRef<number | undefined>(undefined);
   useEvents(undefined, (e) => {
@@ -114,36 +131,86 @@ export default function TicketDrawer({
     }
   };
 
+  const canReopen = !!t && (t.status === "done" || t.status === "cancelled" || t.status === "in_review" || t.status === "blocked");
+  const reopenParts = t ? reopenTargets(t, detail?.children ?? []) : [];
+  const unassigned = !!t && !t.assignee_id && !t.assignee_user_id;
+
+  const setStatus = (status: TicketStatus) => {
+    if (!t || status === t.status) return;
+    if (status === "cancelled" && cancelNeedsConfirm(t, tickets.some((x) => x.id === t.id) ? tickets : [t, ...tickets])) {
+      setConfirmCancel(true);
+      return;
+    }
+    void patch({ status });
+  };
+
   return (
+    // A drawer beside the board from sm up; on a phone, the whole screen.
     <div className="fixed inset-0 z-40 flex justify-end" role="presentation">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
       <aside
-        className="relative flex h-full w-full max-w-[640px] flex-col bg-ink-900 shadow-2xl shadow-black/40 ring-1 ring-ink-700"
+        ref={sheetRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        className="drawer-sheet relative outline-none flex h-full w-full flex-col bg-ink-900 shadow-2xl shadow-black/40 ring-1 ring-ink-700 sm:max-w-[640px]"
         aria-label={t ? `${t.ref} ${t.title}` : "Ticket"}
       >
-        <header className="flex items-center gap-2 border-b border-ink-800 px-5 py-3">
-          {t ? (
-            <>
-              <span className="font-mono text-sm font-semibold text-ink-200">{t.ref}</span>
-              <StatusPill status={t.status} />
-              <TicketKindBadge kind={t.kind} />
-              <VerdictChip verdict={t.verdict} />
-            </>
-          ) : (
-            <span className="font-mono text-sm text-ink-400">{refOrId}</span>
-          )}
-          <div className="ml-auto flex items-center gap-1.5">
-            {t && canEdit && (
+        <header className="flex items-center gap-2 border-b border-ink-800 py-2.5 pr-2 pl-4 sm:py-3 sm:pr-3 sm:pl-5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            {t ? (
               <>
-                {(t.status === "done" || t.status === "cancelled" || t.status === "in_review" || t.status === "blocked") && (
-                  <Button size="sm" onClick={() => setReopening(true)}>
-                    Reopen
-                  </Button>
-                )}
-                <Button size="sm" variant="danger" onClick={() => setDeleting(true)}>
-                  Delete
-                </Button>
+                <span className="font-mono text-sm font-semibold text-ink-200">{t.ref}</span>
+                <StatusPill status={t.status} />
+                <TicketKindBadge kind={t.kind} />
+                <VerdictChip verdict={t.verdict} />
               </>
+            ) : (
+              <span className="font-mono text-sm text-ink-400">{refOrId}</span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {t && canEdit && canReopen && (
+              <Button
+                size="sm"
+                onClick={() => setReopening(true)}
+                title={
+                  unassigned && reopenParts.length
+                    ? `Nobody is assigned ${t.ref}: its finished parts go back instead`
+                    : undefined
+                }
+              >
+                {unassigned && reopenParts.length ? "Reopen parts" : "Reopen"}
+              </Button>
+            )}
+            {t && canEdit && (
+              <Menu
+                button={
+                  <Button size="sm" variant="ghost" aria-label="More actions" title="More actions">
+                    ⋯
+                  </Button>
+                }
+                items={[
+                  {
+                    label: "Copy link",
+                    hint: "A link to this ticket on the board",
+                    onClick: () => {
+                      const url = `${window.location.origin}${workLink(t.ref)}`;
+                      void navigator.clipboard?.writeText(url).then(
+                        () => toast({ tone: "good", title: "Link copied" }),
+                        () => undefined,
+                      );
+                    },
+                  },
+                  { divider: true },
+                  {
+                    label: "Delete ticket…",
+                    hint: "Removes it and its thread",
+                    danger: true,
+                    onClick: () => setDeleting(true),
+                  },
+                ]}
+              />
             )}
             <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close ticket">
               ✕
@@ -153,18 +220,21 @@ export default function TicketDrawer({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error && (
-            <div className="px-5 pt-4">
+            <div className="px-4 pt-4 sm:px-5">
               <ErrorNote error={error} onDismiss={() => setError(null)} />
             </div>
           )}
           {notFound ? (
-            <p className="p-5 text-sm text-ink-400">There is no ticket {refOrId}. It may have been deleted.</p>
+            <div className="p-4 sm:p-5">
+              <p className="text-sm text-ink-300">There is no ticket {refOrId}.</p>
+              <p className="mt-1 text-xs text-ink-500">It may have been deleted, or it belongs to agents you cannot see.</p>
+            </div>
           ) : !detail || !t ? (
-            <div className="p-5">
+            <div className="p-4 sm:p-5">
               <SkeletonRows rows={5} />
             </div>
           ) : (
-            <div className="space-y-5 p-5">
+            <div className="space-y-5 p-4 sm:p-5">
               <Ancestry ancestry={detail.ancestry} origin={t.origin} self={t} />
 
               <EditableText
@@ -199,11 +269,14 @@ export default function TicketDrawer({
                     className={cx(inputClass, "py-1.5")}
                     value={t.status}
                     disabled={!canEdit || saving}
-                    onChange={(e) => void patch({ status: e.target.value as TicketStatus })}
+                    onChange={(e) => setStatus(e.target.value as TicketStatus)}
+                    aria-label="Status"
                   >
                     {BOARD_COLUMNS.map((c) => (
-                      <option key={c.status} value={c.status}>
+                      // In progress is where a run puts a ticket; it cannot be chosen.
+                      <option key={c.status} value={c.status} disabled={c.status === "in_progress" && t.status !== "in_progress"}>
                         {c.label}
+                        {c.status === "in_progress" && t.status !== "in_progress" ? " (a run sets this)" : ""}
                       </option>
                     ))}
                   </select>
@@ -219,6 +292,7 @@ export default function TicketDrawer({
                     <select
                       className={cx(inputClass, "py-1.5")}
                       value={t[field] ?? ""}
+                      aria-label={label}
                       disabled={!canEdit || saving}
                       onChange={(e) => void patch({ [field]: e.target.value })}
                     >
@@ -277,7 +351,7 @@ export default function TicketDrawer({
               {t.result && (
                 <Section title="Closing report">
                   <div className="rounded-lg bg-good-500/5 px-3.5 py-2.5 ring-1 ring-inset ring-good-500/20">
-                    <Markdown text={t.result} className="text-sm text-ink-200 select-text" />
+                    <ReportBody text={t.result} className="text-sm text-ink-200 select-text" />
                   </div>
                 </Section>
               )}
@@ -331,7 +405,7 @@ export default function TicketDrawer({
               </Section>
 
               <Section title="Thread" count={detail.comments?.length}>
-                <Thread comments={detail.comments ?? []} agents={agentById} />
+                <Thread comments={detail.comments ?? []} agents={agentById} result={t.result} />
                 {canEdit && <Composer ticketId={t.id} onSent={() => void load()} />}
               </Section>
             </div>
@@ -341,9 +415,38 @@ export default function TicketDrawer({
 
       <PromptModal
         open={reopening}
-        title={t ? `Reopen ${t.ref}` : "Reopen"}
+        title={t ? (unassigned && reopenParts.length ? `Reopen ${t.ref}'s parts` : `Reopen ${t.ref}`) : "Reopen"}
+        body={
+          t &&
+          (unassigned && reopenParts.length ? (
+            <>
+              <p>
+                Nobody is assigned {t.ref}, so its finished {reopenParts.length === 1 ? "part goes" : "parts go"} back
+                instead, each to its own assignee with your reason:
+              </p>
+              <ul className="mt-2 space-y-1">
+                {reopenParts.map((p) => (
+                  <li key={p.id} className="flex items-center gap-2 text-xs">
+                    <span className="font-mono text-ink-400">{p.ref}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-200">{renderCodeSpans(p.title)}</span>
+                    <span className="shrink-0 text-ink-400">{p.assignee_name || "nobody"}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : unassigned ? (
+            <p>
+              Nobody is assigned {t.ref} and it has no finished parts, so it goes back to To do for whoever takes it.
+            </p>
+          ) : (
+            <p>
+              {t.ref} goes back to {t.assignee_name || "its assignee"} with your reason, and whatever above it had
+              finished waits again.
+            </p>
+          ))
+        }
         placeholder="What is missing? The assignee reads this."
-        submitLabel="Reopen"
+        submitLabel={unassigned && reopenParts.length > 1 ? `Reopen ${reopenParts.length} parts` : "Reopen"}
         onCancel={() => setReopening(false)}
         onSubmit={async (reason) => {
           setReopening(false);
@@ -356,6 +459,16 @@ export default function TicketDrawer({
           } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
           }
+        }}
+      />
+      <CancelTicketConfirm
+        ticket={confirmCancel && t ? t : null}
+        all={tickets.some((x) => x.id === t?.id) ? tickets : t ? [t, ...tickets] : tickets}
+        busy={saving}
+        onClose={() => setConfirmCancel(false)}
+        onConfirm={() => {
+          setConfirmCancel(false);
+          void patch({ status: "cancelled" });
         }}
       />
       <Confirm
@@ -431,7 +544,7 @@ function Ancestry({ ancestry, origin, self }: { ancestry: TicketView[]; origin?:
           {ancestry.map((a) => (
             <li key={a.id} className="flex items-center gap-1">
               <Link to={workLink(a.ref)} className="rounded px-1 py-0.5 text-ink-200 hover:bg-ink-800 hover:text-live-500">
-                <span className="font-mono text-ink-400">{a.ref}</span> {a.title}
+                <span className="font-mono text-ink-400">{a.ref}</span> {renderCodeSpans(a.title)}
               </Link>
               <span className="text-ink-500">›</span>
             </li>
@@ -462,6 +575,10 @@ function EditableText({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  // A part's description is often the whole brief it was given; the first
+  // few lines say what it is, the rest is there on asking.
+  const long = !!multiline && (value.length > 480 || value.split("\n").length > 8);
+  const [expanded, setExpanded] = useState(false);
   const commit = () => {
     setEditing(false);
     if (draft !== value) onSave(draft);
@@ -480,9 +597,38 @@ function EditableText({
         <div className="min-w-0 flex-1" onDoubleClick={disabled ? undefined : start}>
           {value ? (
             multiline ? (
-              <Markdown text={value} className="select-text" />
+              long && !expanded ? (
+                <div className="relative">
+                  <div className="max-h-36 overflow-hidden">
+                    <Markdown text={value} className="select-text" />
+                  </div>
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-ink-900 to-transparent group-hover:from-ink-850" />
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(true)}
+                    className="relative mt-1 text-xs font-medium text-live-500 hover:underline"
+                    aria-expanded={false}
+                  >
+                    Show all
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Markdown text={value} className="select-text" />
+                  {long && (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(false)}
+                      className="mt-1 text-xs font-medium text-live-500 hover:underline"
+                      aria-expanded
+                    >
+                      Show less
+                    </button>
+                  )}
+                </>
+              )
             ) : (
-              <span className="select-text">{value}</span>
+              <span className="select-text">{renderCodeSpans(value)}</span>
             )
           ) : (
             <span className="text-ink-500 italic">{placeholder}</span>
@@ -582,14 +728,16 @@ function BlockersEditor({
   return (
     <Section title="Waits on" count={ids.length}>
       {blockers.length === 0 ? (
-        <p className="text-xs text-ink-500">Nothing. It can start as soon as its assignee is free.</p>
+        <p className="text-xs text-ink-500">
+          {isOpenTicket(ticket) ? "Nothing. It can start as soon as its assignee is free." : "Nothing."}
+        </p>
       ) : (
         <ul className="space-y-1">
           {blockers.map((b) => (
             <li key={b.id} className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm ring-1 ring-ink-800">
               <Link to={workLink(b.ref)} className="flex min-w-0 flex-1 items-center gap-2 hover:text-live-500">
                 <span className="font-mono text-xs text-ink-400">{b.ref}</span>
-                <span className="truncate text-ink-200">{b.title}</span>
+                <span className="truncate text-ink-200">{renderCodeSpans(b.title)}</span>
               </Link>
               <StatusPill status={b.status} />
               {!disabled && (
@@ -605,7 +753,7 @@ function BlockersEditor({
           ))}
         </ul>
       )}
-      {!disabled && candidates.length > 0 && (
+      {!disabled && candidates.length > 0 && isOpenTicket(ticket) && (
         <select
           className={cx(inputClass, "py-1.5 text-xs")}
           value=""
@@ -634,7 +782,7 @@ function TicketList({ list, empty, agents }: { list: TicketView[]; empty: string
           <li key={c.id}>
             <Link to={workLink(c.ref)} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-ink-850">
               <span className="font-mono text-xs text-ink-400">{c.ref}</span>
-              <span className="min-w-0 flex-1 truncate text-ink-200">{c.title}</span>
+              <span className="min-w-0 flex-1 truncate text-ink-200">{renderCodeSpans(c.title)}</span>
               <TicketKindBadge kind={c.kind} />
               <VerdictChip verdict={c.verdict} />
               {a && <AgentAvatar name={a.name} kind={agentKindOf(a)} size="xs" />}
@@ -654,19 +802,43 @@ function verdictOf(body: string): "pass" | "fail" | null {
   return m ? (m[1].toLowerCase() as "pass" | "fail") : null;
 }
 
-function Thread({ comments, agents }: { comments: TicketComment[]; agents: Map<string, OrgNode> }) {
+function Thread({
+  comments,
+  agents,
+  result,
+}: {
+  comments: TicketComment[];
+  agents: Map<string, OrgNode>;
+  /** The ticket's closing report: a result comment saying the same is folded. */
+  result?: string;
+}) {
   const end = useRef<HTMLDivElement>(null);
+  const seen = useRef<number | null>(null);
+  // Follow the thread as it grows — but not on opening a ticket, which must
+  // start at the top, and not when the reader has scrolled up to read.
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
+    const before = seen.current;
+    seen.current = comments.length;
+    if (before === null || comments.length <= before) return;
+    const el = end.current;
+    const scroller = el?.closest(".overflow-y-auto") as HTMLElement | null;
+    if (!el || !scroller) return;
+    const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 240;
+    if (nearBottom) el.scrollIntoView({ block: "nearest" });
   }, [comments.length]);
   if (comments.length === 0) {
     return <p className="text-xs text-ink-500">Nothing said yet.</p>;
   }
+  const report = result?.trim();
   return (
     <ol className="space-y-2.5">
       {comments.map((c) => (
         <li key={c.id}>
-          <CommentRow c={c} agent={c.author_id ? agents.get(c.author_id) : undefined} />
+          <CommentRow
+            c={c}
+            agent={c.author_id ? agents.get(c.author_id) : undefined}
+            sameAsReport={!!report && c.kind === "result" && c.body.trim() === report}
+          />
         </li>
       ))}
       <div ref={end} />
@@ -674,18 +846,34 @@ function Thread({ comments, agents }: { comments: TicketComment[]; agents: Map<s
   );
 }
 
-function CommentRow({ c, agent }: { c: TicketComment; agent?: OrgNode }) {
+function CommentRow({ c, agent, sameAsReport }: { c: TicketComment; agent?: OrgNode; sameAsReport?: boolean }) {
   const who = c.author_name || agent?.name || (c.author_user_id ? "You" : "The fleet");
   const when = (
-    <span className="text-[11px] text-ink-500">
+    <span className="shrink-0 text-[11px] text-ink-500">
       <Ago at={c.created_at} />
     </span>
   );
+  const avatar = (size: "xs" | "sm") =>
+    agent ? (
+      <AgentAvatar name={agent.name} kind={agentKindOf(agent)} size={size} className="mt-0.5" />
+    ) : (
+      <span
+        className={cx(
+          "mt-0.5 grid shrink-0 place-items-center rounded-full bg-live-500 font-bold text-ink-950",
+          size === "xs" ? "size-4 text-[7px]" : "size-6 text-[9px]",
+        )}
+        aria-hidden
+      >
+        {who.slice(0, 2).toUpperCase()}
+      </span>
+    );
 
   if (c.kind === "system") {
     return (
       <div className="flex items-baseline gap-2 px-1 text-xs text-ink-400">
-        <span className="text-ink-500">•</span>
+        <span className="text-ink-500" aria-hidden>
+          •
+        </span>
         <span className="min-w-0 flex-1">
           <Markdown text={c.body} className="inline [&>p]:inline" />
         </span>
@@ -697,7 +885,7 @@ function CommentRow({ c, agent }: { c: TicketComment; agent?: OrgNode }) {
   if (c.kind === "retry") {
     return (
       <div className="flex items-baseline gap-2 rounded-lg bg-warn-500/8 px-3 py-1.5 text-xs text-warn-500 ring-1 ring-inset ring-warn-500/20">
-        <span>↻</span>
+        <span aria-hidden>↻</span>
         <span className="min-w-0 flex-1 text-ink-200">
           <span className="font-semibold text-warn-500">Retried · </span>
           {c.body}
@@ -707,17 +895,54 @@ function CommentRow({ c, agent }: { c: TicketComment; agent?: OrgNode }) {
     );
   }
 
-  if (c.kind === "review_brief") {
+  // What a run put in the catalog: one line with the file, linked to it.
+  if (c.kind === "published") {
+    const p = parsePublished(c.body);
+    if (p) {
+      return (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-cool-500/6 px-3 py-1.5 text-xs ring-1 ring-inset ring-cool-500/25">
+          {avatar("xs")}
+          <span className="text-ink-300">
+            <span className="font-medium text-ink-100">{who}</span> published
+          </span>
+          <WorkFileLink name={p.name} />
+          <span className="font-mono text-[11px] text-ink-400">
+            v{p.version} · {bytes(p.bytes)}
+            {p.kind !== "file" && ` · ${p.kind}`}
+          </span>
+          <span className="ml-auto">{when}</span>
+        </div>
+      );
+    }
+  }
+
+  if (c.kind === "review_brief" || sameAsReport) {
     return (
       <details className="group rounded-lg bg-ink-850 ring-1 ring-ink-800">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-ink-300 hover:text-ink-100">
-          <span className="transition-transform group-open:rotate-90">▸</span>
-          <span className="font-semibold">Review brief</span>
-          <span className="text-ink-500">sent to {who}</span>
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-xs text-ink-300 hover:text-ink-100">
+          <span className="transition-transform group-open:rotate-90" aria-hidden>
+            ▸
+          </span>
+          {sameAsReport ? (
+            <>
+              {avatar("xs")}
+              <span className="font-semibold text-good-500">Result</span>
+              <span className="min-w-0 truncate text-ink-500">from {who} · the closing report above</span>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Review brief</span>
+              <span className="min-w-0 truncate text-ink-500">sent to {who}</span>
+            </>
+          )}
           <span className="ml-auto">{when}</span>
         </summary>
         <div className="border-t border-ink-800 px-3 py-2">
-          <Markdown text={c.body} className="text-xs text-ink-300 select-text" />
+          {sameAsReport ? (
+            <ReportBody text={c.body} className="text-sm text-ink-200 select-text" />
+          ) : (
+            <Markdown text={c.body} className="text-xs text-ink-300 select-text" />
+          )}
         </div>
       </details>
     );
@@ -738,20 +963,18 @@ function CommentRow({ c, agent }: { c: TicketComment; agent?: OrgNode }) {
 
   return (
     <div className="flex items-start gap-2.5">
-      {agent ? (
-        <AgentAvatar name={agent.name} kind={agentKindOf(agent)} size="sm" className="mt-0.5" />
-      ) : (
-        <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-live-500 text-[9px] font-bold text-ink-950">
-          {who.slice(0, 2).toUpperCase()}
-        </span>
-      )}
+      {avatar("sm")}
       <div className={cx("min-w-0 flex-1 rounded-xl px-3 py-2 ring-1 ring-inset", tone.box)}>
         <div className="mb-0.5 flex items-center gap-2 text-xs">
-          <span className="font-medium text-ink-100">{who}</span>
-          {tone.label && <span className={cx("font-semibold", tone.tag)}>{tone.label}</span>}
+          <span className="truncate font-medium text-ink-100">{who}</span>
+          {tone.label && <span className={cx("shrink-0 font-semibold", tone.tag)}>{tone.label}</span>}
           <span className="ml-auto">{when}</span>
         </div>
-        <Markdown text={c.body} className="text-sm text-ink-200 select-text" />
+        {c.kind === "result" ? (
+          <ReportBody text={c.body} className="text-sm text-ink-200 select-text" />
+        ) : (
+          <Markdown text={c.body} className="text-sm text-ink-200 select-text" />
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { findWorkItem } from "../lib/tickets";
 import {
   api,
   type SharedSecret,
@@ -33,6 +35,24 @@ export default function Vault({ role }: { role: string }) {
   const [newNote, setNewNote] = useState("");
 
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  // /vault?item=notes/names.md opens that catalog item: tickets link here
+  // from what a run published and shared.
+  const [params, setParams] = useSearchParams();
+  const focusItem = params.get("item") ?? "";
+  useEffect(() => {
+    if (focusItem) setTab("work");
+  }, [focusItem]);
+  const clearFocus = useCallback(() => {
+    setParams(
+      (cur) => {
+        const next = new URLSearchParams(cur);
+        next.delete("item");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +64,7 @@ export default function Vault({ role }: { role: string }) {
       setSecrets(secList);
       setSessions(sessList);
       setWork(workList);
+      setLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -118,7 +139,16 @@ export default function Vault({ role }: { role: string }) {
         ))}
       </div>
 
-      {tab === "work" && <WorkTab work={work} onChanged={load} onError={setError} />}
+      {tab === "work" && (
+        <WorkTab
+          work={work}
+          loaded={loaded}
+          focus={focusItem}
+          onFocused={clearFocus}
+          onChanged={load}
+          onError={setError}
+        />
+      )}
 
       {/* Fleet comms, as conversations. */}
       {tab === "comms" && <CommsTab readOnly={role === "auditor"} />}
@@ -247,10 +277,17 @@ export default function Vault({ role }: { role: string }) {
  */
 function WorkTab({
   work,
+  loaded,
+  focus,
+  onFocused,
   onChanged,
   onError,
 }: {
   work: WorkItem[];
+  loaded: boolean;
+  /** A catalog name to open once the listing is in. */
+  focus: string;
+  onFocused: () => void;
   onChanged: () => Promise<void>;
   onError: (m: string) => void;
 }) {
@@ -315,6 +352,22 @@ function WorkTab({
     else if (runnable(item)) setPlaying(item);
     else setEditing(item);
   };
+
+  // Open the item a link asked for, in its folder, once.
+  useEffect(() => {
+    if (!focus || !loaded) return;
+    const item = findWorkItem(work, focus);
+    if (item) {
+      setCwd(item.kind === "workspace" ? item.id : (item.parent_id ?? ""));
+      if (item.kind !== "workspace") {
+        if (item.kind === "app" && (item.content ?? "").trim()) setPlaying(item);
+        else setEditing(item);
+      }
+    } else {
+      onError(`Nothing called "${focus}" is in the catalog now. It may have been renamed, moved or deleted.`);
+    }
+    onFocused();
+  }, [focus, loaded, work, onFocused, onError]);
 
   /** A folder cannot go inside itself or anything it contains. The server
    *  refuses either way; leaving them out of the picker means never offering a

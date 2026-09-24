@@ -9,8 +9,8 @@ import {
   type OafDevice,
 } from "../lib/api";
 import { underAnyRoot } from "../lib/tickets";
-import { KIND_META, KindIcon } from "./AgentKind";
-import { Button, ErrorNote, Field, Modal, cx, inputClass } from "./ui";
+import { AgentAvatar, KIND_META } from "./AgentKind";
+import { Button, ErrorNote, Field, Modal, ModalFooter, cx, inputClass } from "./ui";
 
 /**
  * Add an agent of any kind.
@@ -109,6 +109,7 @@ export default function AddAgentDialog({
 
   const localProblem = (() => {
     if (!kind || kind === "desktop") return null;
+    if (!name.trim()) return "Give it a name.";
     if (onDevice) {
       if (!device) return "Pick the PC it runs on.";
       if (!canRun(device, kind)) return `${device.name} does not have ${KIND_META[kind].label} installed.`;
@@ -153,7 +154,7 @@ export default function AddAgentDialog({
   };
 
   return (
-    <Modal open={open} title={kind ? `Add a ${KIND_META[kind].label} agent` : "Add an agent"} onClose={onClose} wide>
+    <Modal open={open} title={kind ? `Add ${/^[AEIOU]/i.test(KIND_META[kind].label) ? "an" : "a"} ${KIND_META[kind].label} agent` : "Add an agent"} onClose={onClose} wide>
       {!kind ? (
         <div className="space-y-3">
           <p className="text-sm text-ink-400">
@@ -174,18 +175,9 @@ export default function AddAgentDialog({
                       setKind(k);
                     }
                   }}
-                  className="flex items-start gap-3 rounded-xl bg-ink-900 p-3 text-left ring-1 ring-ink-700 transition-colors hover:ring-ink-500 focus-visible:ring-live-500"
+                  className="flex items-start gap-3 rounded-xl bg-ink-900 p-3 text-left ring-1 ring-ink-700 transition-colors hover:bg-ink-850 hover:ring-ink-500 focus-visible:ring-2 focus-visible:ring-live-500 focus-visible:outline-none"
                 >
-                  <span
-                    className={cx(
-                      "grid size-9 shrink-0 place-items-center rounded-full ring-1 ring-inset",
-                      m.soft,
-                      m.text,
-                      m.ring,
-                    )}
-                  >
-                    <KindIcon kind={k} className="size-5" />
-                  </span>
+                  <AgentAvatar name={m.label} kind={k} mark />
                   <span className="min-w-0">
                     <span className="block text-sm font-medium text-ink-100">{m.label}</span>
                     <span className="block text-xs text-ink-400">{m.blurb}</span>
@@ -207,29 +199,51 @@ export default function AddAgentDialog({
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4">
-          <button
-            type="button"
-            className="text-xs text-ink-400 hover:text-ink-100"
-            onClick={() => {
-              setKind(null);
-              setError(null);
-            }}
-          >
-            ← Choose a different kind
-          </button>
+          <div className="flex items-center gap-3">
+            <AgentAvatar name={KIND_META[kind].label} kind={kind} mark size="lg" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-ink-200">{KIND_META[kind].blurb}</p>
+              <button
+                type="button"
+                className="mt-0.5 text-xs text-ink-400 hover:text-ink-100 hover:underline"
+                onClick={() => {
+                  setKind(null);
+                  setError(null);
+                }}
+              >
+                ← Choose a different kind
+              </button>
+            </div>
+          </div>
 
           {onDevice && devices !== null && devices.length === 0 ? (
-            <ConnectPcHelp kind={kind} />
+            <>
+              <ConnectPcHelp kind={kind} />
+              <ModalFooter>
+                <Button type="button" variant="ghost" onClick={onClose}>
+                  Close
+                </Button>
+              </ModalFooter>
+            </>
           ) : (
             <>
+              {onDevice && <OnPcNotes kind={kind} />}
+              {onDevice && devices && devices.length > 0 && !devices.some((d) => canRun(d, kind)) && (
+                <p className="rounded-lg bg-warn-500/10 px-3 py-2 text-xs text-warn-500 ring-1 ring-inset ring-warn-500/25">
+                  None of your PCs has {KIND_META[kind].label} installed. Install its CLI on a PC running{" "}
+                  <code className="font-mono">fleetctl host</code>, then restart the host so it reports it.
+                </p>
+              )}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Name">
                   <input
                     className={inputClass}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder={kind === "webhook" ? "Research" : `${KIND_META[kind].label} on my PC`}
+                    placeholder={kind === "webhook" ? "Research" : kind === "openclaw" ? "Scout" : KIND_META[kind].label.split(" ")[0]}
                     autoFocus
+                    required
                   />
                 </Field>
                 <Field label="Title" hint="Optional. What it is to the team.">
@@ -240,43 +254,50 @@ export default function AddAgentDialog({
                     placeholder="Engineer"
                   />
                 </Field>
-              </div>
 
-              <Field label="Reports to">
-                <select className={inputClass} value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
-                  <option value="">You</option>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                <Field label="Reports to" hint="Blocked work goes up to its manager.">
+                  <select className={inputClass} value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
+                    <option value="">You</option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
 
-              {onDevice ? (
-                <>
-                  <Field label="PC" hint="A PC running fleetctl host. PCs without this CLI cannot be chosen.">
+                {onDevice && (
+                  <Field label="PC" hint="A PC running fleetctl host.">
                     <select className={inputClass} value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
                       <option value="">Choose a PC…</option>
                       {devices?.map((d) => (
                         <option key={d.id} value={d.id} disabled={!canRun(d, kind)}>
                           {d.name} · {d.online ? "online" : "offline"}
-                          {d.runtimes?.length ? ` · has ${d.runtimes.map(runtimeLabel).join(", ")}` : ""}
                           {!canRun(d, kind) ? ` · no ${KIND_META[kind].label}` : ""}
                         </option>
                       ))}
                     </select>
                   </Field>
+                )}
+              </div>
+
+              {onDevice ? (
+                <>
                   {device && !device.online && (
-                    <p className="-mt-2 text-xs text-warn-500">
-                      {device.name} is offline. The agent can be added now; it takes work once the host is running.
+                    <p className="-mt-1 rounded-lg bg-warn-500/10 px-3 py-2 text-xs text-warn-500 ring-1 ring-inset ring-warn-500/25">
+                      {device.name} is offline. You can add the agent now; it takes work once the host is running again.
                     </p>
                   )}
 
                   {device && (
-                    <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Folder" hint="One of the folders this PC exposes.">
-                        <select className={inputClass} value={root} onChange={(e) => setRoot(e.target.value)}>
+                        <select
+                          className={cx(inputClass, "font-mono text-xs")}
+                          value={root}
+                          onChange={(e) => setRoot(e.target.value)}
+                          title={root}
+                        >
                           {device.roots.map((r) => (
                             <option key={r} value={r}>
                               {r}
@@ -284,18 +305,59 @@ export default function AddAgentDialog({
                           ))}
                         </select>
                       </Field>
-                      <Field label="Subfolder" hint={cwd ? `Works in ${cwd}` : undefined}>
+                      <Field label="Subfolder" hint="Optional. Inside the folder.">
                         <input
-                          className={inputClass}
+                          className={cx(inputClass, "font-mono text-xs")}
                           value={sub}
                           onChange={(e) => setSub(e.target.value)}
-                          placeholder="optional, e.g. my-app"
+                          placeholder="my-app"
                         />
                       </Field>
                     </div>
                   )}
+                  {cwd && (
+                    <p className="-mt-1 truncate text-xs text-ink-400" title={cwd}>
+                      Works in <code className="font-mono text-ink-300">{cwd}</code>
+                    </p>
+                  )}
 
-                  <Field label="Model" hint="Optional. Passed to the CLI as-is; empty uses its own default.">
+                  <fieldset className="space-y-1.5">
+                    <legend className="mb-1.5 text-xs font-medium tracking-wide text-ink-300 uppercase">Autonomy</legend>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {(
+                        [
+                          ["edits", "Edits", "Changes files in its folder. Cannot run commands."],
+                          ["full", "Full", "Anything inside its folder, including running commands."],
+                        ] as const
+                      ).map(([v, label, hint]) => (
+                        <label
+                          key={v}
+                          className={cx(
+                            "flex cursor-pointer items-start gap-2.5 rounded-lg p-2.5 ring-1 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-live-500",
+                            autonomy === v ? "bg-live-500/10 ring-live-500" : "ring-ink-700 hover:ring-ink-600",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="autonomy"
+                            className="mt-0.5 accent-live-500"
+                            checked={autonomy === v}
+                            onChange={() => setAutonomy(v)}
+                          />
+                          <span>
+                            <span className="block text-sm text-ink-100">{label}</span>
+                            <span className="block text-xs text-ink-400">{hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-ink-500">
+                      Either way each run asks in the host's terminal first, unless the host runs with{" "}
+                      <code className="font-mono text-ink-300">--yes</code>.
+                    </p>
+                  </fieldset>
+
+                  <Field label="Model" hint="Optional. Passed to the CLI as it is; empty uses the CLI's default.">
                     <input
                       className={inputClass}
                       value={model}
@@ -303,42 +365,6 @@ export default function AddAgentDialog({
                       placeholder={kind === "claude_code" ? "sonnet" : kind === "codex" ? "gpt-5-codex" : ""}
                     />
                   </Field>
-
-                  <fieldset className="space-y-2">
-                    <legend className="mb-1.5 text-xs font-medium tracking-wide text-ink-300 uppercase">
-                      Autonomy
-                    </legend>
-                    {(
-                      [
-                        ["edits", "Edits", "It can change files in its folder, but not run commands."],
-                        ["full", "Full", "It can do anything inside its folder, including running commands."],
-                      ] as const
-                    ).map(([v, label, hint]) => (
-                      <label
-                        key={v}
-                        className={cx(
-                          "flex cursor-pointer items-start gap-3 rounded-lg p-2.5 ring-1 transition-colors",
-                          autonomy === v ? "bg-live-500/10 ring-live-500" : "ring-ink-700 hover:ring-ink-600",
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="autonomy"
-                          className="mt-0.5 accent-live-500"
-                          checked={autonomy === v}
-                          onChange={() => setAutonomy(v)}
-                        />
-                        <span>
-                          <span className="block text-sm text-ink-100">{label}</span>
-                          <span className="block text-xs text-ink-400">{hint}</span>
-                        </span>
-                      </label>
-                    ))}
-                    <p className="text-xs text-ink-500">
-                      Each run still asks in the host's terminal before it starts, unless the host was started with{" "}
-                      <code className="font-mono text-ink-300">--yes</code>.
-                    </p>
-                  </fieldset>
                 </>
               ) : (
                 <>
@@ -355,12 +381,13 @@ export default function AddAgentDialog({
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       placeholder={kind === "openclaw" ? "wss://gateway.example:18789" : "https://agents.example/run"}
+                      inputMode="url"
                     />
                   </Field>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field
                       label={kind === "openclaw" ? "Token" : "Token (optional)"}
-                      hint="Kept in the vault; never shown again."
+                      hint={kind === "openclaw" ? "Kept in the vault; never shown again." : "Sent as a bearer token. Kept in the vault."}
                     >
                       <input
                         type="password"
@@ -384,26 +411,35 @@ export default function AddAgentDialog({
                 </>
               )}
 
-              <Field label="When I'm useful" hint="Optional. Colleagues read this to decide what to hand it; a sensible default is used when empty.">
+              <Field
+                label="When it's useful"
+                hint="Optional. Colleagues read this to decide what to hand it; a sensible default is used when empty."
+              >
                 <textarea
-                  className={cx(inputClass, "h-20 resize-y")}
+                  className={cx(inputClass, "h-16 resize-y")}
                   value={capabilities}
                   onChange={(e) => setCapabilities(e.target.value)}
-                  placeholder="Changes to the web app in this repository, with tests."
+                  placeholder={
+                    onDevice ? "Changes to the web app in this repository, with tests." : "Research questions, answered with sources."
+                  }
                 />
               </Field>
 
               <ErrorNote error={error} onDismiss={() => setError(null)} />
 
-              <div className="flex items-center justify-end gap-3">
-                {localProblem && <span className="mr-auto text-xs text-ink-400">{localProblem}</span>}
+              <ModalFooter>
+                {localProblem && (
+                  <span className="mr-auto text-xs text-ink-400" role="status">
+                    {localProblem}
+                  </span>
+                )}
                 <Button type="button" variant="ghost" onClick={onClose}>
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" disabled={busy || !!localProblem}>
                   {busy ? "Adding…" : "Add agent"}
                 </Button>
-              </div>
+              </ModalFooter>
             </>
           )}
         </form>
@@ -414,6 +450,37 @@ export default function AddAgentDialog({
 
 export function runtimeLabel(r: string): string {
   return (KIND_META as Record<string, { label: string }>)[r]?.label ?? r;
+}
+
+/**
+ * What an agent on a PC should know before it is added, in two lines: what
+ * of its work reaches the fleet, and (for Claude Code) whose settings it runs
+ * with.
+ */
+function OnPcNotes({ kind }: { kind: AgentKind }) {
+  return (
+    <ul className="space-y-1 rounded-lg bg-ink-900 px-3 py-2 text-xs text-ink-300 ring-1 ring-ink-800">
+      <li className="flex gap-2">
+        <span className="text-cool-500" aria-hidden>
+          ⇄
+        </span>
+        <span>
+          Text files it makes or changes are shared with the fleet when a run finishes, under their path in its folder.
+        </span>
+      </li>
+      {kind === "claude_code" && (
+        <li className="flex gap-2">
+          <span className="text-cool-500" aria-hidden>
+            ⚙
+          </span>
+          <span>
+            It runs without your <code className="font-mono text-ink-200">~/.claude</code> user settings; the folder's own{" "}
+            <code className="font-mono text-ink-200">.claude</code> settings apply.
+          </span>
+        </li>
+      )}
+    </ul>
+  );
 }
 
 /** What to do when no PC is connected: the one command, copyable. */

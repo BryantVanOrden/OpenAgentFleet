@@ -56,7 +56,9 @@ export function WindowChip({ window: n }: { window?: string }) {
 
 // ------------------------------------------------------------------ buttons ---
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+// ComponentProps rather than ButtonHTMLAttributes: it carries `ref`, which
+// React 19 passes to a function component as an ordinary prop.
+type ButtonProps = React.ComponentProps<"button"> & {
   variant?: "primary" | "ghost" | "danger" | "subtle";
   size?: "sm" | "md";
 };
@@ -238,22 +240,45 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    // On a phone the dialog is a sheet from the bottom edge, where a thumb
+    // is, and as tall as it needs; from sm up it is a centred card.
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={cx(
-          "relative w-full rounded-2xl bg-ink-850 ring-1 ring-ink-700 shadow-2xl",
+          "relative w-full rounded-t-2xl bg-ink-850 ring-1 ring-ink-700 shadow-2xl sm:rounded-2xl",
           wide ? "max-w-3xl" : "max-w-lg",
         )}
       >
-        <header className="flex items-center justify-between border-b border-ink-800 px-5 py-3.5">
-          <h2 className="text-sm font-semibold">{title}</h2>
+        <header className="flex items-center justify-between gap-3 border-b border-ink-800 py-3.5 pr-3 pl-5">
+          <h2 className="min-w-0 truncate text-sm font-semibold">{title}</h2>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
             ✕
           </Button>
         </header>
-        <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
+        <div className="max-h-[calc(100dvh-5rem)] overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-[75vh] sm:p-5">
+          {children}
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** The action row of a dialog, kept in view at the bottom while a long form
+ *  scrolls under it. Cancels the dialog body's padding so it spans the edge. */
+export function ModalFooter({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cx(
+        "sticky -bottom-4 z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-ink-800 bg-ink-850 px-4 py-3",
+        "sm:-bottom-5 sm:-mx-5 sm:-mb-5 sm:px-5",
+        className,
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -265,6 +290,7 @@ export function Confirm({
   title,
   body,
   confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
   danger,
   busy,
   onConfirm,
@@ -274,6 +300,8 @@ export function Confirm({
   title: string;
   body: ReactNode;
   confirmLabel?: string;
+  /** The dismiss button, when "Cancel" would read as the action itself. */
+  cancelLabel?: string;
   danger?: boolean;
   busy?: boolean;
   onConfirm: () => void;
@@ -285,7 +313,7 @@ export function Confirm({
         <div className="text-sm whitespace-pre-wrap text-ink-300">{body}</div>
         <div className="flex justify-end gap-2">
           <Button onClick={onCancel} disabled={busy}>
-            Cancel
+            {cancelLabel}
           </Button>
           <Button variant={danger ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
             {confirmLabel}
@@ -303,6 +331,7 @@ export function PromptModal({
   placeholder,
   initial = "",
   submitLabel = "OK",
+  body,
   onSubmit,
   onCancel,
 }: {
@@ -311,6 +340,8 @@ export function PromptModal({
   placeholder?: string;
   initial?: string;
   submitLabel?: string;
+  /** What submitting will do, above the field. */
+  body?: ReactNode;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -329,6 +360,7 @@ export function PromptModal({
   return (
     <Modal open={open} title={title} onClose={onCancel}>
       <div className="space-y-4">
+        {body && <div className="text-sm text-ink-300">{body}</div>}
         <input
           className={inputClass}
           autoFocus

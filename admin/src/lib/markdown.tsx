@@ -17,9 +17,41 @@ export type Block =
   | { kind: "p"; text: string }
   | { kind: "heading"; level: number; text: string }
   | { kind: "code"; lang: string; text: string }
-  | { kind: "list"; ordered: boolean; items: string[] }
+  /** `levels`, when present, is each item's nesting depth (0 is the top). */
+  | { kind: "list"; ordered: boolean; items: string[]; levels?: number[]; start?: number }
   | { kind: "quote"; text: string }
   | { kind: "hr" };
+
+/** Leading whitespace, with a tab as four spaces. */
+function indentOf(line: string): number {
+  let n = 0;
+  for (const ch of line) {
+    if (ch === " ") n++;
+    else if (ch === "\t") n += 4;
+    else break;
+  }
+  return n;
+}
+
+/** A flat list with depths, as a tree: each item and the items under it. */
+export interface ListNode {
+  text: string;
+  children: ListNode[];
+}
+
+export function nestList(items: string[], levels?: number[]): ListNode[] {
+  const root: ListNode[] = [];
+  const path: ListNode[][] = [root];
+  items.forEach((text, i) => {
+    // An item can only be one level deeper than the one before it.
+    const want = Math.min(levels?.[i] ?? 0, path.length - 1);
+    path.length = want + 1;
+    const node: ListNode = { text, children: [] };
+    path[want].push(node);
+    path.push(node.children);
+  });
+  return root;
+}
 
 export function parseBlocks(md: string): Block[] {
   const lines = md.replace(/\r\n/g, "\n").split("\n");
@@ -67,15 +99,45 @@ export function parseBlocks(md: string): Block[] {
     if (bullet || numbered) {
       flush();
       const ordered = Boolean(numbered);
+      const base = indentOf(line);
       const items: string[] = [(bullet ?? numbered)![1]];
+      const levels: number[] = [0];
+      // Indent of each open nesting level, so "  - x" under "- y" is one
+      // level deeper whether the writer indents by two spaces or four.
+      const stops: number[] = [base];
+      const start = numbered ? Number(/^(\d{1,3})/.exec(t)![1]) : 1;
+      const sameKind = (s: string) => (ordered ? /^\d{1,3}[.)]\s+/.test(s) : /^[-*+]\s+/.test(s));
       while (i + 1 < lines.length) {
-        const nt = lines[i + 1].trim();
-        const nb = ordered ? /^\d{1,3}[.)]\s+(.*)$/.exec(nt) : /^[-*+]\s+(.*)$/.exec(nt);
+        // A blank line between items of the same list is a loose list, not
+        // the end of it: "1." after a blank line is still item 2.
+        if (lines[i + 1].trim() === "") {
+          let j = i + 1;
+          while (j < lines.length && lines[j].trim() === "") j++;
+          if (j < lines.length && sameKind(lines[j].trim()) && indentOf(lines[j]) <= base + 1) {
+            i = j - 1;
+          } else {
+            break;
+          }
+        }
+        const raw = lines[i + 1];
+        const nt = raw.trim();
+        const ind = indentOf(raw);
+        const any = /^(?:[-*+]|\d{1,3}[.)])\s+(.*)$/.exec(nt);
+        const same = ordered ? /^\d{1,3}[.)]\s+(.*)$/.exec(nt) : /^[-*+]\s+(.*)$/.exec(nt);
+        // A deeper item of either kind belongs to this list; at the top level
+        // only the same kind does.
+        const nb = ind > base ? any : same;
         if (!nb) break;
+        while (stops.length > 1 && ind < stops[stops.length - 1]) stops.pop();
+        if (ind > stops[stops.length - 1] && stops.length < 6) stops.push(ind);
         items.push(nb[1]);
+        levels.push(stops.length - 1);
         i++;
       }
-      blocks.push({ kind: "list", ordered, items });
+      const block: Block = { kind: "list", ordered, items };
+      if (levels.some((l) => l > 0)) block.levels = levels;
+      if (ordered && start !== 1) block.start = start;
+      blocks.push(block);
       continue;
     }
 
@@ -130,7 +192,7 @@ export function renderInline(text: string, keyBase = "i"): ReactNode[] {
   const out: ReactNode[] = [];
   // One combined scanner so constructs cannot half-overlap: earliest match wins.
   const re =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\s][^*]*\*)|(~~[^~]+~~)|(!?\[[^\]]*\]\([^)]*\))/g;
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\s][^*]*\*)|((?<!\w)_[^_\s](?:[^_\n]*[^_\s])?_(?!\w))|(~~[^~]+~~)|(!?\[[^\]]*\]\([^)]*\))/g;
   let last = 0;
   let k = 0;
   for (let m = re.exec(text); m; m = re.exec(text)) {
@@ -147,7 +209,9 @@ export function renderInline(text: string, keyBase = "i"): ReactNode[] {
       out.push(<strong key={key}>{renderInline(tok.slice(2, -2), key)}</strong>);
     } else if (tok.startsWith("~~")) {
       out.push(<del key={key}>{renderInline(tok.slice(2, -2), key)}</del>);
-    } else if (tok.startsWith("*")) {
+    } else if (tok.startsWith("*") || tok.startsWith("_")) {
+      // _italic_ as well as *italic*: the fleet's own replies (/tickets,
+      // /org) use underscores. Only at word edges, so read_work stays a word.
       out.push(<em key={key}>{renderInline(tok.slice(1, -1), key)}</em>);
     } else {
       // [label](url) — or an image, which renders as its alt text; inlining
@@ -178,6 +242,23 @@ export function renderInline(text: string, keyBase = "i"): ReactNode[] {
   return out;
 }
 
+/**
+ * Only `code spans`, nothing else: for one-line labels such as a ticket's
+ * title, which agents write with backticks, shown inside things that are
+ * themselves clickable (so no links).
+ */
+export function renderCodeSpans(text: string): ReactNode[] {
+  return text.split(/(`[^`]+`)/g).map((part, i) =>
+    part.length > 2 && part.startsWith("`") && part.endsWith("`") ? (
+      <code key={i} className="rounded bg-ink-950/70 px-1 py-px font-mono text-[0.9em]">
+        {part.slice(1, -1)}
+      </code>
+    ) : (
+      part
+    ),
+  );
+}
+
 function linesOf(text: string, keyBase: string): ReactNode[] {
   return text.split("\n").map((l, i) => (
     <Fragment key={`${keyBase}-l${i}`}>
@@ -185,6 +266,40 @@ function linesOf(text: string, keyBase: string): ReactNode[] {
       {renderInline(l, `${keyBase}-l${i}`)}
     </Fragment>
   ));
+}
+
+function ListView({
+  nodes,
+  ordered,
+  start,
+  depth,
+  keyBase,
+}: {
+  nodes: ListNode[];
+  ordered: boolean;
+  start?: number;
+  depth: number;
+  keyBase: string;
+}) {
+  // Nested levels get a hollow and then a square marker, and a faint guide
+  // line, so a chart three levels deep still reads as a tree.
+  const marker = ordered ? "list-decimal" : depth === 0 ? "list-disc" : depth === 1 ? "list-[circle]" : "list-[square]";
+  const cls = `${marker} space-y-0.5 pl-5 ${depth === 0 ? "my-1" : "mt-0.5 border-l border-ink-700/70 ml-0.5"}`;
+  const items = nodes.map((n, j) => (
+    <li key={`${keyBase}-${j}`}>
+      {renderInline(n.text, `${keyBase}-${j}`)}
+      {n.children.length > 0 && (
+        <ListView nodes={n.children} ordered={ordered} depth={depth + 1} keyBase={`${keyBase}-${j}`} />
+      )}
+    </li>
+  ));
+  return ordered ? (
+    <ol className={cls} start={start}>
+      {items}
+    </ol>
+  ) : (
+    <ul className={cls}>{items}</ul>
+  );
 }
 
 export function Markdown({ text, className }: { text: string; className?: string }) {
@@ -212,18 +327,15 @@ export function Markdown({ text, className }: { text: string; className?: string
               </pre>
             );
           case "list":
-            return b.ordered ? (
-              <ol key={key} className="my-1 list-decimal space-y-0.5 pl-5">
-                {b.items.map((it, j) => (
-                  <li key={`${key}-${j}`}>{renderInline(it, `${key}-${j}`)}</li>
-                ))}
-              </ol>
-            ) : (
-              <ul key={key} className="my-1 list-disc space-y-0.5 pl-5">
-                {b.items.map((it, j) => (
-                  <li key={`${key}-${j}`}>{renderInline(it, `${key}-${j}`)}</li>
-                ))}
-              </ul>
+            return (
+              <ListView
+                key={key}
+                nodes={nestList(b.items, b.levels)}
+                ordered={b.ordered}
+                start={b.start}
+                depth={0}
+                keyBase={key}
+              />
             );
           case "quote":
             return (

@@ -154,3 +154,156 @@ export function underAnyRoot(path: string, roots: string[]): boolean {
     return p === root || p.startsWith(root + "/");
   });
 }
+
+// ------------------------------------------------------------ cancelling ---
+
+/**
+ * What cancelling a ticket takes down with it, as the server does it: every
+ * open ticket under it (its parts), and every open review or verify ticket
+ * checking it or anything under it (its checks). Their runs stop.
+ *
+ * Worked out from the board's listing, so a ticket the listing does not have
+ * is not counted — the confirmation may say fewer, never a made-up number.
+ */
+export function cancelCascade(
+  ticket: Pick<TicketView, "id">,
+  all: TicketView[],
+): { parts: TicketView[]; checks: TicketView[] } {
+  const kids = new Map<string, TicketView[]>();
+  for (const t of all) {
+    if (!t.parent_id) continue;
+    const list = kids.get(t.parent_id) ?? [];
+    list.push(t);
+    kids.set(t.parent_id, list);
+  }
+  const tree = new Set<string>([ticket.id]);
+  const parts: TicketView[] = [];
+  const stack = [ticket.id];
+  while (stack.length) {
+    const id = stack.pop()!;
+    for (const k of kids.get(id) ?? []) {
+      if (tree.has(k.id)) continue; // a cycle in bad rows
+      tree.add(k.id);
+      stack.push(k.id);
+      if (isOpenTicket(k)) parts.push(k);
+    }
+  }
+  const checks = all.filter(
+    (t) =>
+      !tree.has(t.id) &&
+      (t.kind === "review" || t.kind === "verify") &&
+      !!t.target_id &&
+      tree.has(t.target_id) &&
+      isOpenTicket(t),
+  );
+  const byNumber = (a: TicketView, b: TicketView) => a.number - b.number;
+  return { parts: parts.sort(byNumber), checks: checks.sort(byNumber) };
+}
+
+/** "2 open parts and 1 check" — the words for a cancel confirmation. */
+export function cascadeSummary(c: { parts: unknown[]; checks: unknown[] }): string {
+  const bits: string[] = [];
+  if (c.parts.length) bits.push(`${c.parts.length} open part${c.parts.length === 1 ? "" : "s"}`);
+  if (c.checks.length) bits.push(`${c.checks.length} open check${c.checks.length === 1 ? "" : "s"}`);
+  return bits.join(" and ");
+}
+
+// ------------------------------------------------------------- reopening ---
+
+/**
+ * Who a reopen reaches. A ticket nobody is assigned (a request) is reopened
+ * through its finished work parts, which go back to their assignees; only
+ * when it has none does the ticket itself go back to To do.
+ */
+export function reopenTargets(
+  ticket: Pick<TicketView, "assignee_id" | "assignee_user_id">,
+  children: TicketView[],
+): TicketView[] {
+  if (ticket.assignee_id || ticket.assignee_user_id) return [];
+  return children.filter((c) => c.kind === "work" && c.status === "done").sort((a, b) => a.number - b.number);
+}
+
+// ------------------------------------------------------- shared files ---
+
+const SHARED_RE = /^Shared with the fleet \(read_work\):\s*(.+?)\.?\s*$/;
+const UNSHARED_RE = /^Also changed, not shared \(binary or too large\):\s*(.+?)\.?\s*$/;
+
+/**
+ * An external run's report ends with what it shared with the fleet and what
+ * it changed but could not share. Those lines are lifted out, so the files
+ * render as a list and the report reads as the agent wrote it.
+ *
+ * Only trailing lines count: a report quoting the phrase in its middle keeps
+ * it as text.
+ */
+export function splitSharedFiles(text: string): { body: string; shared: string[]; unshared: string[] } {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let shared: string[] = [];
+  let unshared: string[] = [];
+  const names = (s: string) =>
+    s
+      .split(/,\s+/)
+      .map((n) => n.trim())
+      .filter(Boolean);
+  let end = lines.length;
+  while (end > 0) {
+    const line = lines[end - 1].trim();
+    if (line === "") {
+      end--;
+      continue;
+    }
+    const s = SHARED_RE.exec(line);
+    const u = UNSHARED_RE.exec(line);
+    if (s && shared.length === 0) shared = names(s[1]);
+    else if (u && unshared.length === 0) unshared = names(u[1]);
+    else break;
+    end--;
+  }
+  if (shared.length === 0 && unshared.length === 0) return { body: text, shared, unshared };
+  return { body: lines.slice(0, end).join("\n").trimEnd(), shared, unshared };
+}
+
+/**
+ * A "published" comment: `Published file "notes/names.md" (version 1, 923
+ * bytes)`. The name is Go-quoted, so it is unquoted the way JSON reads it.
+ */
+export function parsePublished(body: string): { kind: string; name: string; version: number; bytes: number } | null {
+  const m = /^Published (\w+) ("(?:[^"\\]|\\.)*") \(version (\d+), (\d+) bytes\)\.?$/.exec(body.trim());
+  if (!m) return null;
+  let name: string;
+  try {
+    name = JSON.parse(m[2]) as string;
+  } catch {
+    name = m[2].slice(1, -1);
+  }
+  return { kind: m[1], name, version: Number(m[3]), bytes: Number(m[4]) };
+}
+
+/** The Vault's page for a published item, by its catalog name. */
+export const vaultItemLink = (name: string) => `/vault?item=${encodeURIComponent(name)}`;
+
+/**
+ * Find a catalog item by the name an agent used for it. Files shared from a
+ * PC are named by their whole path ("notes/names.md") at the top level; an
+ * item may also be a path through folders. The top-level exact name wins,
+ * then any exact name (the newest), then a walk through the folders.
+ */
+export function findWorkItem<T extends { id: string; name: string; kind: string; parent_id?: string; updated_at: string }>(
+  items: T[],
+  path: string,
+): T | undefined {
+  const want = path.trim().replace(/\\/g, "/");
+  if (!want) return undefined;
+  const exact = items.filter((w) => w.name === want);
+  const top = exact.find((w) => !w.parent_id);
+  if (top) return top;
+  if (exact.length) return [...exact].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+  let parent = "";
+  let found: T | undefined;
+  for (const seg of want.split("/").filter(Boolean)) {
+    found = items.find((w) => (w.parent_id ?? "") === parent && w.name === seg);
+    if (!found) return undefined;
+    parent = found.id;
+  }
+  return found;
+}

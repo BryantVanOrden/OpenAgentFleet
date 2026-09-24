@@ -3,6 +3,7 @@ import type { FleetCommand, Instance, PeerMessage, Task } from "./api";
 import {
   commandPrefix,
   commandText,
+  fillCommand,
   filterCommands,
   fleetSummary,
   formatFleetSummary,
@@ -140,5 +141,47 @@ describe("isSpokenMessage", () => {
     expect(isSpokenMessage(msg({ from_instance_id: "" }))).toBe(false);
     expect(isSpokenMessage(msg({ from_instance_id: "system", kind: "system" }))).toBe(false);
     expect(isSpokenMessage(msg({ kind: "summary" }))).toBe(false);
+  });
+});
+
+describe("filterCommands exact names", () => {
+  it("a name typed out in full comes before longer names it starts", () => {
+    const cmds: FleetCommand[] = [
+      { name: "tickets", usage: "/tickets [@agent]", description: "", mutates: false },
+      { name: "ticket", usage: "/ticket @agent <what to do>", description: "", mutates: true },
+    ];
+    expect(filterCommands(cmds, "ticket").map((c) => c.name)).toEqual(["ticket", "tickets"]);
+    expect(filterCommands(cmds, "tick").map((c) => c.name)).toEqual(["tickets", "ticket"]);
+  });
+});
+
+describe("fillCommand", () => {
+  const cmds: FleetCommand[] = [
+    ...catalogue,
+    { name: "tickets", usage: "/tickets [@agent]", description: "Open tickets", mutates: false },
+    { name: "ticket", usage: "/ticket @agent <what to do>", description: "Hand out a ticket", mutates: true },
+    { name: "setup", usage: "/setup [url]…", description: "Find an engine", mutates: true },
+  ];
+
+  it("drops an optional placeholder left as the palette wrote it", () => {
+    expect(fillCommand("/tickets [@agent]", cmds)).toEqual({ text: "/tickets", missing: null });
+    expect(fillCommand("/setup [url]…", cmds)).toEqual({ text: "/setup", missing: null });
+  });
+
+  it("keeps what the operator typed in its place", () => {
+    expect(fillCommand("/tickets @Builder", cmds)).toEqual({ text: "/tickets @Builder", missing: null });
+  });
+
+  it("reports a required placeholder that was never filled in", () => {
+    expect(fillCommand("/ticket @Claude <what to do>", cmds).missing).toBe("<what to do>");
+    expect(fillCommand("/ticket @Claude write the notes", cmds)).toEqual({
+      text: "/ticket @Claude write the notes",
+      missing: null,
+    });
+  });
+
+  it("leaves brackets that are the operator's own, and unknown commands, alone", () => {
+    expect(fillCommand("/ticket @Claude fix [the] thing", cmds).text).toBe("/ticket @Claude fix [the] thing");
+    expect(fillCommand("/nope [x]", cmds)).toEqual({ text: "/nope [x]", missing: null });
   });
 });

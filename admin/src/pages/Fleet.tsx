@@ -165,8 +165,8 @@ export default function Fleet({ role = "operator" }: { role?: string }) {
   );
 
   return (
-    <div className="space-y-6 p-6">
-      <header className="flex items-center justify-between">
+    <div className="space-y-6 p-4 sm:p-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Fleet</h1>
           <p className="text-sm text-ink-400">
@@ -489,7 +489,8 @@ function ExternalCard({
         <span
           className={cx(
             "grid size-12 shrink-0 place-items-center rounded-xl ring-1 ring-inset",
-            meta.soft,
+            // The Codex mark needs a pale backing to read on a dark card.
+            kind === "codex" ? "bg-[#f3f4ff]" : meta.soft,
             meta.text,
             meta.ring,
           )}

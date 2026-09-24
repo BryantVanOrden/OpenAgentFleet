@@ -15,6 +15,7 @@ import { useEvents } from "../lib/events";
 import {
   commandPrefix,
   commandText,
+  fillCommand,
   filterCommands,
   fleetSummary,
   formatFleetSummary,
@@ -297,9 +298,15 @@ export default function FleetChannel({ role }: { role: string }) {
     setBusy(true);
     try {
       if (text.startsWith("/")) {
+        const filled = fillCommand(text, catalogue);
+        if (filled.missing) {
+          setError(`Fill in ${filled.missing} first, then press Enter.`);
+          return;
+        }
         setDraft("");
         setSuppressedFor(null);
-        await runCommand(text);
+        setError(null);
+        await runCommand(filled.text);
         return;
       }
       await api.sendPeerMessage({
@@ -346,9 +353,15 @@ export default function FleetChannel({ role }: { role: string }) {
         return;
       }
       if (e.key === "Tab" || e.key === "Enter") {
-        e.preventDefault();
-        complete(matches[selectedIndex]);
-        return;
+        const pick = matches[selectedIndex];
+        const { label, usage } = commandText(pick);
+        // "/org" typed out in full takes nothing more: Enter runs it.
+        const whole = e.key === "Enter" && usage === label && draft.trim().toLowerCase() === label.toLowerCase();
+        if (!whole) {
+          e.preventDefault();
+          complete(pick);
+          return;
+        }
       }
       if (e.key === "Escape") {
         e.preventDefault();

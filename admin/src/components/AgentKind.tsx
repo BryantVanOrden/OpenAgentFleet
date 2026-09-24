@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import type { AgentKind } from "../lib/api";
 import { initials } from "../lib/tickets";
+import claudeLogo from "../assets/agents/claude.svg";
+import codexLogo from "../assets/agents/codex.svg";
+import hermesLogo from "../assets/agents/hermes.svg";
+import openclawLogo from "../assets/agents/openclaw.svg";
 import { cx } from "./ui";
 
 /**
@@ -106,7 +110,85 @@ const PATHS: Record<AgentKind, ReactNode> = {
   ),
 };
 
-export function KindIcon({ kind, className }: { kind: AgentKind; className?: string }) {
+/**
+ * The products' own marks, where there is one. Claude, Codex and OpenClaw
+ * keep their colours; the Hermes glyph is drawn in currentColor, so it is a
+ * mask over the kind's hue and follows the theme. The Codex mark's gradient
+ * runs down to a deep blue that vanishes on a dark surface, so it sits on a
+ * pale disc in both themes. Desktop and webhook are generic and keep their
+ * line icons.
+ */
+const LOGOS: Partial<Record<AgentKind, { src: string; mask?: boolean; disc?: boolean }>> = {
+  claude_code: { src: claudeLogo },
+  codex: { src: codexLogo, disc: true },
+  hermes: { src: hermesLogo, mask: true },
+  openclaw: { src: openclawLogo },
+};
+
+/** The product name for a mark's accessible label and tooltip. */
+const PRODUCT: Record<AgentKind, string> = {
+  desktop: "Desktop",
+  claude_code: "Claude Code",
+  codex: "OpenAI Codex",
+  hermes: "Hermes Agent",
+  openclaw: "OpenClaw",
+  webhook: "Webhook",
+};
+
+export function KindIcon({
+  kind,
+  className,
+  decorative,
+}: {
+  kind: AgentKind;
+  className?: string;
+  /** Beside its own name already: hidden from screen readers. */
+  decorative?: boolean;
+}) {
+  const logo = LOGOS[kind];
+  const label = PRODUCT[kind];
+  const a11y = decorative ? { "aria-hidden": true as const } : { role: "img", "aria-label": label };
+  if (logo?.mask) {
+    return (
+      <span
+        {...a11y}
+        title={label}
+        className={cx("inline-block size-4 shrink-0 bg-current", className)}
+        style={{
+          maskImage: `url("${logo.src}")`,
+          WebkitMaskImage: `url("${logo.src}")`,
+          maskSize: "contain",
+          WebkitMaskSize: "contain",
+          maskRepeat: "no-repeat",
+          WebkitMaskRepeat: "no-repeat",
+          maskPosition: "center",
+          WebkitMaskPosition: "center",
+        }}
+      />
+    );
+  }
+  if (logo) {
+    const img = (
+      <img
+        src={logo.src}
+        alt={decorative ? "" : label}
+        title={label}
+        draggable={false}
+        className={cx("size-4 shrink-0 object-contain select-none", !logo.disc && className)}
+      />
+    );
+    return logo.disc ? (
+      <span
+        {...a11y}
+        title={label}
+        className={cx("inline-grid size-4 shrink-0 place-items-center rounded-full bg-[#f3f4ff] p-[8%] ring-1 ring-[#c9cdff]", className)}
+      >
+        <img src={logo.src} alt="" draggable={false} className="size-full object-contain select-none" />
+      </span>
+    ) : (
+      img
+    );
+  }
   return (
     <svg
       viewBox="0 0 24 24"
@@ -115,9 +197,10 @@ export function KindIcon({ kind, className }: { kind: AgentKind; className?: str
       strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cx("size-4", className)}
-      aria-hidden
+      className={cx("size-4 shrink-0", className)}
+      {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": label })}
     >
+      <title>{label}</title>
       {PATHS[kind]}
     </svg>
   );
@@ -135,7 +218,7 @@ export function KindBadge({ kind, className }: { kind: AgentKind; className?: st
         className,
       )}
     >
-      <KindIcon kind={kind} className="size-3" />
+      <KindIcon kind={kind} className="size-3" decorative />
       {m.label}
     </span>
   );
@@ -150,11 +233,14 @@ export function AgentAvatar({
   kind,
   size = "md",
   className,
+  mark,
 }: {
   name: string;
   kind: AgentKind;
   size?: "xs" | "sm" | "md" | "lg";
   className?: string;
+  /** Show the kind's mark even for a desktop (a kind, not an agent). */
+  mark?: boolean;
 }) {
   const m = KIND_META[kind];
   const sizes = {
@@ -163,20 +249,31 @@ export function AgentAvatar({
     md: "size-9 text-xs",
     lg: "size-11 text-sm",
   };
-  const icon = { xs: "size-2.5", sm: "size-3.5", md: "size-5", lg: "size-6" };
+  const icon = { xs: "size-3", sm: "size-4", md: "size-5", lg: "size-6" };
+  // The Codex mark carries its own padding, so on its disc it is drawn larger.
+  const discIcon = { xs: "size-3.5", sm: "size-5", md: "size-7", lg: "size-9" };
+  // A mark with a disc of its own fills the avatar; the others sit inside.
+  const disc = LOGOS[kind]?.disc;
   return (
     <span
       className={cx(
         "grid shrink-0 place-items-center rounded-full font-semibold ring-1 ring-inset",
-        m.soft,
+        disc ? "bg-[#f3f4ff]" : m.soft,
         m.text,
         m.ring,
         sizes[size],
         className,
       )}
+      title={mark ? PRODUCT[kind] : `${name} · ${PRODUCT[kind]}`}
       aria-hidden
     >
-      {kind === "desktop" ? initials(name) : <KindIcon kind={kind} className={icon[size]} />}
+      {kind === "desktop" && !mark ? (
+        initials(name)
+      ) : disc ? (
+        <img src={LOGOS[kind]!.src} alt="" draggable={false} className={cx("object-contain select-none", discIcon[size])} />
+      ) : (
+        <KindIcon kind={kind} className={icon[size]} decorative />
+      )}
     </span>
   );
 }
