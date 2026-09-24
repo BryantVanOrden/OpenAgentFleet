@@ -57,6 +57,21 @@ semantic versioning.
 - The package's documentation and changelog links on PyPI pointed at a `main`
   branch that does not exist.
 
+### Consoles
+- Both clients show the real Claude Code, Codex, Hermes and OpenClaw logos
+  wherever an agent's kind appears.
+- The console works on a phone: a top bar with a slide-out menu, bottom-sheet
+  dialogs, a full-screen ticket drawer, Work as tabs. Org-chart re-parenting
+  and Work-board moves use pointer events, so they work with touch and pen.
+- Tickets show the files an agent shared as links into the catalog;
+  cancelling says how many open parts go with it; reopening a request says
+  which parts go back to whom (`sent_back_to` in the API).
+- Ticket alerts close themselves when the ticket runs, finishes, is
+  cancelled or is deleted (migration 0039 closes the stale ones), and a
+  backlog ticket a person parked no longer raises one.
+- The site gains a 3D pass and a section on bringing your own agents; the
+  docs gallery is regenerated with the Org, Work, ticket and Add agent screens.
+
 ### Budgets and trust
 - A monthly ceiling per agent, a warning at a percentage, and a hold at 100%
   that stops the run; per-ticket budgets.
