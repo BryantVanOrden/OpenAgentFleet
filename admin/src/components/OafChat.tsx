@@ -11,7 +11,7 @@ import {
   type Provider,
 } from "../lib/api";
 import { useEvents } from "../lib/events";
-import { commandPrefix, commandText, filterCommands } from "../lib/fleetChat";
+import { commandPrefix, commandText, fillCommand, filterCommands } from "../lib/fleetChat";
 import { Markdown } from "../lib/markdown";
 import { speakable } from "../lib/speakable";
 import { shortPath } from "./SessionRail";
@@ -249,8 +249,18 @@ export default function OafChat({
 
   const send = useCallback(
     async (textIn?: string) => {
-      const text = (textIn ?? draft).trim();
+      let text = (textIn ?? draft).trim();
       if ((!text && pending.length === 0) || busy || readOnly) return;
+      if (text.startsWith("/")) {
+        // The same rule as the fleet chat: optional [placeholders] left as
+        // they were drop out, a required <placeholder> stops the send.
+        const filled = fillCommand(text, catalogue);
+        if (filled.missing) {
+          setError(`Fill in ${filled.missing} first, then press Enter.`);
+          return;
+        }
+        text = filled.text;
+      }
       setBusy(true);
       setError(null);
       const atts = pending.map((a) => a.id);
@@ -285,7 +295,7 @@ export default function OafChat({
         inputRef.current?.focus();
       }
     },
-    [draft, pending, busy, readOnly, session.id, onSessionChange, refresh, speak],
+    [draft, pending, busy, readOnly, catalogue, session.id, onSessionChange, refresh, speak],
   );
   sendRef.current = send;
 
