@@ -69,7 +69,7 @@ func dialGateway(ctx context.Context, url, token string, onEvent func(string, ma
 	if token != "" {
 		h.Set("Authorization", "Bearer "+token)
 	}
-	dialer := websocket.Dialer{HandshakeTimeout: 20 * time.Second}
+	dialer := websocket.Dialer{HandshakeTimeout: 20 * time.Second, NetDialContext: guardedDial, Proxy: nil}
 	conn, _, err := dialer.DialContext(ctx, url, h)
 	if err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ func (d *Dispatcher) openclawAttempt(ctx context.Context, r *run, token string, 
 			}
 		}
 	}
-	c, err := dialGateway(ctx, inst.Connection.URL, token, onEvent)
+	c, err := dialGateway(WithAllowPrivate(ctx, inst.Connection.AllowPrivate), inst.Connection.URL, token, onEvent)
 	if err != nil {
 		return outcome{err: "the agent could not be reached: could not reach the OpenClaw gateway: " + err.Error()}, false
 	}

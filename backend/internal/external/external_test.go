@@ -19,6 +19,9 @@ import (
 
 // ---------------------------------------------------------------- fakes ---
 
+// The webhook and gateway fakes listen on 127.0.0.1.
+func init() { AllowLoopback = true }
+
 type fakeStore struct {
 	mu      sync.Mutex
 	insts   map[string]*protocol.Instance

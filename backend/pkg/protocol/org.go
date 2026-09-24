@@ -90,6 +90,10 @@ type AgentConnection struct {
 	Autonomy string `json:"autonomy,omitempty"`
 	// TimeoutSec bounds one run. 0 means the default (30 minutes).
 	TimeoutSec int `json:"timeout_sec,omitempty"`
+	// AllowPrivate lets a webhook or OpenClaw agent be reached on a private
+	// network. Set by the server when an admin gives an agent such an
+	// address; never taken from a client or a template.
+	AllowPrivate bool `json:"allow_private,omitempty"`
 }
 
 // Trust levels. A low-trust agent reads hostile input -- web pages, external

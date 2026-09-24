@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/external"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/fleet"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/internal/store"
 	"github.com/BryantVanOrden/OpenAgentFleet/backend/pkg/protocol"
@@ -267,6 +268,7 @@ func defaultCapabilities(k protocol.AgentKind) string {
 // exposes the folder; a network kind needs a well-formed address.
 func (s *Server) validateConnection(ctx context.Context, kind protocol.AgentKind, c *protocol.AgentConnection, ownerID string) error {
 	c.Model = strings.TrimSpace(c.Model)
+	c.AllowPrivate = false // the server's to decide, below
 	switch c.Autonomy {
 	case "", "edits", "full":
 	default:
@@ -312,9 +314,29 @@ func (s *Server) validateConnection(ctx context.Context, kind protocol.AgentKind
 			return fmt.Errorf("a webhook address starts with http:// or https://")
 		}
 	}
+	private, err := checkAgentHost(ctx, u.Hostname(), roleAllows(userFrom(ctx).Role, roleAdmin))
+	if err != nil {
+		return err
+	}
+	c.AllowPrivate = private
 	c.URL = u.String()
 	c.DeviceID, c.Cwd = "", ""
 	return nil
+}
+
+// checkAgentHost refuses an agent address the orchestrator must never
+// connect to (loopback, link-local, cloud metadata), and one on a private
+// network unless an admin is setting it. It reports whether the address is
+// private, which is what lets the agent's runs dial it.
+func checkAgentHost(ctx context.Context, host string, admin bool) (private bool, err error) {
+	private, err = external.CheckHost(ctx, host)
+	if err != nil {
+		return false, err
+	}
+	if private && !admin {
+		return false, fmt.Errorf("%s is on a private network; only an admin can point an agent there", host)
+	}
+	return private, nil
 }
 
 // underAnyRoot reports whether path is one of roots or inside one. Compared
@@ -364,7 +386,7 @@ func (s *Server) handleExportFleet(w http.ResponseWriter, r *http.Request) {
 		conn := in.Connection
 		// Scrubbed: ids and secrets do not survive the move, and a device is
 		// somebody's PC.
-		conn.TokenRef, conn.DeviceID = "", ""
+		conn.TokenRef, conn.DeviceID, conn.AllowPrivate = "", "", false
 		tpl.Agents = append(tpl.Agents, protocol.TemplateAgent{
 			Name: in.Name, Kind: in.AgentKindOf(), Title: in.Title, ReportsTo: names[in.ReportsTo],
 			Capabilities: in.Capabilities, ArchetypeID: in.ArchetypeID, Tier: in.Tier,
@@ -445,7 +467,7 @@ func (s *Server) handleImportFleet(w http.ResponseWriter, r *http.Request) {
 			Name: name, ArchetypeID: a.ArchetypeID, SystemPrompt: a.SystemPrompt, Tier: a.Tier,
 			ShellAccess: a.ShellAccess, Voice: a.Voice, OwnerID: owner, Kind: a.Kind, Title: a.Title,
 			Capabilities: a.Capabilities, BudgetMonthUSD: a.BudgetMonth, BudgetWarnPct: a.BudgetWarn,
-			Trust: a.Trust, Connection: a.Connection,
+			Trust: a.Trust, Connection: withoutGrants(a.Connection),
 		}
 		var inst *protocol.Instance
 		if a.Kind.External() {
@@ -497,4 +519,12 @@ func (s *Server) createExternalUnvalidated(ctx context.Context, req fleet.Create
 	}
 	inst.Connection.DeviceID, inst.Connection.TokenRef = "", ""
 	return inst, s.db.CreateInstance(ctx, inst)
+}
+
+// withoutGrants drops what a template may not carry into a fleet: whether
+// the agent may be reached on a private network is decided when an admin
+// sets its address here, not by a file.
+func withoutGrants(c protocol.AgentConnection) protocol.AgentConnection {
+	c.AllowPrivate = false
+	return c
 }

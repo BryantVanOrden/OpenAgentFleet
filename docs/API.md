@@ -188,6 +188,8 @@ answering `201` at once (nothing is provisioned):
 that reported that CLI; `cwd` must be under one of its roots), `openclaw`
 (`connection.url` is `ws://` or `wss://`, `agent_id` optional, `token`
 required) or `webhook` (`connection.url` is `http(s)://`, `token` optional).
+A URL on loopback or a link-local address is refused; one on a private
+network needs an admin (the agent then carries `allow_private: true`).
 A token is sealed in the vault and never returned. Desktops take the same
 org fields. Start, stop, pause and resume answer `400` for an external
 agent: it has no desktop.

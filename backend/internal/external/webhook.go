@@ -2,6 +2,7 @@ package external
 
 import (
 	"bytes"
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,7 +51,13 @@ type Completion struct {
 	Model        string  `json:"model,omitempty"`
 }
 
-var webhookClient = &http.Client{Timeout: 60 * time.Second}
+// webhookClient dials through the address guard (netguard.go), never
+// through a proxy that would dial for it, and follows redirects only
+// through the same guard.
+var webhookClient = &http.Client{
+	Timeout:   60 * time.Second,
+	Transport: &http.Transport{DialContext: guardedDial, Proxy: nil, TLSHandshakeTimeout: 15 * time.Second, MaxIdleConns: 20, IdleConnTimeout: 90 * time.Second},
+}
 
 func (d *Dispatcher) runWebhook(ctx context.Context, r *run) outcome {
 	inst, task := r.inst, r.task
@@ -76,7 +83,7 @@ func (d *Dispatcher) runWebhook(ctx context.Context, r *run) outcome {
 	body.Callback.Tickets, body.Callback.Comments, body.Callback.Context = base+"/tickets", base+"/comments", base
 	raw, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inst.Connection.URL, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(WithAllowPrivate(ctx, inst.Connection.AllowPrivate), http.MethodPost, inst.Connection.URL, bytes.NewReader(raw))
 	if err != nil {
 		return outcome{err: "the webhook address is not usable: " + err.Error()}
 	}
@@ -86,6 +93,10 @@ func (d *Dispatcher) runWebhook(ctx context.Context, r *run) outcome {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := webhookClient.Do(req)
+	if errors.Is(err, ErrAddressRefused) {
+		// Not a failure to retry: the address itself is not allowed.
+		return outcome{err: "the webhook address is refused: " + err.Error()}
+	}
 	if err != nil {
 		return outcome{err: "the agent could not be reached: the webhook did not answer: " + err.Error()}
 	}
