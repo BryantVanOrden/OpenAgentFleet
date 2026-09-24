@@ -48,8 +48,10 @@ func TestConversationRoundTrip(t *testing.T) {
 	}
 }
 
-// Deleting a thread must unfile its messages, never delete them.
-func TestDeleteConversationKeepsItsMessages(t *testing.T) {
+// Deleting a thread deletes what was said in it. Unfiling the messages
+// instead poured them into whatever channel takes unaddressed traffic
+// (d14055f).
+func TestDeleteConversationDeletesItsMessages(t *testing.T) {
 	s, ctx := testStore(t)
 
 	c := protocol.Conversation{
@@ -81,18 +83,10 @@ func TestDeleteConversationKeepsItsMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	var found bool
 	for _, got := range msgs {
-		if got.ID != m.ID {
-			continue
+		if got.ID == m.ID {
+			t.Errorf("the deleted thread's message is still listed, filed to %q", got.ConversationID)
 		}
-		found = true
-		if got.ConversationID != "" {
-			t.Errorf("message still filed in the deleted thread: %q", got.ConversationID)
-		}
-	}
-	if !found {
-		t.Error("deleting the thread destroyed its message")
 	}
 }
 

@@ -83,10 +83,6 @@ func (s *Store) ListConversations(ctx context.Context) ([]protocol.Conversation,
 	return out, mrows.Err()
 }
 
-// DeleteConversation removes a thread. Its messages are kept: deleting a thread
-// tidies the comms screen, and silently destroying the record of what agents
-// said to each other is not something a tidy-up should do. They become
-// unassigned and stop being listed.
 // DeleteConversation removes a thread and everything said in it.
 //
 // The messages used to be unfiled rather than deleted, on the theory that
