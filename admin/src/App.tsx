@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, artifactUrl, getToken, setToken, type Alert, type User } from "./lib/api";
 import { useEvents } from "./lib/events";
 import { ThinkingDots, cx } from "./components/ui";
@@ -95,9 +95,10 @@ export default function App() {
   }, [user, location.pathname, refreshAlerts]);
 
   // The slide-over closes when a page is chosen, and on Escape.
+  // The hash counts too: the Support link can be followed from /settings.
   useEffect(() => {
     setNavOpen(false);
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, location.hash]);
   useEffect(() => {
     if (!navOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setNavOpen(false);
@@ -236,6 +237,15 @@ export default function App() {
           🎙️ Voice Co-Pilot
         </button>
         <ThemePicker />
+        <Link
+          to="/settings#support"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-ink-400 transition-colors hover:bg-ink-850 hover:text-ink-100"
+        >
+          <span className="w-3 text-center" aria-hidden>
+            ♡
+          </span>
+          <span className="flex-1">Support the project</span>
+        </Link>
         <div className="flex items-center gap-2 text-ink-400">
           <span
             className={cx(

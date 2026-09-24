@@ -3,6 +3,7 @@ import { api, type ApiKeyRecord, type BotTemplate, type User } from "../lib/api"
 import ArchetypePackages from "../components/ArchetypePackages";
 import DepartmentsCard from "../components/DepartmentsCard";
 import HostCard from "../components/HostCard";
+import SupportCard from "../components/SupportCard";
 import FleetTemplateCard from "../components/FleetTemplateCard";
 import {
   Button,
@@ -46,11 +47,14 @@ export default function Settings({ role }: { role: string }) {
 
   if (!isAdmin) {
     return (
-      <div className="p-6">
+      <div className="max-w-4xl space-y-6 p-6">
         <Empty
           title="Administrator only"
           hint="Users, credentials and platform limits are managed by administrators."
         />
+        {/* The sidebar's Support link is offered to every role, so the card it
+            points at has to be here for every role too. */}
+        <SupportCard />
       </div>
     );
   }
@@ -99,6 +103,7 @@ export default function Settings({ role }: { role: string }) {
       <DepartmentsCard users={users} />
       <ApiKeysCard onError={setError} />
       <SecretsCard secrets={secrets} onChange={load} onError={setError} />
+      <SupportCard />
     </div>
   );
 }
