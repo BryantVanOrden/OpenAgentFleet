@@ -84,9 +84,9 @@ func (s *Server) fileWorkTicket(ctx context.Context, instanceID, archetype, titl
 // runPipelineNode runs one pipeline stage as a ticket and waits for it.
 func (s *Server) runPipelineNode(ctx context.Context, node protocol.PipelineNode) (string, error) {
 	run, _ := pipeline.RunFrom(ctx)
-	short := run.RunID
-	if len(short) > 8 {
-		short = short[:8]
+	short := strings.TrimPrefix(run.RunID, "run-")
+	if len(short) > 6 {
+		short = short[len(short)-6:]
 	}
 	t, err := s.fileWorkTicket(ctx, node.InstanceID, node.ArchetypeID, node.Name, node.GoalTemplate,
 		"pipeline:"+run.RunID, fmt.Sprintf("Pipeline %s — run %s", firstNonEmptyStr(run.Pipeline, "run"), short),
