@@ -118,6 +118,275 @@ export interface Instance {
   org_ids?: string[];
   last_error?: string;
   created_at: string;
+  /** How the agent runs. Absent on rows written before kinds existed, which
+   *  are all desktops — read it through agentKindOf(). */
+  kind?: AgentKind;
+  /** The agent this one reports to; empty reports to you. */
+  reports_to?: string;
+  title?: string;
+  /** "When I'm useful": what colleagues read to decide who to hand work to. */
+  capabilities?: string;
+  /** How an external agent is reached. Empty for a desktop. */
+  connection?: AgentConnection;
+  /** Monthly spend ceiling in dollars; 0 is none. */
+  budget_month_usd?: number;
+  /** The percentage of the budget at which you are warned, once. */
+  budget_warn_pct?: number;
+  trust?: Trust;
+  /** Why the agent is not being given work: "budget" when held at its
+   *  ceiling, empty otherwise. */
+  hold?: string;
+}
+
+// ------------------------------------------------------ org and tickets ---
+
+export type AgentKind = "desktop" | "claude_code" | "codex" | "hermes" | "openclaw" | "webhook";
+export type Trust = "standard" | "low";
+
+/** Every kind, in the order the console offers them. */
+export const AGENT_KINDS: AgentKind[] = [
+  "desktop",
+  "claude_code",
+  "codex",
+  "hermes",
+  "openclaw",
+  "webhook",
+];
+
+/** Kinds that run as a CLI on a PC through `fleetctl host`. */
+export const ON_DEVICE_KINDS: ReadonlySet<AgentKind> = new Set(["claude_code", "codex", "hermes"]);
+
+export const agentKindOf = (i: { kind?: string }): AgentKind =>
+  (i.kind && (AGENT_KINDS as string[]).includes(i.kind) ? i.kind : "desktop") as AgentKind;
+
+export const isExternalKind = (k: string | undefined) => !!k && k !== "desktop";
+
+/** How an external agent is reached. Never holds a secret: token_ref names a
+ *  vault entry, and a token is sent separately and only on write. */
+export interface AgentConnection {
+  device_id?: string;
+  cwd?: string;
+  model?: string;
+  args?: string[];
+  url?: string;
+  token_ref?: string;
+  agent_id?: string;
+  /** "edits" lets a CLI change files but not run commands; "full" lets it do
+   *  anything inside its folder. Empty is "edits". */
+  autonomy?: "" | "edits" | "full";
+  timeout_sec?: number;
+}
+
+export type TicketStatus =
+  | "backlog"
+  | "todo"
+  | "in_progress"
+  | "in_review"
+  | "blocked"
+  | "done"
+  | "cancelled";
+export type TicketKind = "work" | "review" | "verify" | "unblock";
+
+/** A ticket as the API returns it: with its reference and the names of the
+ *  agents it refers to, so a board renders without a lookup per card. */
+export interface TicketView {
+  id: string;
+  /** "T-12". */
+  ref: string;
+  number: number;
+  title: string;
+  description?: string;
+  kind: TicketKind;
+  status: TicketStatus;
+  priority?: number;
+  parent_id?: string;
+  /** For review and verify tickets, the ticket being checked. */
+  target_id?: string;
+  assignee_id?: string;
+  assignee_name?: string;
+  assignee_user_id?: string;
+  reviewer_id?: string;
+  reviewer_name?: string;
+  verifier_id?: string;
+  verifier_name?: string;
+  thread?: string;
+  /** The operator's words the whole tree started from. */
+  origin?: string;
+  stage?: string;
+  /** The live run, while there is one. */
+  task_id?: string;
+  attempts: number;
+  rounds: number;
+  wakes: number;
+  verdict?: "" | "pass" | "fail";
+  /** The closing report. */
+  result?: string;
+  blocked_reason?: string;
+  budget_usd?: number;
+  cost_usd: number;
+  blocked_by: string[] | null;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  done_at?: string;
+}
+
+export type TicketCommentKind =
+  | "comment"
+  | "system"
+  | "result"
+  | "verdict"
+  | "published"
+  | "retry"
+  | "review_brief";
+
+export interface TicketComment {
+  id: string;
+  ticket_id: string;
+  author_id?: string;
+  author_user_id?: string;
+  author_name?: string;
+  kind: TicketCommentKind | string;
+  body: string;
+  created_at: string;
+}
+
+/** Everything a ticket's page shows. */
+export interface TicketDetail {
+  ticket: TicketView;
+  /** From the root request down to this ticket's parent: why it matters. */
+  ancestry: TicketView[];
+  children: TicketView[] | null;
+  blockers: TicketView[] | null;
+  dependents: TicketView[] | null;
+  comments: TicketComment[] | null;
+  runs: Task[] | null;
+}
+
+export interface TicketFilter {
+  status?: TicketStatus[];
+  assignee?: string;
+  parent?: string;
+  /** Only top-level requests. */
+  roots?: boolean;
+  limit?: number;
+}
+
+export interface CreateTicketBody {
+  title: string;
+  description?: string;
+  kind?: TicketKind;
+  status?: TicketStatus;
+  priority?: number;
+  assignee_id?: string;
+  parent_id?: string;
+  blocked_by?: string[];
+  reviewer_id?: string;
+  verifier_id?: string;
+  budget_usd?: number;
+  thread?: string;
+}
+
+export type PatchTicketBody = Partial<
+  Pick<
+    CreateTicketBody,
+    | "title"
+    | "description"
+    | "status"
+    | "priority"
+    | "assignee_id"
+    | "reviewer_id"
+    | "verifier_id"
+    | "parent_id"
+    | "budget_usd"
+    | "blocked_by"
+  >
+>;
+
+/** One agent in the org chart, with what the chart shows about it. */
+export interface OrgNode {
+  id: string;
+  name: string;
+  title?: string;
+  kind: AgentKind;
+  state: string;
+  /** Empty reports to you. */
+  reports_to?: string;
+  capabilities?: string;
+  trust: Trust | string;
+  hold?: string;
+  archetype_id?: string;
+  /** A run is live; ticket_ref is the ticket it is on. */
+  busy: boolean;
+  ticket_ref?: string;
+  ticket_title?: string;
+  spend_month_usd: number;
+  budget_month_usd: number;
+  open_tickets: number;
+  online: boolean;
+}
+
+export interface OrgChart {
+  nodes: OrgNode[];
+  /** The kinds this server can run, for the add dialog. */
+  kinds: { kind: AgentKind; label: string; on_device: boolean }[];
+}
+
+/** A portable description of a fleet with every secret scrubbed. */
+export interface FleetTemplate {
+  version: number;
+  name?: string;
+  exported_at: string;
+  agents: {
+    name: string;
+    kind: AgentKind;
+    title?: string;
+    /** A name, not an id: ids do not survive the move. */
+    reports_to?: string;
+    capabilities?: string;
+    archetype_id?: string;
+    tier?: string;
+    system_prompt?: string;
+    shell_access?: boolean;
+    voice?: string;
+    budget_month_usd?: number;
+    budget_warn_pct?: number;
+    trust?: string;
+    connection?: AgentConnection;
+  }[];
+}
+
+/** What an import did — or, on a dry run, would do. */
+export interface ImportResult {
+  created: string[];
+  skipped: string[];
+  renamed: string[];
+  notes: string[];
+}
+
+/** The profile fields PUT /instances/{id}/profile accepts. Only the fields
+ *  present change. Budgets need an admin. */
+export interface ProfileBody {
+  title?: string;
+  capabilities?: string;
+  reports_to?: string;
+  budget_month_usd?: number;
+  budget_warn_pct?: number;
+  trust?: Trust;
+  connection?: AgentConnection;
+  /** A new gateway or webhook token. It goes to the vault. */
+  token?: string;
+}
+
+function ticketQuery(f: TicketFilter = {}): string {
+  const q = new URLSearchParams();
+  if (f.status?.length) q.set("status", f.status.join(","));
+  if (f.assignee) q.set("assignee", f.assignee);
+  if (f.parent) q.set("parent", f.parent);
+  if (f.roots) q.set("roots", "1");
+  if (f.limit) q.set("limit", String(f.limit));
+  const s = q.toString();
+  return s ? `?${s}` : "";
 }
 
 export interface InstanceStats {
@@ -882,6 +1151,9 @@ export interface OafDevice {
   platform?: string;
   roots: string[];
   auto_approve: boolean;
+  /** The agent CLIs installed on it (claude_code, codex, hermes). Empty from
+   *  a host too old to report them. */
+  runtimes?: string[] | null;
   last_seen?: string;
   created_at: string;
   online: boolean;
@@ -955,16 +1227,63 @@ export const api = {
   }) => post<ImportArchetypeResult>("/api/archetypes/import", body),
   instances: () => get<Instance[]>("/api/instances"),
   instance: (id: string) => get<Instance>(`/api/instances/${id}`),
-  createInstance: (body: {
-    name: string;
-    archetype_id?: string;
-    system_prompt?: string;
-    preinstalled_tools?: string[];
-    tier: Tier;
-    override?: Record<string, unknown>;
-    egress: EgressPolicy;
-    shell_access: boolean;
-  }) => post<Instance>("/api/instances", body),
+  /**
+   * Create an agent. A desktop needs a tier and provisions a sandbox; any
+   * other kind is a row and a connection, and takes no tier. The token of an
+   * OpenClaw gateway or webhook goes to the vault, never onto the row.
+   */
+  createInstance: (
+    body: {
+      name: string;
+      kind?: AgentKind;
+      archetype_id?: string;
+      system_prompt?: string;
+      preinstalled_tools?: string[];
+      title?: string;
+      reports_to?: string;
+      capabilities?: string;
+      budget_month_usd?: number;
+      budget_warn_pct?: number;
+      trust?: Trust;
+    } & (
+      | {
+          kind?: "desktop";
+          tier: Tier;
+          override?: Record<string, unknown>;
+          egress: EgressPolicy;
+          shell_access: boolean;
+        }
+      | {
+          kind: Exclude<AgentKind, "desktop">;
+          connection: AgentConnection;
+          token?: string;
+        }
+    ),
+  ) => post<Instance>("/api/instances", body),
+  /** Change an agent's place in the org chart, its limits or its connection.
+   *  Only the fields present change. */
+  setProfile: (instanceId: string, body: ProfileBody) =>
+    put<Instance>(`/api/instances/${instanceId}/profile`, body),
+
+  // The org chart and tickets.
+  getOrg: () => get<OrgChart>("/api/org"),
+  listTickets: (filter: TicketFilter = {}) => get<TicketView[]>(`/api/tickets${ticketQuery(filter)}`),
+  createTicket: (body: CreateTicketBody) => post<TicketView>("/api/tickets", body),
+  /** By id or by reference ("T-12"). */
+  getTicket: (idOrRef: string) => get<TicketDetail>(`/api/tickets/${encodeURIComponent(idOrRef)}`),
+  patchTicket: (idOrRef: string, body: PatchTicketBody) =>
+    patch<TicketView>(`/api/tickets/${encodeURIComponent(idOrRef)}`, body),
+  deleteTicket: (idOrRef: string) => del<void>(`/api/tickets/${encodeURIComponent(idOrRef)}`),
+  commentTicket: (idOrRef: string, body: string) =>
+    post<TicketComment>(`/api/tickets/${encodeURIComponent(idOrRef)}/comments`, { body }),
+  /** Send finished work back with what is missing. */
+  reopenTicket: (idOrRef: string, reason: string) =>
+    post<TicketView>(`/api/tickets/${encodeURIComponent(idOrRef)}/reopen`, { reason }),
+
+  // Fleet templates (admin).
+  exportFleet: () => get<FleetTemplate>("/api/fleet/export"),
+  importFleet: (body: { template: FleetTemplate; dry_run: boolean; rename: boolean }) =>
+    post<ImportResult>("/api/fleet/import", body),
   instanceAction: (id: string, action: "start" | "stop" | "pause" | "resume") =>
     post<Instance>(`/api/instances/${id}/${action}`),
   deleteInstance: (id: string) => del<void>(`/api/instances/${id}`),

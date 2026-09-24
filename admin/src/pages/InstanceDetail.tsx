@@ -5,6 +5,8 @@ import {
   DEFAULT_CHAT_ID,
   GRANT_PERMS_PER_BOT,
   GRANT_PERM_LABELS,
+  ON_DEVICE_KINDS,
+  agentKindOf,
   api,
   artifactUrl,
   voice as voiceApi,
@@ -15,6 +17,7 @@ import {
   type ChatSession,
   type Instance,
   type ModelCombo,
+  type OafDevice,
   type Provider,
   type StepRecord,
   type Task,
@@ -25,6 +28,7 @@ import { useEvents } from "../lib/events";
 import { Markdown } from "../lib/markdown";
 import { speakable } from "../lib/speakable";
 import { toast } from "../components/Toasts";
+import { KIND_META, KindBadge, KindIcon } from "../components/AgentKind";
 import {
   Ago,
   Button,
@@ -55,6 +59,13 @@ export default function InstanceDetail({ role }: { role: string }) {
   const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const readOnly = role === "auditor";
+  // An agent that runs elsewhere has no desktop: no stream, no VNC, no
+  // recording. What it has instead is a connection, and its runs.
+  const external = !!instance && agentKindOf(instance) !== "desktop";
+  const tabs: Tab[] = external ? ["activity", "chat"] : ["desktop", "activity", "chat"];
+  useEffect(() => {
+    if (external && tab === "desktop") setTab("activity");
+  }, [external, tab]);
 
   const load = useCallback(async () => {
     try {
@@ -107,23 +118,34 @@ export default function InstanceDetail({ role }: { role: string }) {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold tracking-tight">{instance.name}</h1>
-            <StateBadge state={instance.state} live={instance.state === "running"} />
-            {recording && (
+            {external ? (
+              <KindBadge kind={agentKindOf(instance)} />
+            ) : (
+              <StateBadge state={instance.state} live={instance.state === "running"} />
+            )}
+            {!external && recording && (
               <span className="flex items-center gap-1.5 rounded-full bg-bad-500/15 px-2.5 py-0.5 text-xs text-bad-500 ring-1 ring-inset ring-bad-500/30">
                 <span className="size-1.5 rounded-full bg-current pulse-live" /> recording
               </span>
             )}
           </div>
-          <p className="mt-0.5 font-mono text-xs text-ink-400">
-            {instance.tier} · {instance.profile.vcpu} vCPU ·{" "}
-            {(instance.profile.memory_mb / 1024).toFixed(0)} GB ·{" "}
-            {instance.shell_access ? "shell enabled" : "shell disabled"}
-            {instance.sudo_access ? " · sudo" : ""}
-          </p>
+          {external ? (
+            <p className="mt-0.5 text-xs text-ink-400">
+              {instance.title ? `${instance.title} · ` : ""}
+              {KIND_META[agentKindOf(instance)].label}, running outside the fleet
+            </p>
+          ) : (
+            <p className="mt-0.5 font-mono text-xs text-ink-400">
+              {instance.tier} · {instance.profile.vcpu} vCPU ·{" "}
+              {(instance.profile.memory_mb / 1024).toFixed(0)} GB ·{" "}
+              {instance.shell_access ? "shell enabled" : "shell disabled"}
+              {instance.sudo_access ? " · sudo" : ""}
+            </p>
+          )}
         </div>
 
         <nav className="flex gap-1 rounded-lg bg-ink-900 p-1 ring-1 ring-ink-700">
-          {(["desktop", "activity", "chat"] as Tab[]).map((t) => (
+          {tabs.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -144,7 +166,7 @@ export default function InstanceDetail({ role }: { role: string }) {
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="min-w-0 flex-1 p-6">
-          {tab === "desktop" && (
+          {tab === "desktop" && !external && (
             <DesktopPane
               instance={instance}
               readOnly={readOnly}
@@ -158,6 +180,7 @@ export default function InstanceDetail({ role }: { role: string }) {
         </div>
 
         <aside className="w-full shrink-0 space-y-4 overflow-y-auto border-t border-ink-800 p-4 lg:w-80 lg:border-l lg:border-t-0">
+          {external && <ConnectionCard instance={instance} />}
           <TaskList
             tasks={tasks}
             activeId={activeTask?.id}
@@ -201,6 +224,7 @@ function ControlsMenu({
   const navigate = useNavigate();
   const isAdmin = role === "admin";
   const readOnly = role === "auditor";
+  const external = agentKindOf(instance) !== "desktop";
   const [modal, setModal] = useState<null | "voice" | "persona" | "models" | "memory" | "access">(
     null,
   );
@@ -255,6 +279,13 @@ function ControlsMenu({
         },
         { label: "Memory", hint: "What this bot has kept", onClick: () => setModal("memory") },
         {
+          label: "Org profile",
+          hint: external ? "Title, manager, trust, budget and connection" : "Title, manager, trust and budget",
+          onClick: () => navigate(`/org?agent=${instance.id}`),
+        },
+        // Shell and sudo are about the sandbox; an external agent has none.
+        ...(external ? [] : [
+        {
           label: instance.shell_access ? "Revoke shell access" : "Allow shell access",
           hint: instance.shell_access
             ? "Takes effect on the next step"
@@ -280,10 +311,11 @@ function ControlsMenu({
             }
           },
         },
+        ]),
         { divider: true },
         {
-          label: "Delete instance",
-          hint: "Removes the agent and its disk",
+          label: external ? "Remove agent" : "Delete instance",
+          hint: external ? "Removes it from the fleet; nothing on its PC or service is touched" : "Removes the agent and its disk",
           danger: true,
           onClick: () => setConfirmDelete(true),
         },
@@ -313,7 +345,11 @@ function ControlsMenu({
       <Confirm
         open={confirmDelete}
         title="Delete this agent?"
-        body={`"${instance.name}" and everything on its disk will be removed. This cannot be undone.`}
+        body={
+          external
+            ? `"${instance.name}" will be removed from the fleet. Its tickets lose their assignee. Nothing on its PC or service is touched.`
+            : `"${instance.name}" and everything on its disk will be removed. This cannot be undone.`
+        }
         confirmLabel="Delete"
         danger
         busy={busy}
@@ -1037,6 +1073,94 @@ function MemoryModal({
         }}
       />
     </Modal>
+  );
+}
+
+// --------------------------------------------------------------- connection ---
+
+/**
+ * How an external agent is reached, in place of the desktop a sandboxed one
+ * would show. Edited from its org profile, where the device and folder
+ * pickers live.
+ */
+function ConnectionCard({ instance }: { instance: Instance }) {
+  const kind = agentKindOf(instance);
+  const meta = KIND_META[kind];
+  const conn = instance.connection ?? {};
+  const onDevice = ON_DEVICE_KINDS.has(kind);
+  const [device, setDevice] = useState<OafDevice | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!onDevice || !conn.device_id) return;
+    api
+      .oafDevices()
+      .then((list) => setDevice(list.find((d) => d.id === conn.device_id) ?? null))
+      .catch(() => setDevice(null));
+  }, [onDevice, conn.device_id]);
+
+  const rows: [string, React.ReactNode][] = onDevice
+    ? [
+        [
+          "PC",
+          !conn.device_id ? (
+            <span className="text-warn-500">Not set</span>
+          ) : device === undefined ? (
+            "…"
+          ) : device === null ? (
+            <span className="text-warn-500">No longer connected to your account</span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <span className={cx("size-1.5 rounded-full", device.online ? "bg-good-500" : "bg-ink-500")} />
+              {device.name} · {device.online ? "online" : "offline"}
+            </span>
+          ),
+        ],
+        ["Folder", <span className="font-mono break-all">{conn.cwd || "—"}</span>],
+        ["Model", conn.model || "the CLI's default"],
+        [
+          "Autonomy",
+          (conn.autonomy || "edits") === "full"
+            ? "Full — anything inside its folder"
+            : "Edits — files, but no commands",
+        ],
+      ]
+    : [
+        [kind === "openclaw" ? "Gateway" : "URL", <span className="font-mono break-all">{conn.url || "—"}</span>],
+        ...(kind === "openclaw"
+          ? ([["Agent id", <span className="font-mono">{conn.agent_id || "default"}</span>]] as [string, React.ReactNode][])
+          : []),
+        ["Token", conn.token_ref ? "stored in the vault" : "none"],
+      ];
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <span className={cx("grid size-6 place-items-center rounded-md ring-1 ring-inset", meta.soft, meta.text, meta.ring)}>
+            <KindIcon kind={kind} className="size-3.5" />
+          </span>
+          Connection
+        </span>
+      }
+      action={
+        <Link to={`/org?agent=${instance.id}`} className="text-xs text-live-500 hover:underline">
+          Edit
+        </Link>
+      }
+    >
+      <dl className="space-y-2 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[5.5rem_1fr] gap-2">
+            <dt className="text-ink-400">{label}</dt>
+            <dd className="min-w-0 text-ink-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-[11px] text-ink-500">
+        {meta.label} runs outside the fleet, so there is no desktop to watch. Its runs are listed below and in the
+        Activity tab.
+      </p>
+    </Card>
   );
 }
 

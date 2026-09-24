@@ -1,4 +1,6 @@
 import { Fragment, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { splitTicketRefs, workLink } from "./tickets";
 
 /**
  * Renders the markdown agents actually write — emphasis, inline code, fenced
@@ -101,6 +103,28 @@ export function parseBlocks(md: string): Block[] {
   return blocks;
 }
 
+/**
+ * Plain text with ticket references (T-12) turned into links to the board.
+ * Only plain runs go through here — never code spans or link labels — so a
+ * reference quoted in backticks stays literal.
+ */
+function withTicketLinks(text: string, keyBase: string): ReactNode[] {
+  return splitTicketRefs(text).map((part, i) =>
+    typeof part === "string" ? (
+      part
+    ) : (
+      <Link
+        key={`${keyBase}-t${i}`}
+        to={workLink(part.ref)}
+        className="rounded font-mono text-[0.95em] text-live-500 underline decoration-live-500/40 underline-offset-2 hover:decoration-live-500"
+        title={`Open ${part.ref} on the Work board`}
+      >
+        {part.ref}
+      </Link>
+    ),
+  );
+}
+
 /** Inline tokens for one run of text: code spans, bold, italic, strike, links. */
 export function renderInline(text: string, keyBase = "i"): ReactNode[] {
   const out: ReactNode[] = [];
@@ -110,7 +134,7 @@ export function renderInline(text: string, keyBase = "i"): ReactNode[] {
   let last = 0;
   let k = 0;
   for (let m = re.exec(text); m; m = re.exec(text)) {
-    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m.index > last) out.push(...withTicketLinks(text.slice(last, m.index), `${keyBase}-p${k}`));
     const tok = m[0];
     const key = `${keyBase}-${k++}`;
     if (tok.startsWith("`")) {
@@ -150,7 +174,7 @@ export function renderInline(text: string, keyBase = "i"): ReactNode[] {
     }
     last = m.index + tok.length;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) out.push(...withTicketLinks(text.slice(last), `${keyBase}-end`));
   return out;
 }
 

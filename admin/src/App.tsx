@@ -18,12 +18,16 @@ import Vault from "./pages/Vault";
 import Pipelines from "./pages/Pipelines";
 import Financials from "./pages/Financials";
 import MCPHub from "./pages/MCPHub";
+import Org from "./pages/Org";
+import Work from "./pages/Work";
 
 const NAV: { to: string; label: string; icon: string; adminOnly?: boolean; end?: boolean }[] = [
   // Exact match: "/" is a prefix of every route, so without `end` the chat
   // entry would light up on all of them.
   { to: "/", label: "Chat", icon: "💬", end: true },
   { to: "/fleet", label: "Fleet", icon: "▦" },
+  { to: "/org", label: "Org", icon: "⌬" },
+  { to: "/work", label: "Work", icon: "☰" },
   { to: "/pipelines", label: "Pipelines", icon: "⛓" },
   { to: "/vault", label: "Fleet Vault", icon: "🔐" },
   { to: "/mcp", label: "MCP Hub", icon: "🔌" },
@@ -233,7 +237,9 @@ export default function App() {
         <div key={location.pathname} className="page-enter h-full">
         <Routes>
           <Route path="/" element={<Home role={user.role} />} />
-          <Route path="/fleet" element={<Fleet />} />
+          <Route path="/fleet" element={<Fleet role={user.role} />} />
+          <Route path="/org" element={<Org role={user.role} />} />
+          <Route path="/work" element={<Work role={user.role} />} />
           <Route path="/pipelines" element={<Pipelines />} />
           <Route path="/vault" element={<Vault role={user.role} />} />
           <Route path="/mcp" element={<MCPHub />} />

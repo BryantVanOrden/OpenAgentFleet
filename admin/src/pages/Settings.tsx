@@ -3,6 +3,7 @@ import { api, type ApiKeyRecord, type BotTemplate, type User } from "../lib/api"
 import ArchetypePackages from "../components/ArchetypePackages";
 import DepartmentsCard from "../components/DepartmentsCard";
 import HostCard from "../components/HostCard";
+import FleetTemplateCard from "../components/FleetTemplateCard";
 import {
   Button,
   Card,
@@ -92,6 +93,7 @@ export default function Settings({ role }: { role: string }) {
         </p>
       </Card>
 
+      <FleetTemplateCard />
       <HostCard />
       <UsersCard users={users} onChange={load} onError={setError} />
       <DepartmentsCard users={users} />

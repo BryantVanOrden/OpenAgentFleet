@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  ON_DEVICE_KINDS,
+  agentKindOf,
   api,
   type AgentAction,
   type EgressPolicy,
   type Instance,
   type InstanceStats,
+  type OrgNode,
   type Task,
   type Tier,
   type TierProfile,
@@ -32,14 +35,21 @@ import {
 } from "../components/ui";
 import QuickLaunch from "../components/QuickLaunch";
 import BotCatalogModal from "../components/BotCatalogModal";
+import AddAgentDialog from "../components/AddAgentDialog";
+import { KIND_META, KindBadge, KindIcon } from "../components/AgentKind";
+import { toast } from "../components/Toasts";
+import { workLink } from "../lib/tickets";
 
-export default function Fleet() {
+export default function Fleet({ role = "operator" }: { role?: string }) {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [stats, setStats] = useState<Record<string, InstanceStats>>({});
   const [tiers, setTiers] = useState<TierProfile[]>([]);
   const [creating, setCreating] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [org, setOrg] = useState<Record<string, OrgNode>>({});
+  const canCreate = role === "admin" || role === "operator";
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [liveTasks, setLiveTasks] = useState<Record<string, Task>>({});
@@ -64,6 +74,13 @@ export default function Fleet() {
         if (LIVE_STATES.has(t.state) && !live[t.instance_id]) live[t.instance_id] = t;
       }
       setLiveTasks(live);
+
+      // The org chart knows whether an external agent is reachable (its PC is
+      // connected, its gateway answers) -- the instance row alone does not.
+      api
+        .getOrg()
+        .then((c) => setOrg(Object.fromEntries(c.nodes.map((n) => [n.id, n]))))
+        .catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -111,7 +128,15 @@ export default function Fleet() {
   };
 
   const remove = async (inst: Instance) => {
-    if (!confirm(`Destroy "${inst.name}"? The sandbox and everything in it is discarded.`)) return;
+    const external = agentKindOf(inst) !== "desktop";
+    if (
+      !confirm(
+        external
+          ? `Remove "${inst.name}" from the fleet? Nothing on its PC or service is touched; its tickets lose their assignee.`
+          : `Destroy "${inst.name}"? The sandbox and everything in it is discarded.`,
+      )
+    )
+      return;
     setBusyId(inst.id);
     try {
       await api.deleteInstance(inst.id);
@@ -127,11 +152,17 @@ export default function Fleet() {
     const running = instances.filter((i) => i.state === "running").length;
     const cpu = Object.values(stats).reduce((sum, s) => sum + s.cpu_percent, 0);
     const mem = Object.values(stats).reduce((sum, s) => sum + s.memory_bytes, 0);
+    // External agents have no sandbox, so no hardware to add up.
     const vcpu = instances
-      .filter((i) => i.state === "running")
-      .reduce((sum, i) => sum + i.profile.vcpu, 0);
+      .filter((i) => i.state === "running" && agentKindOf(i) === "desktop")
+      .reduce((sum, i) => sum + (i.profile?.vcpu ?? 0), 0);
     return { running, cpu, mem, vcpu };
   }, [instances, stats]);
+
+  const pickers = useMemo(
+    () => instances.map((i) => ({ id: i.id, name: i.name })).sort((a, b) => a.name.localeCompare(b.name)),
+    [instances],
+  );
 
   return (
     <div className="space-y-6 p-6">
@@ -147,6 +178,7 @@ export default function Fleet() {
             🤖 Bot Catalog
           </Button>
           <Button onClick={() => setCreating(true)}>Provision empty machine</Button>
+          {canCreate && <Button onClick={() => setAdding(true)}>+ Add agent</Button>}
           <Button variant="primary" onClick={() => setLaunching(true)}>
             ⚡ Launch an agent
           </Button>
@@ -167,10 +199,11 @@ export default function Fleet() {
           title="No machines yet"
           hint="Describe a task or pick a pre-configured bot archetype from the catalog to provision a specialized machine with tools and persona pre-installed."
           action={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               <Button onClick={() => setShowCatalog(true)}>
                 🤖 Explore Bot Catalog
               </Button>
+              {canCreate && <Button onClick={() => setAdding(true)}>+ Add an agent from your PC</Button>}
               <Button variant="primary" onClick={() => setLaunching(true)}>
                 ⚡ Launch an agent
               </Button>
@@ -186,6 +219,7 @@ export default function Fleet() {
               stats={stats[inst.id]}
               task={liveTasks[inst.id]}
               lastAction={lastAction[inst.id]}
+              node={org[inst.id]}
               busy={busyId === inst.id}
               onAction={act}
               onDelete={remove}
@@ -203,8 +237,20 @@ export default function Fleet() {
       <QuickLaunch
         open={launching}
         tiers={tiers}
+        agents={pickers}
         onClose={() => setLaunching(false)}
         onLaunched={load}
+      />
+
+      <AddAgentDialog
+        open={adding}
+        agents={pickers}
+        onClose={() => setAdding(false)}
+        onCreated={(inst) => {
+          toast({ tone: "good", title: `${inst.name} added`, href: `/instances/${inst.id}` });
+          void load();
+        }}
+        onDesktop={() => setLaunching(true)}
       />
 
       <ProvisionModal
@@ -226,6 +272,7 @@ function InstanceCard({
   stats,
   task,
   lastAction,
+  node,
   busy,
   onAction,
   onDelete,
@@ -234,10 +281,14 @@ function InstanceCard({
   stats?: InstanceStats;
   task?: Task;
   lastAction?: { step: number; action: AgentAction };
+  node?: OrgNode;
   busy: boolean;
   onAction: (id: string, action: "start" | "stop" | "pause" | "resume") => void;
   onDelete: (i: Instance) => void;
 }) {
+  if (agentKindOf(instance) !== "desktop") {
+    return <ExternalCard instance={instance} node={node} task={task} busy={busy} onDelete={onDelete} />;
+  }
   const running = instance.state === "running";
   const blocked = task?.state === "awaiting_human";
   return (
@@ -368,6 +419,127 @@ function InstanceCard({
       </div>
     </div>
   );
+}
+
+/**
+ * An agent that runs somewhere else: no sandbox, so no hardware meters and no
+ * desktop to preview. What matters is where it is reached, whether it is
+ * reachable right now, and what it is working on.
+ */
+function ExternalCard({
+  instance,
+  node,
+  task,
+  busy,
+  onDelete,
+}: {
+  instance: Instance;
+  node?: OrgNode;
+  task?: Task;
+  busy: boolean;
+  onDelete: (i: Instance) => void;
+}) {
+  const kind = agentKindOf(instance);
+  const meta = KIND_META[kind];
+  const online = node?.online ?? instance.state === "running";
+  const held = node?.hold === "budget";
+  const conn = instance.connection ?? {};
+  const where = ON_DEVICE_KINDS.has(kind)
+    ? conn.cwd || "no folder set"
+    : conn.url
+      ? safeHost(conn.url)
+      : "no address set";
+  return (
+    <div
+      className={cx(
+        "relative overflow-hidden rounded-xl bg-ink-900 ring-1 transition-colors",
+        held ? "ring-warn-500/60" : online ? "ring-ink-600" : "ring-ink-800",
+      )}
+    >
+      {busy && <div className="sweep absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-ink-800" />}
+      <div className="flex items-start justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Link to={`/instances/${instance.id}`} className="block truncate font-medium hover:text-live-500">
+              {instance.name}
+            </Link>
+            <KindBadge kind={kind} />
+          </div>
+          <div className="mt-0.5 truncate text-xs text-ink-400">
+            {instance.title ? `${instance.title} · ` : ""}
+            <span className="font-mono">{where}</span>
+          </div>
+        </div>
+        <span
+          className={cx(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+            held
+              ? "bg-warn-500/15 text-warn-500 ring-warn-500/30"
+              : online
+                ? "bg-good-500/15 text-good-500 ring-good-500/30"
+                : "bg-ink-600/40 text-ink-300 ring-ink-500/30",
+          )}
+        >
+          <span className={cx("size-1.5 rounded-full bg-current", online && node?.busy && "pulse-live")} />
+          {held ? "held at budget" : online ? "online" : "offline"}
+        </span>
+      </div>
+
+      <div className="mx-4 mb-3 flex items-center gap-3 rounded-lg bg-ink-850 px-3 py-3">
+        <span
+          className={cx(
+            "grid size-12 shrink-0 place-items-center rounded-xl ring-1 ring-inset",
+            meta.soft,
+            meta.text,
+            meta.ring,
+          )}
+        >
+          <KindIcon kind={kind} className="size-6" />
+        </span>
+        <div className="min-w-0 flex-1 text-xs">
+          {node?.busy && node.ticket_ref ? (
+            <Link to={workLink(node.ticket_ref)} className="line-clamp-2 text-ink-200 hover:text-live-500">
+              <span className="font-mono text-live-500">{node.ticket_ref}</span> {node.ticket_title}
+            </Link>
+          ) : task ? (
+            <p className="line-clamp-2 text-ink-200">{task.goal}</p>
+          ) : (
+            <p className="text-ink-400">
+              {online ? "Idle." : ON_DEVICE_KINDS.has(kind) ? "Its PC is not connected." : "Not reachable right now."}
+              {node && node.open_tickets > 0 && ` ${node.open_tickets} open ticket${node.open_tickets === 1 ? "" : "s"}.`}
+            </p>
+          )}
+          <p className="mt-1 text-ink-500">Runs outside the fleet, so there is no desktop to watch.</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-ink-800 px-4 py-2.5">
+        <span className="text-[11px] text-ink-500">
+          added <Ago at={instance.created_at} />
+        </span>
+        <div className="flex gap-1.5">
+          <Link
+            to={`/org?agent=${instance.id}`}
+            className="rounded-lg px-2.5 py-1 text-xs text-ink-300 hover:bg-ink-800 hover:text-ink-100"
+          >
+            Profile
+          </Link>
+          <Button size="sm" variant="danger" onClick={() => onDelete(instance)}>
+            Remove
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function safeHost(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.host + (u.pathname !== "/" ? u.pathname : "");
+  } catch {
+    return url;
+  }
 }
 
 function ProvisionModal({

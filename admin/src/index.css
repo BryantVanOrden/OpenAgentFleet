@@ -44,6 +44,16 @@
 
   --shadow-strength: 0.45;
   color-scheme: dark;
+
+  /* Agent kinds. One hue each so a chart of mixed agents reads at a glance;
+     kept off the status colours (good/warn/bad) so a kind never looks like a
+     verdict. */
+  --kind-desktop: #9aa7ba;
+  --kind-claude: #e2906e;
+  --kind-codex: #2dd4bf;
+  --kind-hermes: #b69cff;
+  --kind-openclaw: #fb7185;
+  --kind-webhook: #7fb2ff;
 }
 
 /* ------------------------------------------------------------------- light */
@@ -69,6 +79,13 @@
 
   --shadow-strength: 0.10;
   color-scheme: light;
+
+  --kind-desktop: #52607a;
+  --kind-claude: #a8471f;
+  --kind-codex: #0f766e;
+  --kind-hermes: #6d28d9;
+  --kind-openclaw: #be123c;
+  --kind-webhook: #1d4ed8;
 }
 
 /* ------------------------------------------------------------------ accents */
@@ -156,6 +173,13 @@
   --color-warn-500: var(--warn);
   --color-bad-500: var(--bad);
   --color-cool-500: var(--cool);
+
+  --color-kind-desktop: var(--kind-desktop);
+  --color-kind-claude: var(--kind-claude);
+  --color-kind-codex: var(--kind-codex);
+  --color-kind-hermes: var(--kind-hermes);
+  --color-kind-openclaw: var(--kind-openclaw);
+  --color-kind-webhook: var(--kind-webhook);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
@@ -344,6 +368,24 @@ body * {
   .thinking-dot,
   .thinking-avatar,
   .msg-enter {
+    animation: none;
+  }
+}
+
+/* Org chart connectors. A busy agent's line carries a slow march of dashes
+   down to it: work is flowing along that edge. */
+@keyframes org-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.org-flow {
+  stroke-dasharray: 6 6;
+  animation: org-flow 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .org-flow,
+  .pulse-live {
     animation: none;
   }
 }

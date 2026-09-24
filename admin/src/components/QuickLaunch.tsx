@@ -105,11 +105,16 @@ export default function QuickLaunch({
   tiers,
   onClose,
   onLaunched,
+  agents,
+  defaultReportsTo = "",
 }: {
   open: boolean;
   tiers: TierProfile[];
   onClose: () => void;
   onLaunched: () => void;
+  /** When given, the machine can be placed in the org chart as it is made. */
+  agents?: { id: string; name: string }[];
+  defaultReportsTo?: string;
 }) {
   const navigate = useNavigate();
   const [goal, setGoal] = useState("");
@@ -120,6 +125,9 @@ export default function QuickLaunch({
   const [autoRefine, setAutoRefine] = useState(true);
   const [name, setName] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [title, setTitle] = useState("");
+  const [reportsTo, setReportsTo] = useState(defaultReportsTo);
+  const [capabilities, setCapabilities] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -139,6 +147,9 @@ export default function QuickLaunch({
     setPhase("idle");
     setError(null);
     setName("");
+    setTitle("");
+    setReportsTo(defaultReportsTo);
+    setCapabilities("");
   };
 
   const launch = async (e: React.FormEvent) => {
@@ -158,6 +169,9 @@ export default function QuickLaunch({
         shell_access: shell,
         egress: { block_local: blockLocal },
         override: {},
+        title: title.trim() || undefined,
+        reports_to: reportsTo || undefined,
+        capabilities: capabilities.trim() || undefined,
       });
       instanceId = created.id;
       const instance = await waitUntilUp(created.id);
@@ -305,6 +319,46 @@ export default function QuickLaunch({
                   placeholder={suggestName(goal)}
                 />
               </Field>
+
+              {agents && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Title" hint="Optional. What it is to the team.">
+                    <input
+                      className={inputClass}
+                      value={title}
+                      disabled={busy}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Researcher"
+                    />
+                  </Field>
+                  <Field label="Reports to">
+                    <select
+                      className={inputClass}
+                      value={reportsTo}
+                      disabled={busy}
+                      onChange={(e) => setReportsTo(e.target.value)}
+                    >
+                      <option value="">You</option>
+                      {agents.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <div className="sm:col-span-2">
+                    <Field label="When I'm useful" hint="Optional. Colleagues read this to decide what to hand it.">
+                      <input
+                        className={inputClass}
+                        value={capabilities}
+                        disabled={busy}
+                        onChange={(e) => setCapabilities(e.target.value)}
+                        placeholder="Browsing and filling in web forms."
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
 
               <label className="flex items-start gap-3 text-sm">
                 <input
