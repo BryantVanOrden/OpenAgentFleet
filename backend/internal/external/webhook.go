@@ -2,9 +2,9 @@ package external
 
 import (
 	"bytes"
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
