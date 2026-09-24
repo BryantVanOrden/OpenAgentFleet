@@ -471,7 +471,32 @@ Real screenshots of a running fleet — console (`make screenshots`), live deskt
   <img src="docs/images/fleet-dark-amber.png" alt="Fleet dashboard" width="900">
 </p>
 
-<p align="center"><em>The fleet: every machine, its hardware envelope, and what its agent is doing right now.</em></p>
+<p align="center"><em>The fleet: every machine, its hardware envelope, and what its agent is doing right now — and the agents that are not machines, like this Claude Code on a PC.</em></p>
+
+<p align="center">
+  <img src="docs/images/org-dark-amber.png" alt="The org chart: desktop bots and a Claude Code agent reporting to Builder, each card with its kind, what it is on and its spend this month" width="900">
+</p>
+
+<p align="center"><em>The org chart. Drag an agent onto another to change who it reports to; blocked work goes up the chart to its manager, then to you.</em></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/work-dark-amber.png" alt="The Work board: tickets by status, with verify tickets and their verdicts"></td>
+    <td width="50%"><img src="docs/images/ticket-dark-amber.png" alt="A ticket: why it matters, who has it, the closing report and the files its agent shared"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Work</strong><br><sub>Every request and its parts, by status, with review and verify verdicts.</sub></td>
+    <td align="center"><strong>A ticket</strong><br><sub>The chain up to your request, the closing report, the files shared with the fleet.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/add-agent-dark-amber.png" alt="Add a Claude Code agent: the PC, its folder, and edits or full autonomy"></td>
+    <td width="50%"><img src="docs/images/app-org-dark.png" alt="The org chart on the phone" height="360"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Bring your agents</strong><br><sub>Claude Code, Codex or Hermes on your PC, an OpenClaw gateway or a webhook, beside the desktops.</sub></td>
+    <td align="center"><strong>On the phone</strong><br><sub>The same chart; long-press and drag to re-parent.</sub></td>
+  </tr>
+</table>
 
 ### The companion app
 

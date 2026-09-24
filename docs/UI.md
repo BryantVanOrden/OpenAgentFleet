@@ -8,8 +8,11 @@ Nothing here is a mockup. To regenerate them after a UI change:
 make screenshots
 ```
 
-The fleet is empty in these captures because they run against a fresh
-deployment — that is the genuine first-run state, not a staged one.
+They are captured against a small working fleet: three desktop bots and a
+Claude Code agent on a PC, with the tickets they actually worked. The PC's
+name and folder are the one thing changed for the pictures ("Workstation",
+`C:/Users/you/projects`), so a real home directory does not end up in the
+docs.
 
 ---
 
@@ -25,6 +28,48 @@ on a human turns amber and says so.
 | Dark | Light |
 | --- | --- |
 | ![Fleet, dark](images/fleet-dark-amber.png) | ![Fleet, light](images/fleet-light-blue.png) |
+
+### Org chart
+
+Who reports to whom. Everyone reports to you until you say otherwise; drag an
+agent onto another to change its manager (a drop that would make a loop is
+refused before it lands). Each card says what kind of agent it is — a desktop,
+or Claude Code, Codex, Hermes or OpenClaw with its own logo — what it is
+working on, and what it has spent this month against its budget.
+
+| Dark | Light |
+| --- | --- |
+| ![Org chart, dark](images/org-dark-amber.png) | ![Org chart, light](images/org-light-blue.png) |
+
+### Work
+
+Every ticket, from your requests down to their parts, by status. Drag a card
+between columns; cancelling one that has open parts says how many go with it.
+Verify and review tickets carry their verdict.
+
+| Dark | Light |
+| --- | --- |
+| ![Work board, dark](images/work-dark-amber.png) | ![Work board, light](images/work-light-blue.png) |
+
+### A ticket
+
+Why it matters (the chain up to your request), who has it, who reviews and
+verifies it, what it cost, the closing report, the files its agent shared
+with the fleet, and every comment and run.
+
+| Dark | Light |
+| --- | --- |
+| ![A ticket, dark](images/ticket-dark-amber.png) | ![A ticket, light](images/ticket-light-blue.png) |
+
+### Add an agent
+
+Desktop, Claude Code, Codex, Hermes, OpenClaw or a webhook. For the agents that
+live on a PC, pick the PC running `fleetctl host`, a folder under one of its
+roots, and how much it may do on its own.
+
+| Dark | Light |
+| --- | --- |
+| ![Add agent, dark](images/add-agent-dark-amber.png) | ![Add agent, light](images/add-agent-light-blue.png) |
 
 ### Launch an agent
 
@@ -81,7 +126,7 @@ authoritative — the one input it trusts above what is on its own screen.
 Access control and platform limits. The credential vault moved to its own
 top-level page; what remains here is the deployment secret store.
 
-> **This gallery covers nine of the console's sections**, regenerated with
+> **This gallery covers thirteen of the console's screens**, regenerated with
 > `make screenshots` — the fleet Chat the console opens on, then the rest. The navigation also carries Pipelines,
 > Fleet Vault, MCP Hub, Financials and Autopilot Sinks, plus the voice co-pilot
 > launcher, which are not photographed here. Two more sets live alongside this
@@ -100,6 +145,19 @@ sign in on a glaring screen to find the light switch.
 | Dark | Light |
 | --- | --- |
 | ![Login, dark](images/login-dark.png) | ![Login, light](images/login-light.png) |
+
+---
+
+## The companion app
+
+The same org chart, Work board and add-agent flow on the phone: long-press and
+drag on the chart to change who reports to whom, tap a shared file in a ticket
+to open it.
+
+| Org chart | Work | A ticket | Add an agent |
+| --- | --- | --- | --- |
+| ![Org chart on the phone, dark](images/app-org-dark.png) | ![Work on the phone, dark](images/app-work-dark.png) | ![A ticket on the phone, dark](images/app-ticket-dark.png) | ![Add agent on the phone, dark](images/app-add-agent-dark.png) |
+| ![Org chart on the phone, light](images/app-org-light.png) | ![Work on the phone, light](images/app-work-light.png) | ![A ticket on the phone, light](images/app-ticket-light.png) | ![Add agent on the phone, light](images/app-add-agent-light.png) |
 
 ---
 
