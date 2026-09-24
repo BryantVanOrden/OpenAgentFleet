@@ -95,10 +95,11 @@ func (r *Runner) Refiner() *Refiner {
 // Start launches a task. It returns as soon as the goroutine is scheduled.
 func (r *Runner) Start(parent context.Context, task *protocol.Task) error {
 	// An external agent's run belongs to its adapter, not to this loop.
-	if r.external != nil {
-		if inst, err := r.db.Instance(parent, task.InstanceID); err == nil && inst.AgentKindOf().External() {
-			return r.external.Start(parent, task, inst)
+	if inst, err := r.db.Instance(parent, task.InstanceID); err == nil && inst.AgentKindOf().External() {
+		if r.external == nil {
+			return fmt.Errorf("%s is a %s agent and nothing is connected to run it", inst.Name, inst.AgentKindOf().Label())
 		}
+		return r.external.Start(parent, task, inst)
 	}
 	r.mu.Lock()
 	if _, busy := r.running[task.ID]; busy {

@@ -125,6 +125,20 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(files, [{"path": "notes/ideas.md", "content": "# Ideas\n"}])
         self.assertEqual(sorted(unshared), ["big.log", "logo.png"])
 
+    def test_files_the_report_names_are_shared_even_unchanged(self):
+        (self.work / "notes").mkdir()
+        (self.work / "notes" / "ideas.md").write_bytes(b"1. Falling Catch\n")
+        outside = self.tmp / "secret.txt"
+        outside.write_text("no", encoding="utf-8")
+        before = runtimes.snapshot(str(self.work))
+        report = f"The file `notes/ideas.md` is already there; see also {outside} and missing.txt."
+        files, _ = runtimes.produced(str(self.work), before, report)
+        self.assertEqual(files, [{"path": "notes/ideas.md", "content": "1. Falling Catch\n"}],
+                         "a named file in the folder is sent; one outside it, or one that does not exist, is not")
+        absolute = f"Created {self.work / 'notes' / 'ideas.md'}."
+        files, _ = runtimes.produced(str(self.work), before, absolute)
+        self.assertEqual([f["path"] for f in files], ["notes/ideas.md"], "an absolute path inside the folder counts")
+
     def test_edit_only_autonomy_does_not_skip_permissions(self):
         inv = runtimes.claude_invocation({"prompt": "x"}, ["claude"])
         self.assertIn("acceptEdits", inv.argv)

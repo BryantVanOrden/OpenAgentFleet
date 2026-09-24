@@ -102,10 +102,13 @@ func run(log *slog.Logger) error {
 		eventBus.Emit("stats", s.InstanceID, "", s)
 	})
 	go reconcileLoop(ctx, fm, 30*time.Second)
-	runner.ResumeInterrupted(ctx)
 
 	// --- http ---
 	api := httpapi.NewServer(cfg, db, fm, models, runner, eventBus, v, art, log)
+	// After NewServer, which connects the external-agent adapters: resumed
+	// before it, a Claude Code run interrupted by a restart was put through
+	// the desktop loop and failed trying to screenshot a desktop it has not got.
+	runner.ResumeInterrupted(ctx)
 	// Loads the persisted triggers, peer messages and episodic memory, and
 	// starts the cron engine. Before serving, so a request cannot arrive
 	// against half-loaded configuration.

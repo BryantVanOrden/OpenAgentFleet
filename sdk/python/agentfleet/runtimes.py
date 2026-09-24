@@ -120,22 +120,55 @@ def snapshot(root: str) -> Optional[dict[str, tuple[int, int]]]:
     return out
 
 
-def produced(root: str, before: Optional[dict[str, tuple[int, int]]]) -> tuple[list[dict[str, str]], list[str]]:
-    """The text files created or changed since ``before``, newest first and
-    within the limits, and the names of the changed files that were not."""
-    if before is None:
-        return [], []
-    after = snapshot(root)
-    if after is None:
-        return [], []
-    changed = [p for p, sig in after.items() if before.get(p) != sig]
-    changed.sort(key=lambda p: after[p][0], reverse=True)
+_PATHISH = re.compile(r"(?:[A-Za-z]:)?[\w.~\-/\\]+\.[A-Za-z0-9]{1,10}")
+
+
+def mentioned(root: str, report: str) -> list[str]:
+    """Files in root that the agent's report names, as paths relative to it.
+
+    A run that was sent back to finish something often finds it already
+    there and changes nothing; its report still says "notes/ideas.md", and
+    that is the file the colleague checking it needs."""
+    out: list[str] = []
+    real_root = os.path.realpath(root)
+    for token in _PATHISH.findall(report or "")[:100]:
+        token = token.strip(".,;:()[]`'\"")
+        full = os.path.realpath(token if os.path.isabs(token) else os.path.join(root, token))
+        try:
+            inside = os.path.commonpath([real_root, full]) == real_root
+        except ValueError:  # another drive
+            inside = False
+        if inside and os.path.isfile(full):
+            rel = os.path.relpath(full, real_root)
+            if rel not in out:
+                out.append(rel)
+        if len(out) >= MAX_FILES:
+            break
+    return out
+
+
+def produced(root: str, before: Optional[dict[str, tuple[int, int]]],
+             report: str = "") -> tuple[list[dict[str, str]], list[str]]:
+    """The text files created or changed since ``before`` (newest first),
+    then those the report names, within the limits; and the names of the
+    changed files that were not sent."""
+    after = snapshot(root) if before is not None else None
+    changed: list[str] = []
+    if after is not None and before is not None:
+        changed = [p for p, sig in after.items() if before.get(p) != sig]
+        changed.sort(key=lambda p: after[p][0], reverse=True)
+    for rel in mentioned(root, report):
+        if rel not in changed:
+            changed.append(rel)
     files: list[dict[str, str]] = []
     unshared: list[str] = []
     total = 0
     for rel in changed:
         name = rel.replace(os.sep, "/")
-        size = after[rel][1]
+        try:
+            size = os.path.getsize(os.path.join(root, rel))
+        except OSError:
+            continue
         if len(files) >= MAX_FILES or size > MAX_FILE_BYTES or total + size > MAX_TOTAL_BYTES:
             unshared.append(name)
             continue
@@ -462,7 +495,7 @@ def run_agent(job: dict[str, Any], cwd: str, api_url: str,
     elif r.is_error and not r.error:
         r.error = "".join(stderr_tail[-20:]).strip()[:2000]
     if not r.is_error:
-        r.files, r.unshared = produced(cwd, before)
+        r.files, r.unshared = produced(cwd, before, r.answer)
     return ("failed" if r.is_error else "done"), r
 
 
