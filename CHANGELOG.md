@@ -6,7 +6,9 @@ semantic versioning.
 
 ## [Unreleased]
 
-Nothing yet.
+### Site
+- A 74-second trailer, with narration and sound, at the top of the site and
+  the README, and a 36-second vertical cut for phones.
 
 ## [1.3.0] — 2026-09-24
 

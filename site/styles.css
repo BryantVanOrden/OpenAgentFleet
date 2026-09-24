@@ -377,6 +377,36 @@ p { margin: 0; }
 .facts li::before { content: ""; position: absolute; left: 0; top: .68em; width: 8px; height: 2px; background: var(--accent); }
 .facts strong { color: var(--text); font-weight: 600; }
 
+/* ------------------------------------------------------------ trailer */
+.trailer { padding-top: clamp(40px, 8vh, 96px); }
+.trailer h2 em { font-style: normal; color: var(--accent); }
+.trailer-frame {
+  position: relative; max-width: 1100px; margin: 0 auto; aspect-ratio: 16 / 9;
+  border-radius: calc(var(--radius) + 6px); overflow: hidden; background: #04060c;
+  border: 1px solid var(--line-strong); box-shadow: var(--shadow), 0 0 120px -40px var(--accent);
+}
+.trailer-frame video { display: block; width: 100%; height: 100%; object-fit: cover; background: #04060c; }
+.trailer-play {
+  position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding-bottom: 6.5%;
+  border: 0; cursor: pointer; color: var(--accent-ink); font: inherit;
+  background: linear-gradient(180deg, rgba(4, 6, 12, 0) 55%, rgba(4, 6, 12, .55));
+}
+.trailer-play[hidden] { display: none; }
+.tp-disc {
+  width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; background: var(--accent);
+  box-shadow: 0 0 0 10px rgba(245, 165, 36, .22), 0 20px 50px -10px rgba(0, 0, 0, .6);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.tp-disc svg { margin-left: 5px; }
+.tp-label {
+  margin-bottom: 27px; font-family: var(--font-mono); font-size: .8rem; letter-spacing: .16em; text-transform: uppercase; color: #fff;
+  background: rgba(4, 6, 12, .6); padding: 8px 14px; border-radius: 999px;
+}
+.trailer-play:hover .tp-disc, .trailer-play:focus-visible .tp-disc { transform: scale(1.07); box-shadow: 0 0 0 16px rgba(245, 165, 36, .26), 0 20px 50px -10px rgba(0, 0, 0, .6); }
+.trailer-play:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.trailer-links { text-align: center; margin-top: 18px; }
+@media (max-width: 600px) { .trailer-play { padding-bottom: 4%; gap: 10px; } .tp-disc { width: 52px; height: 52px; box-shadow: 0 0 0 6px rgba(245, 165, 36, .22); } .tp-disc svg { width: 20px; height: 20px; margin-left: 3px; } .tp-label { font-size: .66rem; margin-bottom: 12px; } }
+
 .reveal { opacity: .4; transform: translateY(18px); transition: opacity .7s cubic-bezier(.2, .7, .2, 1), transform .7s cubic-bezier(.2, .7, .2, 1); }
 .reveal.in { opacity: 1; transform: none; }
 

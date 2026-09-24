@@ -36,6 +36,13 @@
 </p>
 
 <p align="center">
+  <a href="https://bryantvanorden.github.io/OpenAgentFleet/#trailer"><img src="docs/images/trailer-poster.jpg" alt="Play the OpenAgentFleet trailer: 74 seconds, sound on" width="920"></a>
+</p>
+
+<p align="center"><strong>▶ <a href="https://bryantvanorden.github.io/OpenAgentFleet/#trailer">Watch the trailer</a></strong> — 74 seconds, sound on.
+Or grab the mp4: <a href="site/assets/video/openagentfleet-trailer.mp4">16:9</a> · <a href="site/assets/video/openagentfleet-reel.mp4">9:16 for phones</a>.</p>
+
+<p align="center">
   <img src="docs/demo/demo.gif" alt="A real agent run, uncut: the goal is typed into the console, a local vision model opens Firefox on its own sandboxed desktop, navigates to Hacker News, and reports the #1 story" width="920">
 </p>
 

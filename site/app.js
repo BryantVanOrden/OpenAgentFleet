@@ -404,6 +404,15 @@
     reveals.forEach(r => io.observe(r));
   } else reveals.forEach(r => r.classList.add('in'));
 
+  /* ------------------------------------------------------------ trailer */
+  const tv = document.getElementById('trailerVideo'), tp = document.getElementById('trailerPlay');
+  if (tv && tp) {
+    const start = () => { tp.hidden = true; tv.controls = true; tv.muted = false; tv.play().catch(() => { tp.hidden = false; }); };
+    tp.addEventListener('click', start);
+    tv.addEventListener('play', () => { tp.hidden = true; tv.controls = true; });
+    document.querySelectorAll('a[href="#trailer"]').forEach(a => a.addEventListener('click', () => setTimeout(() => tp.focus({ preventScroll: true }), 600)));
+  }
+
   /* ------------------------------------------------------------ copy buttons */
   document.querySelectorAll('.copy').forEach(btn => {
     btn.addEventListener('click', async () => {
