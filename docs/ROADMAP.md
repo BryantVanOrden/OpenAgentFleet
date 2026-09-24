@@ -158,9 +158,6 @@ What is left:
   against a real fleet. Codex and Hermes are tested against fakes that print
   what the real CLIs print, and OpenClaw against a fake gateway speaking
   protocol 4; each wants a live soak.
-- **Missions and pipelines on tickets.** `/mission` and pipelines still keep
-  their own state; filing their stages as tickets would put them on the same
-  board, budgets and verifiers.
 
 ## Deliberately not planned
 

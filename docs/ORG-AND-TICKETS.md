@@ -96,6 +96,8 @@ resumed through its adapter.
 - **App:** *Work* and *Org chart* from the Fleet screen; long-press and drag
   on the chart to re-parent.
 - **Chat:** `/tickets [@agent]`, `/ticket @agent <what to do>`, `/org`.
+- **Pipelines and missions:** a pipeline run or a mission is a ticket, and
+  each stage or member's part a ticket under it, run by the same engine.
 - **Command line:** `fleetctl tickets`, `fleetctl ticket new|show|comment|reopen|move`,
   `fleetctl org`, `fleetctl agent add|set`, `fleetctl fleet export|import`.
 

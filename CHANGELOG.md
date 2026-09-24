@@ -6,6 +6,40 @@ semantic versioning.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.3.0] — 2026-09-24
+
+### Reliability on small models
+- The action grammar requires what each action needs: one schema branch
+  per action with required, non-empty fields (create_ticket's target, title
+  and text; done's summary; shell's command...). Measured on the LAN
+  gateway: create_ticket without its instructions went from 4 in 4 to 0 in
+  4, at the same speed.
+- Notifications ("Task complete", "Still working", "Task failed") are no
+  longer open alerts, and could no longer crowd an alert that needs an
+  answer out of the list; migration 0040 resolves the old ones.
+
+### Work beyond chat
+- Pipelines and missions run on tickets: a run or a mission is a ticket and
+  each stage or member's part a ticket under it, so they show on the Work
+  board and get budgets, retries, ownerless checks and external agents. A
+  resumed pipeline reuses a stage's ticket.
+- A colleague's newer version of a file a PC agent shared is written into
+  the agent's folder before its next run, and its brief says what changed.
+- A fleet with no chat model connected can still take requests in chat:
+  external agents named in a request claim the part addressed to them.
+
+### Support the project
+- A Support section on the site, a card in the console's Settings (with a
+  sidebar link) and in the app's Settings, with the XRP and Bitcoin details
+  from the README, scan-ready QR codes and copyable addresses.
+
+### Tooling
+- The console has ESLint (0 errors) and loads pages when first visited: the
+  entry bundle went from 643 kB to 113 kB plus a cached React chunk.
+- CI runs on current action majors and Node 22.
+
 ### Work is tickets
 - A fleet request becomes a root ticket and every part a ticket under it,
   replacing the relay that inferred hand-offs from chat. Design blocks the
@@ -1422,6 +1456,7 @@ model providers; teaching by demonstration compiled into `SKILL.md`; escalation
 to a human on a stalled screen; an AES-256-GCM credential vault; a React admin
 console and a Flutter companion app.
 
+[1.3.0]: https://github.com/BryantVanOrden/OpenAgentFleet/releases/tag/v1.3.0
 [1.2.0]: https://github.com/BryantVanOrden/OpenAgentFleet/releases/tag/v1.2.0
 [1.1.0]: https://github.com/BryantVanOrden/OpenAgentFleet/releases/tag/v1.1.0
 [1.0.0]: https://github.com/BryantVanOrden/OpenAgentFleet/releases/tag/v1.0.0
