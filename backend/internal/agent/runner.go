@@ -568,6 +568,16 @@ func (r *Runner) execute(
 			}
 			r.tickets.SetVerdict(task.ID, verdict)
 		}
+		// Asked to hand work to a report and about to finish without having
+		// done so: say it once. The second done stands, with its reason.
+		if r.tickets != nil {
+			if names := r.tickets.UndelegatedReports(ctx, task.ID); len(names) > 0 && r.countPublish(task.ID, "nudge:delegate") == 1 {
+				return fmt.Sprintf("not finished: this ticket asks for %s to do part of it, and you have not handed them anything. "+
+					"Use create_ticket with target %q and complete instructions; this ticket then waits for theirs and comes back to you. "+
+					"If you have a real reason to do it yourself, reply done again and give that reason in the summary.",
+					strings.Join(names, " and "), names[0]), terminalNone
+			}
+		}
 		return "done: " + clip(a.Summary, 200), terminalDone
 
 	case protocol.ActCreateTicket:

@@ -107,11 +107,11 @@ func ParseAction(raw string) (protocol.Action, error) {
 		if strings.TrimSpace(a.Target) == "" {
 			return a, fmt.Errorf("create_ticket needs target: the name of who takes it")
 		}
-		if strings.TrimSpace(firstNonEmpty(a.Text, a.SubGoal)) == "" {
+		// A lead handing work to Claude sent target and a clear title six
+		// times running and never text; the title is instructions enough, and
+		// the colleague's brief carries the chain of tickets above it.
+		if a.Text = strings.TrimSpace(firstNonEmpty(a.Text, a.SubGoal, a.Title, a.Summary)); a.Text == "" {
 			return a, fmt.Errorf("create_ticket needs text: complete instructions for them")
-		}
-		if a.Text == "" {
-			a.Text = a.SubGoal
 		}
 	case protocol.ActReopenTicket:
 		if a.Ticket == "" {
@@ -127,6 +127,12 @@ func ParseAction(raw string) (protocol.Action, error) {
 			return a, fmt.Errorf("reopen_ticket needs text: what is missing")
 		}
 	case protocol.ActDone:
+		// The summary is the ticket's closing report. A lead that finished
+		// with it empty left a done ticket saying nothing, with the whole
+		// account of what it did in its thought.
+		if strings.TrimSpace(a.Summary) == "" {
+			a.Summary = strings.TrimSpace(a.Thought)
+		}
 		a.Verdict = strings.ToLower(strings.TrimSpace(a.Verdict))
 		if a.Verdict != "" && a.Verdict != protocol.VerdictPass && a.Verdict != protocol.VerdictFail {
 			return a, fmt.Errorf("verdict must be pass or fail, not %q", a.Verdict)

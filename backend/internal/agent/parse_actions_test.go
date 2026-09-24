@@ -366,6 +366,27 @@ func TestParseActionFieldFallbacks(t *testing.T) {
 
 // ------------------------------------------------------- validation rules ---
 
+// The replies a lead model actually sent when told to hand work to Claude,
+// and when told to reopen work: the fields it leaves out are recovered from
+// the ones it fills in.
+func TestTicketActionsRecoverTheirText(t *testing.T) {
+	a, err := ParseAction(`{"thought": "Create a ticket for Claude to write the file.", "action": "create_ticket", "target": "Claude", "title": "Write notes/launch-risks.md listing three risks for launching the website", "ticket": "T-32", "verdict": "pass"}`)
+	if err != nil || a.Target != "Claude" || !strings.Contains(a.Text, "launch-risks.md") {
+		t.Fatalf("create_ticket with a title and no text: %v %+v", err, a)
+	}
+	a, err = ParseAction(`{"thought": "notes/ideas.md is not in the catalog, so the work is not done.", "action": "reopen_ticket", "ticket": "T-10"}`)
+	if err != nil || !strings.Contains(a.Text, "not in the catalog") {
+		t.Fatalf("reopen_ticket with the reason in its thought: %v %+v", err, a)
+	}
+	a, err = ParseAction(`{"thought": "The file has three items; confirmed.", "action": "done"}`)
+	if err != nil || a.Summary != "The file has three items; confirmed." {
+		t.Fatalf("done with no summary keeps its thought as the report: %v %+v", err, a)
+	}
+	if _, err := ParseAction(`{"action": "create_ticket", "target": "Claude"}`); err == nil {
+		t.Fatal("create_ticket with nothing to say is still refused")
+	}
+}
+
 func TestParseActionRejectsNewActionsMissingFields(t *testing.T) {
 	cases := []struct{ name, raw, wantErr string }{
 		{"python with nothing", `{"action":"python"}`, "python needs python code"},

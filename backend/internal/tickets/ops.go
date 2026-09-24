@@ -403,6 +403,14 @@ func (e *Engine) CreateFromAgent(ctx context.Context, taskID string, inst *proto
 			parent = p
 		}
 	}
+	// The same job, handed to the same colleague again. A lead filed three
+	// tickets for one file -- one before its first finished, one after --
+	// and paid for each run. Point it at the one that exists instead.
+	if parent != nil {
+		if msg, dup := e.alreadyHandedLocked(ctx, parent, assignee, title+"\n"+text); dup {
+			return msg, nil
+		}
+	}
 	t := &protocol.Ticket{
 		Title: title, Description: text, Kind: protocol.TicketWork, Status: protocol.TicketTodo,
 		AssigneeID: assignee.ID, CreatedByID: inst.ID,
@@ -429,6 +437,80 @@ func (e *Engine) CreateFromAgent(ctx context.Context, taskID string, inst *proto
 		msg += fmt.Sprintf(". %s now waits for it and comes back to you when %s finishes; you can finish this run with done now", parent.Ref(), assignee.Name)
 	}
 	return msg, nil
+}
+
+// alreadyHandedLocked finds a ticket under parent that already gives the same
+// work to the same colleague, and says what became of it.
+func (e *Engine) alreadyHandedLocked(ctx context.Context, parent *protocol.Ticket, assignee *protocol.Instance, work string) (string, bool) {
+	kids, err := e.db.Children(ctx, parent.ID)
+	if err != nil {
+		return "", false
+	}
+	for _, k := range kids {
+		if k.AssigneeID != assignee.ID || k.Kind != protocol.TicketWork || k.Status == protocol.TicketCancelled {
+			continue
+		}
+		if !sameWork(k.Title+"\n"+k.Description, work) {
+			continue
+		}
+		if k.Status == protocol.TicketDone {
+			return fmt.Sprintf("not filed: %s already did this in %s (%s): %s. Read what it produced (read_work for its files) instead of asking again; if something is missing, reopen_ticket %s saying what.",
+				assignee.Name, k.Ref(), k.Title, clip(summaryLine(k.Result), 240), k.Ref()), true
+		}
+		return fmt.Sprintf("not filed: %s already has this as %s (%s, %s). %s waits for it: finish this run with done and you are woken when it is finished.",
+			assignee.Name, k.Ref(), k.Title, strings.ReplaceAll(string(k.Status), "_", " "), parent.Ref()), true
+	}
+	return "", false
+}
+
+// sameWork reports whether two descriptions of work are the same job: they
+// name the same file, or most of their words are the same.
+func sameWork(a, b string) bool {
+	wa, pa := workWords(a)
+	wb, pb := workWords(b)
+	for p := range pa {
+		if pb[p] {
+			return true
+		}
+	}
+	if len(wa) == 0 || len(wb) == 0 {
+		return false
+	}
+	both := 0
+	for w := range wa {
+		if wb[w] {
+			both++
+		}
+	}
+	small := len(wa)
+	if len(wb) < small {
+		small = len(wb)
+	}
+	return float64(both)/float64(small) >= 0.7
+}
+
+// workWords splits text into its words and the file names or paths in it.
+func workWords(s string) (words, paths map[string]bool) {
+	words, paths = map[string]bool{}, map[string]bool{}
+	for _, tok := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !(r == '.' || r == '/' || r == '-' || r == '_' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+	}) {
+		tok = strings.Trim(tok, ".-_/")
+		if len(tok) < 3 || stopWords[tok] {
+			continue
+		}
+		if strings.ContainsAny(tok, "./") && !strings.HasPrefix(tok, "t-") {
+			paths[tok] = true
+			continue
+		}
+		words[tok] = true
+	}
+	return words, paths
+}
+
+var stopWords = map[string]bool{
+	"the": true, "and": true, "for": true, "with": true, "that": true, "this": true, "then": true,
+	"write": true, "create": true, "make": true, "file": true, "please": true, "into": true, "from": true,
 }
 
 // ReopenFromAgent is the reopen_ticket action. A verifier may reopen work in

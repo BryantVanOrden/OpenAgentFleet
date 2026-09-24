@@ -18,7 +18,14 @@ import (
 func (e *Engine) BuildGoal(ctx context.Context, t *protocol.Ticket, inst *protocol.Instance) (string, error) {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "You are working on ticket %s: %s.\n\n", t.Ref(), t.Title)
+	fmt.Fprintf(&b, "You are working on ticket %s: %s.\n\n", t.Ref(), strings.TrimRight(strings.TrimSpace(t.Title), ".!? "))
+	// A ticket that says who should do the work is an instruction to hand it
+	// on. Told only in the team section, a lead asked to "get Claude to
+	// write" a file wrote it itself in two shell commands.
+	if named := e.namedReports(ctx, t); len(named) > 0 {
+		fmt.Fprintf(&b, "This ticket names %s, who report%s to you. Hand that part to %s with create_ticket (target: %s, text: complete instructions) instead of doing it yourself; this ticket comes back to you when theirs is finished, and then you check the result and finish.\n\n",
+			joinNames(named), plural(len(named), "s", ""), themOrName(named), quoteNames(named))
+	}
 
 	// Why: the chain from the operator's request down to this ticket.
 	chain, err := e.db.Ancestry(ctx, t.ID)
@@ -324,6 +331,106 @@ func (e *Engine) teamBrief(ctx context.Context, b *strings.Builder, inst *protoc
 		b.WriteString("Hand work down with create_ticket (target: their name, title, text: complete instructions). Their tickets block this one until they finish.\n")
 	}
 	b.WriteString("\n")
+}
+
+// namedReports are the agent's reports that its ticket mentions by name.
+func (e *Engine) namedReports(ctx context.Context, t *protocol.Ticket) []string {
+	if t.AssigneeID == "" {
+		return nil
+	}
+	all, err := e.db.ListInstances(ctx)
+	if err != nil {
+		return nil
+	}
+	text := strings.ToLower(t.Title + "\n" + t.Description)
+	var out []string
+	for _, in := range all {
+		if in.ReportsTo == t.AssigneeID && in.ID != t.AssigneeID && mentions(text, strings.ToLower(in.Name)) {
+			out = append(out, in.Name)
+		}
+	}
+	return out
+}
+
+// UndelegatedReports are the reports the ticket held by taskID names and has
+// handed nothing to: the run is about to finish work it was asked to pass on.
+func (e *Engine) UndelegatedReports(ctx context.Context, taskID string) []string {
+	t, err := e.db.TicketByTask(ctx, taskID)
+	if err != nil || t.Kind != protocol.TicketWork {
+		return nil
+	}
+	named := e.namedReports(ctx, t)
+	if len(named) == 0 {
+		return nil
+	}
+	kids, _ := e.db.Children(ctx, t.ID)
+	given := map[string]bool{}
+	for _, k := range kids {
+		given[strings.ToLower(e.nameOf(ctx, k.AssigneeID))] = true
+	}
+	var out []string
+	for _, n := range named {
+		if !given[strings.ToLower(n)] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// mentions reports whether name appears in text as a word.
+func mentions(text, name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; ; {
+		j := strings.Index(text[i:], name)
+		if j < 0 {
+			return false
+		}
+		j += i
+		before := j == 0 || !isWordByte(text[j-1])
+		after := j+len(name) >= len(text) || !isWordByte(text[j+len(name)])
+		if before && after {
+			return true
+		}
+		i = j + 1
+	}
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' || c == '-' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+}
+
+func joinNames(n []string) string {
+	switch len(n) {
+	case 1:
+		return n[0]
+	case 2:
+		return n[0] + " and " + n[1]
+	}
+	return strings.Join(n[:len(n)-1], ", ") + " and " + n[len(n)-1]
+}
+
+func quoteNames(n []string) string {
+	q := make([]string, len(n))
+	for i, s := range n {
+		q[i] = `"` + s + `"`
+	}
+	return strings.Join(q, " or ")
+}
+
+func themOrName(n []string) string {
+	if len(n) == 1 {
+		return n[0]
+	}
+	return "each of them"
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func titled(in *protocol.Instance) string {

@@ -545,6 +545,68 @@ func TestATicketsAlertClosesWhenItMovesOn(t *testing.T) {
 	}
 }
 
+func TestATicketThatNamesAReportSaysToHandItOn(t *testing.T) {
+	h := newHarness(t)
+	h.agent("lead", "Builder")
+	h.agent("cc", "Claude", func(i *protocol.Instance) { i.ReportsTo = "lead" })
+	h.agent("other", "Claudette")
+	tk := h.ticket(&protocol.Ticket{Title: "Get Claude to write notes/todo.md.", AssigneeID: "lead"})
+	h.e.Reconcile(h.ctx)
+	g := h.goalOf(tk.ID)
+	if !strings.Contains(g, "This ticket names Claude, who reports to you. Hand that part to Claude with create_ticket") {
+		t.Errorf("the brief says to hand it on:\n%s", g)
+	}
+	if strings.Contains(g, "todo.md..") {
+		t.Errorf("no doubled full stop after the title:\n%s", g)
+	}
+	task := h.get(tk.ID).TaskID
+	if got := h.e.UndelegatedReports(h.ctx, task); len(got) != 1 || got[0] != "Claude" {
+		t.Fatalf("before handing it on, Claude is owed a ticket: %v", got)
+	}
+	if _, err := h.e.CreateFromAgent(h.ctx, task, h.db.instances["lead"], "Claude", "Write notes/todo.md", "three items", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.e.UndelegatedReports(h.ctx, task); len(got) != 0 {
+		t.Fatalf("after, nobody is: %v", got)
+	}
+	if mentions("ask claudette", "claude") {
+		t.Error("a name inside another word is not a mention")
+	}
+}
+
+func TestTheSameJobIsNotHandedOutTwice(t *testing.T) {
+	h := newHarness(t)
+	h.agent("lead", "Builder")
+	h.agent("cc", "Claude", func(i *protocol.Instance) { i.ReportsTo = "lead" })
+	lead := h.db.instances["lead"]
+	parent := h.ticket(&protocol.Ticket{Title: "Get Claude to write notes/launch-risks.md", AssigneeID: "lead"})
+	h.e.Reconcile(h.ctx)
+	task := h.get(parent.ID).TaskID
+	if _, err := h.e.CreateFromAgent(h.ctx, task, lead, "Claude", "Review notes/launch-risks.md listing three launch risks", "three risks", true); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := h.e.CreateFromAgent(h.ctx, task, lead, "Claude", "Create notes/launch-risks.md with three launch risks", "three risks", true)
+	if err != nil || !strings.Contains(msg, "not filed: Claude already has this") {
+		t.Fatalf("the same file for the same colleague is not a second ticket: %v %q", err, msg)
+	}
+	kids, _ := h.db.Children(h.ctx, parent.ID)
+	if len(kids) != 1 {
+		t.Fatalf("one ticket, not two: %d", len(kids))
+	}
+	h.e.Reconcile(h.ctx)
+	h.finish(kids[0].ID, protocol.TaskSucceeded, "Wrote notes/launch-risks.md with three risks.", "", "")
+	msg, _ = h.e.CreateFromAgent(h.ctx, task, lead, "Claude", "Write notes/launch-risks.md with three launch risks", "three risks", true)
+	if !strings.Contains(msg, "already did this in "+kids[0].Ref()) || !strings.Contains(msg, "Wrote notes/launch-risks.md") {
+		t.Fatalf("after it is done, the lead is pointed at the result: %q", msg)
+	}
+	if _, err := h.e.CreateFromAgent(h.ctx, task, lead, "Claude", "Add a dark mode toggle to settings", "settings page", true); err != nil {
+		t.Fatalf("different work is still handed out: %v", err)
+	}
+	if kids, _ := h.db.Children(h.ctx, parent.ID); len(kids) != 2 {
+		t.Fatalf("two tickets now: %d", len(kids))
+	}
+}
+
 func countKind(h *harness, k protocol.TicketKind) int {
 	all, _ := h.db.ListTickets(h.ctx, protocol.TicketFilter{})
 	n := 0
