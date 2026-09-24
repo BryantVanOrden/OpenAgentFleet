@@ -1,11 +1,11 @@
 {
-    "name": "agentfleet_companion",
-    "short_name": "agentfleet_companion",
+    "name": "OpenAgentFleet",
+    "short_name": "OpenAgentFleet",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "OpenAgentFleet: self-hosted computer-use agents, each with its own Linux desktop, beside Claude Code, Codex, Hermes and OpenClaw. Chat with the fleet, hand out tickets, watch and take over.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -11,6 +11,10 @@
  *     -e BASE_URL=http://admin:80 -e AF_EMAIL=... -e AF_PASSWORD=... \
  *     mcr.microsoft.com/playwright:v1.49.1-noble \
  *     node /scripts/screenshots.mjs
+ *
+ * AF_TOKEN (a session or API token) skips the sign-in form. AF_TICKET picks
+ * the ticket shown open in the Work drawer (default: the newest finished
+ * work ticket with a result).
  */
 
 import { chromium } from "playwright";
@@ -20,6 +24,8 @@ const BASE = process.env.BASE_URL ?? "http://admin:80";
 const EMAIL = process.env.AF_EMAIL ?? "demo@agentfleet.local";
 const PASSWORD = process.env.AF_PASSWORD ?? "agentfleet-demo-1234";
 const OUT = process.env.OUT_DIR ?? "/out";
+const TOKEN = process.env.AF_TOKEN ?? "";
+const TICKET = process.env.AF_TICKET ?? "";
 
 const VIEWPORT = { width: 1440, height: 900 };
 
@@ -77,8 +83,11 @@ async function main() {
   await seed(ctx, { mode: "dark", accent: "amber" });
   let page = await ctx.newPage();
 
-  console.log("signing in…");
-  const token = await login(page);
+  let token = TOKEN;
+  if (!token) {
+    console.log("signing in…");
+    token = await login(page);
+  }
   if (!token) throw new Error("no session token after login — is the API reachable?");
   await ctx.close();
 
@@ -97,6 +106,8 @@ async function main() {
   const pages = [
     ["chat", "/", "text=Fleet chat"],
     ["fleet", "/fleet", "text=Fleet"],
+    ["org", "/org", "text=Org"],
+    ["work", "/work", "text=Work"],
     ["engines", "/models", "text=AI engines"],
     ["skills", "/skills", "text=Skills"],
     ["alerts", "/alerts", "text=Alerts"],
@@ -137,6 +148,37 @@ async function main() {
         if (await confirm.count()) await confirm.click().catch(() => {});
         await page.waitForTimeout(500);
       }
+    }
+
+    // A ticket open in the Work drawer: the chain, blockers, runs, comments.
+    const ref = TICKET || (await page.evaluate(async (t) => {
+      const r = await fetch("/api/tickets?limit=50", { headers: { Authorization: "Bearer " + t } });
+      const list = await r.json();
+      const rows = Array.isArray(list) ? list : list.tickets || [];
+      const best = rows.find((x) => x.status === "done" && x.result && x.kind === "work") || rows[0];
+      return best ? best.ref : "";
+    }, token).catch(() => ""));
+    if (ref) {
+      await page.goto(`${BASE}/work?ticket=${encodeURIComponent(ref)}`, { waitUntil: "networkidle" });
+      await page.waitForTimeout(1400);
+      await shot(page, `ticket-${mode}-${accent}`);
+    }
+
+    // Add agent, on the Claude Code form: the PC, its CLIs, the folder.
+    await page.goto(`${BASE}/org`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(900);
+    const addAgent = page.locator("button", { hasText: /Add agent/ }).first();
+    if (await addAgent.count()) {
+      await addAgent.click();
+      await page.waitForTimeout(700);
+      const cc = page.locator("button, [role=radio], label", { hasText: /^\s*Claude Code/ }).first();
+      if (await cc.count()) {
+        await cc.click().catch(() => {});
+        await page.waitForTimeout(700);
+      }
+      await shot(page, `add-agent-${mode}-${accent}`);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(400);
     }
 
     // Launch dialog — the primary flow, and the most interesting screen.
