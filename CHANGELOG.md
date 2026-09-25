@@ -9,6 +9,10 @@ semantic versioning.
 ### Site
 - A 74-second trailer, with narration and sound, at the top of the site and
   the README, and a 36-second vertical cut for phones.
+- Links to the site now unfurl with the trailer: a new share image and
+  video preview tags.
+- The trailer's source is in `scripts/trailer/`: the composition, the
+  timeline, the narration takes and the mixing scripts, with how to render it.
 
 ## [1.3.0] — 2026-09-24
 
